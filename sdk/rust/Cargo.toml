@@ -13,6 +13,13 @@ publish = false
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry", "std"] }
 
+# Exactly one of `development` / `production` must be enabled - lib.rs
+# refuses to compile with neither or both, the same rule as the C++ SDK's
+# SUPERLOG_DEVELOPMENT/SUPERLOG_PRODUCTION. No default on purpose: deciding
+# is the point. In production the crate is an inert shell - no worker, no
+# serialisation, nothing on the wire.
 [features]
 default = []
+development = []
+production = []
 tracing-layer = ["dep:tracing", "dep:tracing-subscriber"]

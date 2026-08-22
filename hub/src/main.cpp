@@ -68,11 +68,16 @@ int main()
         r.send(200, "application/json", std::move(j));
     });
 
-    // 0.0.0.0 on purpose: phones on the LAN must be able to reach us.
-    // Dev-network tool; see docs/ARCHITECTURE.md before changing that.
-    const std::uint16_t port = srv.listen("0.0.0.0", want_port);
+    // Default 0.0.0.0 because phones on the LAN must be able to reach us -
+    // but there is no auth, so anyone who can connect can read every stream
+    // and publish to any topic. SUPER_LOG_BIND=127.0.0.1 confines the hub
+    // to this machine (the demo does exactly that; OS-log streams make it
+    // matter). See docs/ARCHITECTURE.md.
+    const char* bind_env = std::getenv("SUPER_LOG_BIND");
+    const std::string bind_host = bind_env && *bind_env ? bind_env : "0.0.0.0";
+    const std::uint16_t port = srv.listen(bind_host, want_port);
     if (port == 0) {
-        SN_LOG_ERROR() << "superlogd: cannot listen on port " << want_port;
+        SN_LOG_ERROR() << "superlogd: cannot listen on " << bind_host << ":" << want_port;
         return 1;
     }
 

@@ -1,0 +1,143 @@
+# CI for super-log. Five jobs: C++ on Linux (gcc + clang, smoke-tested, both
+# build modes), C++ on macOS (arm64 - the bench is x86_64 darwin, the Ubuntu
+# image is x86_64 linux, so this completes the triangle), sanitizers (TSan
+# first: the whole C++ discipline here is threading; macOS TSan is broken at
+# the runtime level, Ubuntu's works), Rust, and JS.
+#
+# ts-moveables is pinned by SHA - green must never depend on another repo's
+# HEAD moving. Bump TS_MOVEABLES_TAG deliberately.
+#
+# The same smoke test gates everything everywhere: scripts/smoke.sh here, in
+# docker/ubuntu.Dockerfile, and on any terminal - "verified" means one thing.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  TS_MOVEABLES_TAG: f9f25875b5508bdf660fe51d852d0d7e973a782f
+
+jobs:
+  cpp-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: viewer build deps (glfw wants a display stack to compile against)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols libgl1-mesa-dev
+      - name: configure + build (DEVELOPMENT)
+        run: |
+          if [ "${{ matrix.compiler }}" = clang ]; then export CC=clang CXX=clang++; else export CC=gcc CXX=g++; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG"
+          cmake --build build -j
+      - name: smoke
+        run: ./scripts/smoke.sh
+      - name: PRODUCTION mode compiles and stays silent
+        run: |
+          if [ "${{ matrix.compiler }}" = clang ]; then export CC=clang CXX=clang++; else export CC=gcc CXX=g++; fi
+          cmake -S . -B build-prod -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" \
+            -DSUPER_LOG_MODE=PRODUCTION -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build-prod --target super_log_compile_test superlog_clock_cpp -j
+          # no hub is running: an inert SDK must exit clean with zero drops
+          ./build-prod/super_log_compile_test
+      - name: mode guard refuses neither and both
+        run: |
+          if [ "${{ matrix.compiler }}" = clang ]; then CXX=clang++; else CXX=g++; fi
+          ! $CXX -std=c++17 -fsyntax-only sdk/cpp/include/super_log/mode.hpp 2>/dev/null
+          ! $CXX -std=c++17 -DSUPERLOG_DEVELOPMENT -DSUPERLOG_PRODUCTION \
+              -fsyntax-only sdk/cpp/include/super_log/mode.hpp 2>/dev/null
+
+  cpp-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: configure + build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG"
+          cmake --build build -j
+      - name: smoke
+        run: ./scripts/smoke.sh
+
+  # A checkout without submodules must still build the hub and the SDK test -
+  # the EXISTS gates in CMake are load-bearing, so exercise the false side.
+  cpp-no-submodules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure + build (hub + compile test only)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" \
+            -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build --target superlogd super_log_compile_test -j
+      - name: smoke
+        run: ./scripts/smoke.sh
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [thread, "address,undefined"]
+    env:
+      TSAN_OPTIONS: halt_on_error=1
+      ASAN_OPTIONS: strict_string_checks=1
+      UBSAN_OPTIONS: halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: configure + build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-fsanitize=${{ matrix.sanitizer }} -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=${{ matrix.sanitizer }}" \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" \
+            -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build -j
+      - name: smoke under sanitizer
+        run: ./scripts/smoke.sh
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --features development
+      - run: cargo check --features "development tracing-layer"
+      - run: cargo check --features production
+      - run: cargo build --release --features development --example clock
+      - name: mode guard refuses neither and both
+        run: |
+          ! cargo check --quiet 2>/dev/null
+          ! cargo check --quiet --features "development production" 2>/dev/null
+
+  js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check

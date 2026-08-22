@@ -7,16 +7,19 @@
 //
 
 #include <super_log/forward_sink.hpp>
-// Opt-in (-DSUPER_LOG_TEST_SPDLOG=ON): the sink header gates itself on
-// __has_include, but a machine can carry a *broken* spdlog - this one does,
-// a /usr/local spdlog whose headers no longer match the fmt beside them -
-// and the SDK's own gate cannot tell broken from present.
+// SUPER_LOG_TEST_SPDLOG - defaults ON when the third_party submodules are
+// checked out, OFF otherwise: the sink header gates itself on __has_include,
+// but a machine can carry a *broken* spdlog - this one does, a /usr/local
+// spdlog whose headers no longer match the fmt beside them - and the SDK's
+// own gate cannot tell broken from present. The vendored spdlog+fmt pair
+// (pinned in third_party/, see the root CMakeLists) is what gets tested.
 #ifdef SUPERLOG_TEST_SPDLOG
 #include <super_log/spdlog_sink.hpp>
 #endif
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <thread>
 
@@ -24,6 +27,12 @@ int main()
 {
     superlog::transport_config tcfg;
     tcfg.topic = "cpp.compile-test";
+    // Same env overrides as the demo clients, so scripts/smoke.sh can aim
+    // this at a scratch hub without touching a live bench on 7333.
+    if (const char* h = std::getenv("SUPER_LOG_HOST"))
+        tcfg.host = h;
+    if (const char* p = std::getenv("SUPER_LOG_PORT"))
+        tcfg.port = static_cast<std::uint16_t>(std::strtol(p, nullptr, 10));
     auto bat = std::make_shared<superlog::batcher>(tcfg);   // before the logger: lifetime rule
 
     superlog::origin who;

@@ -1,0 +1,14 @@
+# Context for docker/ubuntu.Dockerfile - headless C++ only, so the GUI
+# viewer submodules and every generated tree stay out of the image.
+.git
+.cache
+build
+build-*
+cmake-build-*
+node_modules
+**/node_modules
+**/dist
+sdk/rust/target
+third_party/imgui
+third_party/glfw
+*.tsbuildinfo

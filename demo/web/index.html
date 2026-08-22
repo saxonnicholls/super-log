@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  The browser demo client: this page's console streams to the bench
+  (topic web.clock). Copyright 2026 Saxon Herschel Nicholls.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>super-log browser clock</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; background: #101216; color: #d6dae2; display: grid;
+             place-items: center; min-height: 100vh;
+             font: 14px/1.6 "SF Mono", ui-monospace, Menlo, monospace; }
+      main { max-width: 560px; padding: 24px; }
+      h1 { font-size: 16px; color: #7aa2f7; }
+      p { color: #8a93a3; }
+      button { background: #181c22; color: #d6dae2; border: 1px solid #262b33;
+               border-radius: 4px; padding: 6px 10px; font: inherit; cursor: pointer;
+               margin: 0 8px 8px 0; }
+      button:hover { border-color: #7aa2f7; }
+      #tick { color: #68c964; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>super-log browser clock</h1>
+      <p>
+        Everything this page says on its console is on the bench, topic
+        <b>web.clock</b> - one tick a second via <code>console.log</code>,
+        plus whatever you press below. Open the viewer next to it and the
+        client and server sides of the stack read as one stream.
+      </p>
+      <p id="tick">waiting for the first tick…</p>
+      <button id="log">console.log</button>
+      <button id="warn">console.warn</button>
+      <button id="error">console.error</button>
+      <button id="boom">throw</button>
+    </main>
+    <script type="module" src="/clock.mjs"></script>
+  </body>
+</html>

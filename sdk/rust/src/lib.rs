@@ -19,8 +19,29 @@
 //! // tracing_subscriber::registry().with(log.layer()).init();
 //! ```
 //!
-//! Wire contract: ../../docs/PROTOCOL.md. Status: skeleton - compiles are
-//! the next agent's first job (HANDOFF.md, M2).
+//! Enable exactly one of the `development` / `production` features -
+//! neither or both is a compile error. Each mode ships what its policy
+//! allows (`Config::dev_policy` / `Config::prod_policy`): development
+//! defaults to everything, production to nothing - a production build
+//! forwards logs only when a dev chose that on purpose, e.g.
+//! `prod_policy: Policy::AtLeast(Level::Error)`. A policy of `Off` makes
+//! the crate an inert shell (no worker, no serialisation, nothing on the
+//! wire).
+//!
+//! Wire contract: ../../docs/PROTOCOL.md. Verified live against a hub by
+//! `examples/clock.rs` (HANDOFF.md ledger).
+
+// DEVELOPMENT xor PRODUCTION, enforced - the same rule as the C++ SDK's
+// mode.hpp: a logging pipeline you *think* is off is worse than one that
+// will not build until you decide.
+#[cfg(all(feature = "development", feature = "production"))]
+compile_error!(
+    "super-log: features `development` and `production` are both enabled - enable exactly one"
+);
+#[cfg(not(any(feature = "development", feature = "production")))]
+compile_error!(
+    "super-log: enable exactly one of the `development` / `production` features (the bench wants --features development)"
+);
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -39,6 +60,12 @@ pub struct Config {
     pub flush_ms: u64,
     pub max_batch: usize,
     pub max_queue: usize,
+    /// What DEVELOPMENT builds forward. Default: everything.
+    pub dev_policy: Policy,
+    /// What PRODUCTION builds forward. Default: nothing - log lines leaving
+    /// a production box are a security decision, so loosen this
+    /// deliberately (e.g. `Policy::AtLeast(Level::Error)`), never by default.
+    pub prod_policy: Policy,
 }
 
 impl Default for Config {
@@ -52,6 +79,8 @@ impl Default for Config {
             flush_ms: 250,
             max_batch: 256,
             max_queue: 8192,
+            dev_policy: Policy::All,
+            prod_policy: Policy::Off,
         }
     }
 }
@@ -77,7 +106,41 @@ impl Level {
             Level::Critical => "CRITICAL",
         }
     }
+
+    fn rank(self) -> u8 {
+        match self {
+            Level::Trace => 1,
+            Level::Debug => 2,
+            Level::Info => 3,
+            Level::Warn => 4,
+            Level::Error => 5,
+            Level::Critical => 6,
+        }
+    }
 }
+
+/// What a mode ships: everything, only `level` and up, or nothing at all.
+/// The active build mode picks `Config::dev_policy` or `Config::prod_policy`;
+/// a below-policy event costs one compare - not serialised, not queued.
+/// Metrics ride at INFO, so a policy above INFO drops them too.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Policy {
+    All,
+    AtLeast(Level),
+    Off,
+}
+
+impl Policy {
+    fn min_rank(self) -> u8 {
+        match self {
+            Policy::All => 1,
+            Policy::AtLeast(l) => l.rank(),
+            Policy::Off => 7,
+        }
+    }
+}
+
+const OFF_RANK: u8 = 7;
 
 struct Shared {
     cfg: Config,
@@ -85,6 +148,7 @@ struct Shared {
     seq: AtomicU64,
     dropped: AtomicU64,
     tx: SyncSender<String>,
+    min_rank: u8, // the active mode's policy, resolved once at construction
 }
 
 /// Cheap to clone; all clones share one worker.
@@ -102,35 +166,46 @@ impl SuperLog {
         let flush = Duration::from_millis(cfg.flush_ms);
         let max_batch = cfg.max_batch;
 
-        std::thread::spawn(move || {
-            let mut batch = String::new();
-            let mut n = 0usize;
-            loop {
-                match rx.recv_timeout(flush) {
-                    Ok(line) => {
-                        batch.push_str(&line);
-                        batch.push('\n');
-                        n += 1;
-                        if n < max_batch {
-                            continue;
+        // The build mode picks its policy; the worker exists only when
+        // something can ship. cfg! not #[cfg]: both modes stay compiled and
+        // borrow-checked, the dead branch just never runs and folds away.
+        let active = if cfg!(feature = "development") {
+            cfg.dev_policy
+        } else {
+            cfg.prod_policy
+        };
+        let min_rank = active.min_rank();
+        if min_rank < OFF_RANK {
+            std::thread::spawn(move || {
+                let mut batch = String::new();
+                let mut n = 0usize;
+                loop {
+                    match rx.recv_timeout(flush) {
+                        Ok(line) => {
+                            batch.push_str(&line);
+                            batch.push('\n');
+                            n += 1;
+                            if n < max_batch {
+                                continue;
+                            }
+                        }
+                        Err(RecvTimeoutError::Timeout) => {}
+                        Err(RecvTimeoutError::Disconnected) => {
+                            // Final flush: nothing queued is lost on exit
+                            if !batch.is_empty() {
+                                let _ = http_post(&host, port, &path, &batch);
+                            }
+                            return;
                         }
                     }
-                    Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => {
-                        // Final flush: nothing queued is lost on exit
-                        if !batch.is_empty() {
-                            let _ = http_post(&host, port, &path, &batch);
-                        }
-                        return;
+                    if !batch.is_empty() {
+                        let _ = http_post(&host, port, &path, &batch);
+                        batch.clear();
+                        n = 0;
                     }
                 }
-                if !batch.is_empty() {
-                    let _ = http_post(&host, port, &path, &batch);
-                    batch.clear();
-                    n = 0;
-                }
-            }
-        });
+            });
+        }
 
         let session = session_id();
         SuperLog {
@@ -140,6 +215,7 @@ impl SuperLog {
                 seq: AtomicU64::new(0),
                 dropped: AtomicU64::new(0),
                 tx,
+                min_rank,
             }),
         }
     }
@@ -159,6 +235,9 @@ impl SuperLog {
     }
 
     fn emit(&self, level: Level, msg: &str, fields: Option<&[(&str, &str)]>, metric: Option<f64>) {
+        if level.rank() < self.s.min_rank {
+            return; // below this mode's policy: not even serialised
+        }
         let s = &self.s;
         let seq = s.seq.fetch_add(1, Ordering::Relaxed);
         let mut j = String::with_capacity(160 + msg.len());
@@ -269,7 +348,11 @@ mod layer {
             self.log.log(
                 level,
                 &v.message,
-                if fields.is_empty() { None } else { Some(&fields) },
+                if fields.is_empty() {
+                    None
+                } else {
+                    Some(&fields)
+                },
             );
         }
     }
@@ -374,6 +457,20 @@ mod tests {
         let mut out = String::new();
         escape("a\"b\\c\nd\x01", &mut out);
         assert_eq!(out, "a\\\"b\\\\c\\nd\\u0001");
+    }
+
+    #[test]
+    fn policy_ranks_order() {
+        assert_eq!(Policy::All.min_rank(), Level::Trace.rank());
+        assert_eq!(
+            Policy::AtLeast(Level::Error).min_rank(),
+            Level::Error.rank()
+        );
+        assert!(Level::Critical.rank() < Policy::Off.min_rank());
+        // ERROR policy: ships error+critical, drops warn and below
+        let min = Policy::AtLeast(Level::Error).min_rank();
+        assert!(Level::Error.rank() >= min && Level::Critical.rank() >= min);
+        assert!(Level::Warn.rank() < min && Level::Info.rank() < min);
     }
 
     #[test]

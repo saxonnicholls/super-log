@@ -12,6 +12,8 @@
 #ifndef super_log_event_hpp
 #define super_log_event_hpp
 
+#include "mode.hpp"             // DEVELOPMENT xor PRODUCTION, enforced
+
 #include "logging/logger.hpp"   // ts-moveables: record, level, format_time
 #include "utils/json.hpp"       // ts-moveables: the one json_escape
 

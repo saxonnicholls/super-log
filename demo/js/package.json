@@ -1,0 +1,11 @@
+{
+  "name": "@super-log/demo-clients",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo stand-ins for the React Native device clients",
+  "author": "Saxon Herschel Nicholls",
+  "type": "module",
+  "dependencies": {
+    "@super-log/client": "*"
+  }
+}

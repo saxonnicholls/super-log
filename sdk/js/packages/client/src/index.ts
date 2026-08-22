@@ -30,6 +30,20 @@ export interface SuperLogOptions {
   /** Stream name from the PROTOCOL.md topic table, e.g. expo.android.emu. */
   topic: string;
   app: string;
+  /** Exactly one of development/production must be true - neither or both
+   *  throws, the same rule as the C++ and Rust SDKs. RN callers usually
+   *  pass development: __DEV__, production: !__DEV__. */
+  development?: boolean;
+  production?: boolean;
+  /** What each mode forwards: the minimum level that ships, or 'OFF'.
+   *  Defaults - development 'TRACE' (everything), production 'OFF'
+   *  (nothing): log lines leaving a production app are a security decision,
+   *  so loosen it deliberately (e.g. productionPolicy: 'ERROR'), never by
+   *  default. Below-policy events are not serialised; a policy of 'OFF'
+   *  makes the client an inert shell (no timer, no console patch, nothing
+   *  on the wire). Metrics ride at INFO. */
+  developmentPolicy?: Level | 'OFF';
+  productionPolicy?: Level | 'OFF';
   /** Detected when omitted; RN callers should pass 'ios' | 'android'. */
   platform?: string;
   /** Human-readable, e.g. from expo-device's deviceName. */
@@ -52,6 +66,12 @@ const LEVEL_OF_CONSOLE: Record<string, Level> = {
   warn: 'WARN',
   error: 'ERROR',
 };
+
+// Policy ranks, matching the C++ SDK's mode.hpp and the Rust crate.
+const RANK: Record<Level, number> = {
+  TRACE: 1, DEBUG: 2, INFO: 3, WARN: 4, ERROR: 5, CRITICAL: 6,
+};
+const OFF_RANK = 7;
 
 function detectPlatform(): string {
   if (typeof navigator !== 'undefined' && (navigator as { product?: string }).product === 'ReactNative')
@@ -84,6 +104,8 @@ export class SuperLog {
   private readonly ingestUrl: string;
   private readonly session: string;
   private readonly origin: { runtime: string; app: string; platform: string; device?: string };
+  private readonly enabled: boolean;
+  private readonly minRank: number;
   private buf: string[] = [];
   private seq = 0;
   private droppedCount = 0;
@@ -91,6 +113,20 @@ export class SuperLog {
   private consoleRestore: (() => void) | undefined;
 
   constructor(opts: SuperLogOptions) {
+    // DEVELOPMENT xor PRODUCTION, enforced - a logging pipeline you *think*
+    // is off is worse than one that refuses to start until you decide.
+    const dev = opts.development === true;
+    const prod = opts.production === true;
+    if (dev === prod)
+      throw new Error(
+        'super-log: set exactly one of development / production (got ' +
+          (dev ? 'both' : 'neither') + ')',
+      );
+    // The active mode picks its policy: dev ships everything by default,
+    // prod ships nothing until a dev deliberately loosens it.
+    const policy = dev ? (opts.developmentPolicy ?? 'TRACE') : (opts.productionPolicy ?? 'OFF');
+    this.minRank = policy === 'OFF' ? OFF_RANK : RANK[policy];
+    this.enabled = this.minRank < OFF_RANK;
     this.opts = { flushMs: 250, maxBatch: 256, maxQueue: 2048, ...opts };
     this.ingestUrl = `${opts.url}/ingest/${opts.topic}`;
     this.session = Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10);
@@ -100,6 +136,7 @@ export class SuperLog {
       platform: opts.platform ?? detectPlatform(),
       ...(opts.device ? { device: opts.device } : {}),
     };
+    if (!this.enabled) return; // production: inert shell, nothing scheduled
     this.timer = setInterval(() => void this.flush(), this.opts.flushMs);
     // Node: a log timer must never keep the process alive
     (this.timer as { unref?: () => void }).unref?.();
@@ -107,6 +144,7 @@ export class SuperLog {
   }
 
   log(level: Level, msg: string, fields?: EventFields, tag?: string): void {
+    if (RANK[level] < this.minRank) return; // below this mode's policy: not even serialised
     const ev: Record<string, unknown> = {
       v: 1,
       ts: new Date().toISOString(),
@@ -128,6 +166,7 @@ export class SuperLog {
   error(msg: string, fields?: EventFields): void { this.log('ERROR', msg, fields); }
 
   metric(name: string, value: number): void {
+    if (RANK.INFO < this.minRank) return; // metrics ride at INFO
     this.push(
       JSON.stringify({
         v: 1,
@@ -153,12 +192,20 @@ export class SuperLog {
     const lines = this.buf;
     this.buf = [];
     try {
+      // In a browser the ingest POST is cross-origin (page on :7335 or a
+      // dev server, hub on :7333) and application/x-ndjson would force a
+      // CORS preflight the stock hub does not answer. no-cors sends it as a
+      // simple request - opaque response, but we never read it anyway, and
+      // the hub treats payloads as opaque bytes whatever the content-type.
+      const browser = this.origin.runtime === 'js';
       await fetch(this.ingestUrl, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-ndjson' },
         body: lines.join('\n'),
         // Let the batch survive a page unload where supported
         keepalive: true,
+        ...(browser
+          ? { mode: 'no-cors' }
+          : { headers: { 'content-type': 'application/x-ndjson' } }),
       } as RequestInit);
     } catch {
       // The hub is down or unreachable; count, don't retry - the next batch
@@ -171,6 +218,7 @@ export class SuperLog {
   /** Mirror console.* to the hub. Originals still run - this adds a screen,
    *  it does not move one. Returns an unpatch function; close() also unpatches. */
   patchConsole(): () => void {
+    if (!this.enabled) return () => {}; // production: console stays untouched
     if (this.consoleRestore) return this.consoleRestore;
     const originals: Array<[string, (...a: unknown[]) => void]> = [];
     for (const name of Object.keys(LEVEL_OF_CONSOLE)) {

@@ -7,12 +7,24 @@
   "workspaces": [
     "sdk/js/packages/*",
     "tailers",
-    "viewer/react"
+    "viewer/react",
+    "demo/js"
   ],
   "scripts": {
     "viewer": "npm run dev --workspace @super-log/viewer-react",
     "tail:android": "node tailers/bin/superlog-tail.mjs android",
     "tail:ios-sim": "node tailers/bin/superlog-tail.mjs ios-sim",
+    "tail:os": "node tailers/bin/superlog-tail.mjs os",
+    "tail:ssh": "node tailers/bin/superlog-tail.mjs ssh",
+    "tail:file": "node tailers/bin/superlog-tail.mjs file",
+    "tail:apps": "node tailers/bin/superlog-tail.mjs apps",
+    "tail:app": "node tailers/bin/superlog-tail.mjs app",
+    "journal": "node tailers/bin/superlog-journal.mjs",
+    "net": "node tailers/bin/superlog-net.mjs",
+    "demo": "./demo/run.sh",
+    "demo:ios": "node demo/js/clock.mjs ios",
+    "demo:android": "node demo/js/clock.mjs android",
+    "demo:web": "node demo/web/serve.mjs",
     "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react"
   },
   "engines": {

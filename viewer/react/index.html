@@ -8,6 +8,10 @@
       :root { color-scheme: dark; }
       body { margin: 0; background: #101216; color: #d6dae2;
              font: 12px/1.5 "SF Mono", ui-monospace, Menlo, monospace; }
+      /* per-row copy: present but quiet until the row is under the pointer */
+      .rowcopy { background: none; border: none; padding: 0; cursor: pointer;
+                 color: #5c6470; font: inherit; opacity: 0.15; }
+      .row:hover .rowcopy { opacity: 1; }
     </style>
   </head>
   <body>

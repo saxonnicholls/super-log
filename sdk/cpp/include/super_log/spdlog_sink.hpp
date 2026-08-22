@@ -66,6 +66,20 @@ inline const char* level_name(spdlog::level::level_enum l) noexcept
     }
 }
 
+// mode.hpp policy ranks (SUPERLOG_LEVEL_*); unknown maps to INFO like above
+inline int level_rank(spdlog::level::level_enum l) noexcept
+{
+    switch (l) {
+    case spdlog::level::trace:    return SUPERLOG_LEVEL_TRACE;
+    case spdlog::level::debug:    return SUPERLOG_LEVEL_DEBUG;
+    case spdlog::level::info:     return SUPERLOG_LEVEL_INFO;
+    case spdlog::level::warn:     return SUPERLOG_LEVEL_WARN;
+    case spdlog::level::err:      return SUPERLOG_LEVEL_ERROR;
+    case spdlog::level::critical: return SUPERLOG_LEVEL_CRITICAL;
+    default:                      return SUPERLOG_LEVEL_INFO;
+    }
+}
+
 } // namespace detail
 
 template <typename Mutex>
@@ -80,6 +94,12 @@ public:
 protected:
     void sink_it_(const spdlog::details::log_msg& msg) override
     {
+#if !SUPERLOG_ENABLED
+        (void)msg;                               // policy OFF: not even serialised
+        return;
+#else
+        if (detail::level_rank(msg.level) < SUPERLOG_MIN_LEVEL)
+            return;                              // below this mode's policy
         std::string src;
         if (msg.source.filename) {
             src = snicholls::log::detail::basename(msg.source.filename);
@@ -93,6 +113,7 @@ protected:
             seq_.fetch_add(1, std::memory_order_relaxed),
             std::string(msg.logger_name.data(), msg.logger_name.size()),
             src));
+#endif
     }
 
     void flush_() override {}                    // the batcher flushes on its own clock

@@ -58,6 +58,9 @@ host-side tailer scraping the same device:
 | `rust.<app>`          | a Rust process                  |
 | `node.<app>`          | a Node process                  |
 | `web.<app>`           | a browser app                   |
+| `os.<host>`           | a machine's own OS logs (macOS unified log, journald, Windows event log) - one topic per machine, tailed locally, from the LAN, or over ssh |
+| `app.<host>.<name>`   | a service's log file on that machine (postgres, nginx, redis, ...); `.<file>` suffix when one service writes several |
+| `net.<host>.<target>` | HTTP/HTTPS calls through the logging proxy - one event per request/response pair |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.
 
@@ -111,14 +114,14 @@ sink.
 
 ## Level mappings
 
-| super-log  | logcat | spdlog   | Rust `tracing` | `console.*`      | Apple unified log |
-|------------|--------|----------|----------------|------------------|-------------------|
-| `TRACE`    | V      | trace    | TRACE          | `console.debug`* | —                 |
-| `DEBUG`    | D      | debug    | DEBUG          | `console.debug`  | Debug             |
-| `INFO`     | I      | info     | INFO           | `console.log/info` | Default, Info   |
-| `WARN`     | W      | warn     | WARN           | `console.warn`   | —                 |
-| `ERROR`    | E      | err      | ERROR          | `console.error`  | Error             |
-| `CRITICAL` | F      | critical | —              | —                | Fault             |
+| super-log  | logcat | spdlog   | Rust `tracing` | `console.*`      | Apple unified log | journald |
+|------------|--------|----------|----------------|------------------|-------------------|----------|
+| `TRACE`    | V      | trace    | TRACE          | `console.debug`* | —                 | —        |
+| `DEBUG`    | D      | debug    | DEBUG          | `console.debug`  | Debug             | 7        |
+| `INFO`     | I      | info     | INFO           | `console.log/info` | Default, Info   | 5, 6     |
+| `WARN`     | W      | warn     | WARN           | `console.warn`   | —                 | 4        |
+| `ERROR`    | E      | err      | ERROR          | `console.error`  | Error             | 3        |
+| `CRITICAL` | F      | critical | —              | —                | Fault             | 0–2      |
 
 ## Ordering, honestly
 

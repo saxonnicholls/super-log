@@ -20,6 +20,8 @@
 #ifndef super_log_transport_hpp
 #define super_log_transport_hpp
 
+#include "mode.hpp"             // DEVELOPMENT xor PRODUCTION, enforced
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -106,13 +108,19 @@ inline bool http_post(const std::string& host, std::uint16_t port,
 
 // The worker. Create one per process (or per topic), share it between sinks
 // via shared_ptr, declare it BEFORE any logger whose sink captures it - the
-// same lifetime rule as ts-moveables sinks, for the same reason.
+// same lifetime rule as ts-moveables sinks, for the same reason. In
+// PRODUCTION builds (mode.hpp) it is an inert shell: no thread, no socket,
+// enqueue discards - call sites do not change, the wire just goes silent.
 class batcher {
 public:
     explicit batcher(transport_config cfg)
-        : cfg_(std::move(cfg)), path_("/ingest/" + cfg_.topic),
-          worker_([this] { run(); })
+        : cfg_(std::move(cfg)), path_("/ingest/" + cfg_.topic)
     {
+#if SUPERLOG_ENABLED
+        // Started in the body, not the init list: run() must see every
+        // member built.
+        worker_ = std::thread([this] { run(); });
+#endif
     }
 
     ~batcher()
@@ -122,7 +130,8 @@ public:
             stop_ = true;
         }
         cv_.notify_all();
-        worker_.join();
+        if (worker_.joinable())
+            worker_.join();
     }
 
     batcher(const batcher&) = delete;
@@ -131,6 +140,9 @@ public:
     // Any thread. Never blocks on the network; drops oldest when full.
     void enqueue(std::string ndjson_line)
     {
+#if !SUPERLOG_ENABLED
+        (void)ndjson_line;
+#else
         bool wake = false;
         {
             std::lock_guard<std::mutex> g(m_);
@@ -143,6 +155,7 @@ public:
         }
         if (wake)
             cv_.notify_one();
+#endif
     }
 
     std::uint64_t dropped() const noexcept { return dropped_.load(std::memory_order_relaxed); }
@@ -185,7 +198,7 @@ private:
     std::deque<std::string> q_;
     bool stop_ = false;
     std::atomic<std::uint64_t> dropped_{0}, failures_{0};
-    std::thread worker_;                          // last: run() sees members built
+    std::thread worker_;                          // default; started by the ctor body
 };
 
 } // namespace superlog

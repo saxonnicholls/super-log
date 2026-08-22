@@ -1,0 +1,27 @@
+{
+  "name": "expo-clock",
+  "version": "1.0.0",
+  "description": "The real Expo clock client - HANDOFF M2's first light. Standalone on purpose (not a workspace): its RN dependency tree stays out of the root install.",
+  "author": "Saxon Herschel Nicholls",
+  "main": "index.ts",
+  "dependencies": {
+    "@super-log/client": "file:../../sdk/js/packages/client",
+    "expo": "~57.0.15",
+    "expo-constants": "~57.0.13",
+    "expo-device": "~57.0.1",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}

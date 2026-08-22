@@ -67,7 +67,16 @@ frames to the UI thread through a mutex-guarded deque drained once per frame.
 
 - **Persistence** — the hub's replay ring (1024 chunks/topic) is the only
   history. File/SQLite journalling is milestone M6.
-- **Auth/TLS** — dev-LAN tool. The hub binds all interfaces so devices can
-  reach it; do not run it on a hostile network. `websocket_client` already
-  speaks wss when this matters.
+- **Auth/TLS** — dev-LAN tool: anyone who can connect can read every stream
+  and publish to any topic. Defaults are arranged so exposure is a choice,
+  not an accident: the hub binds all interfaces only so real devices can
+  reach it, and `SUPER_LOG_BIND=127.0.0.1` confines it to one machine —
+  which is what `demo/run.sh` does unless `SUPER_LOG_LAN=1` is set. This
+  matters doubly once OS logs (`os.<host>` topics) are on the pipeline:
+  they carry hostnames, IPs and process behaviour. In the same spirit the
+  SDKs' PRODUCTION policies default to forwarding **nothing**, so a release
+  build cannot leak logs to a hub nobody meant it to reach, and the viewers
+  defuse spreadsheet formula injection in CSV exports. Do not run any of it
+  on a hostile network; `websocket_client` already speaks wss when the day
+  comes.
 - **A query language** — viewers filter client-side over the firehose.

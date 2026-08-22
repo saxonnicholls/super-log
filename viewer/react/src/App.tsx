@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
+import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
 
 const HUB = import.meta.env.VITE_SUPERLOG_URL ?? 'http://127.0.0.1:7333';
 
@@ -22,24 +23,27 @@ function topicColor(topic: string): string {
   return TOPIC_COLORS[h % TOPIC_COLORS.length] as string;
 }
 
-function timeOf(r: LogRow): string {
-  const iso = r.ts ?? new Date(r.hubTs).toISOString();
-  return iso.slice(11, 23); // HH:MM:SS.mmm
-}
-
 export default function App() {
   const { rows, connected, clear } = useLogFeed(HUB);
   const [minLevel, setMinLevel] = useState(0);
   const [needle, setNeedle] = useState('');
   const [topicFilter, setTopicFilter] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [paused, setPaused] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
+  // Pause freezes the DISPLAY, not the collection: the feed keeps filling
+  // `rows` (capped ring) while the frozen snapshot is what renders, and
+  // play snaps back to the live tail. setRows always replaces the array,
+  // so the captured reference stays exactly as it was.
+  const frozen = useRef<LogRow[]>([]);
 
   const topics = useMemo(() => [...new Set(rows.map((r) => r.topic))].sort(), [rows]);
 
+  const source = paused ? frozen.current : rows;
   const visible = useMemo(() => {
     const q = needle.toLowerCase();
-    return rows.filter((r) => {
+    return source.filter((r) => {
       const li = LEVELS.indexOf(r.level as (typeof LEVELS)[number]);
       if (li >= 0 && li < minLevel) return false;
       if (topicFilter && r.topic !== topicFilter) return false;
@@ -47,7 +51,7 @@ export default function App() {
         return false;
       return true;
     });
-  }, [rows, minLevel, needle, topicFilter]);
+  }, [source, minLevel, needle, topicFilter]);
 
   useEffect(() => {
     if (follow) bottom.current?.scrollIntoView();
@@ -61,6 +65,16 @@ export default function App() {
         <span style={{ color: connected ? '#68c964' : '#e05b4f' }}>
           {connected ? '● live' : '○ reconnecting…'}
         </span>
+        <button
+          style={selStyle}
+          title={paused ? 'resume the live tail' : 'freeze the display (collection continues)'}
+          onClick={() => {
+            if (!paused) frozen.current = rows;
+            setPaused(!paused);
+          }}
+        >
+          {paused ? '▶ play' : '⏸ pause'}
+        </button>
         <select value={minLevel} onChange={(e) => setMinLevel(Number(e.target.value))}
                 style={selStyle} title="minimum level">
           {LEVELS.map((l, i) => <option key={l} value={i}>≥ {l}</option>)}
@@ -76,12 +90,45 @@ export default function App() {
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow
         </label>
         <button onClick={clear} style={selStyle}>clear</button>
-        <span style={{ color: '#5c6470' }}>{visible.length}/{rows.length}</span>
+        {/* copy + export act on the *visible* rows - export follows the
+            filters, because that is the view someone just narrowed down to */}
+        <button
+          style={selStyle}
+          title="copy visible rows"
+          onClick={() => {
+            void copyText(toTxt(visible)).then((ok) => {
+              if (!ok) return;
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            });
+          }}
+        >
+          {copied ? 'copied ✓' : 'copy'}
+        </button>
+        <span style={{ color: '#5c6470' }}>export</span>
+        <button style={selStyle} title="visible rows, full fidelity"
+                onClick={() => download(`superlog-${stamp()}.json`, 'application/json', toJson(visible))}>
+          json
+        </button>
+        <button style={selStyle} title="visible rows, one line per event"
+                onClick={() => download(`superlog-${stamp()}.csv`, 'text/csv', toCsv(visible))}>
+          csv
+        </button>
+        <button style={selStyle} title="visible rows, as displayed"
+                onClick={() => download(`superlog-${stamp()}.txt`, 'text/plain', toTxt(visible))}>
+          txt
+        </button>
+        <span style={{ color: '#5c6470' }}>
+          {visible.length}/{source.length}
+          {paused && ` · live ${rows.length}`}
+        </span>
       </header>
 
       <main style={{ flex: 1, overflowY: 'auto', padding: '4px 12px' }}>
         {visible.map((r) => (
-          <div key={r.hubSeq} style={{ display: 'flex', gap: 8, whiteSpace: 'pre-wrap' }}>
+          <div key={r.hubSeq} className="row" style={{ display: 'flex', gap: 8, whiteSpace: 'pre-wrap' }}>
+            <button className="rowcopy" title="copy row"
+                    onClick={() => void copyText(rowText(r))}>⧉</button>
             <span style={{ color: '#5c6470' }}>{timeOf(r)}</span>
             <span style={{ color: topicColor(r.topic), minWidth: 130 }}>{r.topic}</span>
             <span style={{ color: LEVEL_COLOR[r.level] ?? '#d6dae2', minWidth: 56 }}>{r.level}</span>

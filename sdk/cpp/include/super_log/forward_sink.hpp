@@ -44,6 +44,11 @@ forward_sink(std::shared_ptr<batcher> b, origin o, std::string session = make_se
 {
     return [b = std::move(b), o = std::move(o),
             session = std::move(session)](const snicholls::log::record& r) {
+        // The mode's policy (mode.hpp): a below-threshold record costs one
+        // compare - not serialised, not queued. snicholls::log ranks match
+        // ours off by one (trace = 0 there, 1 here).
+        if (static_cast<int>(r.level) + 1 < SUPERLOG_MIN_LEVEL)
+            return;
         b->enqueue(to_event_json(r, o, session));
     };
 }

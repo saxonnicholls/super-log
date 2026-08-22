@@ -1,0 +1,21 @@
+# The Linux producer for the bench: builds the Ubuntu image (which smoke-
+# tests itself - see ubuntu.Dockerfile) and streams cpp.linux.clock +
+# cpp.linux.spdlog.clock at the hub on the host. Start the bench first
+# (./demo/run.sh or ./scripts/dev.sh), then:
+#
+#   docker compose -f docker/compose.yml up --build
+#
+services:
+  linux-clock:
+    build:
+      context: ..
+      dockerfile: docker/ubuntu.Dockerfile
+    # The OS-log topic is os.<hostname>; pin the hostname so the stream has
+    # a stable, readable name instead of a random container id.
+    hostname: linux-bench
+    environment:
+      SUPER_LOG_HOST: host.docker.internal
+      SUPER_LOG_TOPIC_NS: cpp.linux
+    extra_hosts:
+      # No-op on Docker Desktop (already resolves); required on Linux hosts
+      - "host.docker.internal:host-gateway"

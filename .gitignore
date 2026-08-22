@@ -18,5 +18,12 @@ Cargo.lock
 .idea/
 compile_commands.json
 
+# Runtime artefacts
+imgui.ini
+superlog-journal/
+
+# Expo / React Native
+.expo/
+
 # clangd
 .cache/
