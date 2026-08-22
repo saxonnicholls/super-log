@@ -18,7 +18,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "//prepare": "main points at dist/, which is a build artefact and not in git. npm runs prepare when this package is installed as a file:/git dependency, so a consumer gets a built package instead of an entry point that does not exist.",
+    "prepare": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

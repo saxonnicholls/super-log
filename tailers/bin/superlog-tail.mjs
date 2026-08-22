@@ -37,7 +37,7 @@
 //  (pymobiledevice3 / idevicesyslog) - see tailers/README.md and HANDOFF M4.
 //
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { hostname } from 'node:os';
 
@@ -49,6 +49,27 @@ const opt = (name, dflt) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : dflt;
 };
+
+if (!mode || args.includes('--help') || args.includes('-h')) {
+  console.error(`superlog-tail - host-side log tailers for the super-log bench
+
+  superlog-tail android [--serial S] [--app PKG | --pid N]  device logcat -> expo.android.{emu,device}
+  superlog-tail ios-sim [--udid U] [--process P]            simulator log -> expo.ios.sim
+  superlog-tail os      [--process P] [--predicate Q]       this Mac's unified log -> os.<host>
+  superlog-tail os-linux [--unit U]                         journald -> os.<host>
+  superlog-tail apps                                        which known services log on this machine
+  superlog-tail app <name...>                               tail those services -> app.<host>.<name>
+  superlog-tail file <path> [--format F]                    any log file -> app.<host>.<file>
+  superlog-tail ssh <dest> [--app N | --file P]             a remote machine, OS auto-detected
+
+Common: --url http://host:7333   --topic <override>
+android: --serial pins a device (ANDROID_SERIAL is honoured too); emulator vs
+         hardware is detected, not guessed. --app/--pid scope to one process -
+         an unscoped system log can be hundreds of lines a second.
+formats: nginx nginx-access apache postgres redis mongodb log4j rocksdb generic
+See tailers/README.md.`);
+  process.exit(mode ? 0 : 2);
+}
 
 const url = opt('url', process.env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333');
 const serial = opt('serial');
@@ -311,6 +332,17 @@ const winEventLine = (origin) => (line) => {
   );
 };
 
+// A short adb question with a string answer ("" when adb is absent, the
+// device is gone, or the property does not exist). Never throws: every
+// caller is asking to make a better default, not to gate the run.
+function adbOut(adbArgs, ...cmd) {
+  const r = spawnSync('adb', [...adbArgs, ...cmd], { encoding: 'utf8', timeout: 5000 });
+  if (r.error || r.status !== 0)
+    return '';
+  const out = (r.stdout ?? '').trim();
+  return /^(unknown|error:|adb:)/i.test(out) ? '' : out;
+}
+
 function run(cmd, cmdArgs, onLine) {
   const child = spawn(cmd, cmdArgs, { stdio: ['ignore', 'pipe', 'inherit'] });
   child.on('error', (e) => {
@@ -332,13 +364,47 @@ function run(cmd, cmdArgs, onLine) {
 let topic;
 
 if (mode === 'android') {
-  // Hardware serials are not "emulator-*"; the topic follows the device.
-  const isEmulator = !serial || serial.startsWith('emulator-');
+  // Which device, really. --serial wins; otherwise honour ANDROID_SERIAL
+  // (adb does, so a caller who set it means it); otherwise ask adb which
+  // single device is attached. Guessing "no flag means emulator" was wrong
+  // and put hardware on the emulator topic.
+  const adbSerial = serial ?? process.env.ANDROID_SERIAL ?? adbOut([], 'get-serialno');
+  const adbArgs = adbSerial ? ['-s', adbSerial] : [];
+
+  // Serial shape is a hint, not proof - ask the device. An emulator answers
+  // 1 to ro.kernel.qemu (or ro.boot.qemu on newer images).
+  const emuProp = adbOut(adbArgs, 'shell', 'getprop', 'ro.kernel.qemu') ||
+                  adbOut(adbArgs, 'shell', 'getprop', 'ro.boot.qemu');
+  const isEmulator = adbSerial.startsWith('emulator-') || emuProp === '1' ||
+                     adbOut(adbArgs, 'shell', 'getprop', 'ro.build.characteristics')
+                       .includes('emulator');
+
   topic = opt('topic', isEmulator ? 'expo.android.emu' : 'expo.android.device');
-  const origin = rnOrigin('android', serial ?? 'emulator');
-  const adbArgs = serial ? ['-s', serial] : [];
+  const model = adbOut(adbArgs, 'shell', 'getprop', 'ro.product.model');
+  const origin = rnOrigin('android', model || adbSerial || (isEmulator ? 'emulator' : 'android'));
+
+  // Scope to one app, or logcat is the whole system: an OEM handset can
+  // push hundreds of unrelated ERROR lines a second and bury the app you
+  // came to read. --app resolves the pid; --pid takes one directly.
+  const appPkg = opt('app');
+  let pid = opt('pid');
+  if (appPkg && !pid) {
+    pid = adbOut(adbArgs, 'shell', 'pidof', '-s', appPkg);
+    if (!pid) {
+      console.error(`superlog-tail: ${appPkg} is not running on ${adbSerial || 'the device'} - ` +
+                    `start it and re-run, or pass --pid. Tailing unscoped for now.`);
+    }
+  }
+  const scope = pid ? [`--pid=${pid}`] : [];
+  if (!pid)
+    console.error('superlog-tail: android with no --app/--pid is the whole system log - expect volume');
+
+  console.error(`superlog-tail: android ${adbSerial || '(single device)'}` +
+                `${isEmulator ? ' [emulator]' : ' [hardware]'}` +
+                `${pid ? ` pid ${pid}` : ''} -> ${topic}`);
+
   // threadtime: "08-22 13:01:02.345  1234  5678 I ReactNativeJS: hello"
-  run('adb', [...adbArgs, 'logcat', '-v', 'threadtime'], (line) => {
+  run('adb', [...adbArgs, 'logcat', '-v', 'threadtime', ...scope], (line) => {
     const m = line.match(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+\s+([VDIWEF])\s+([^:]+):\s?(.*)$/);
     if (m) {
       push(baseEvent(LOGCAT_LEVEL[m[1]] ?? 'INFO', m[3], origin, m[2].trim()));

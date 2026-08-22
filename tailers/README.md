@@ -148,3 +148,20 @@ The in-app `@super-log/client` SDK is always the better source (structured
 fields, sessions, real levels). A tailer and the SDK publishing to the *same
 topic* at the same time will double-report the app's own console lines — run
 one or the other per device.
+
+### Scoping the Android tailer
+
+`logcat` is the whole **system** log, not your app's: an OEM handset can push
+600+ lines a second, most of it vendor services, and it will bury the app you
+came to read. Scope it:
+
+```sh
+node bin/superlog-tail.mjs android --app com.example.app   # resolves the pid
+node bin/superlog-tail.mjs android --pid 12345             # if you have it
+```
+
+Emulator vs hardware is **detected**, not guessed - the serial shape, then
+`ro.kernel.qemu` / `ro.build.characteristics` - so a handset pinned with
+`ANDROID_SERIAL` (which adb honours, and so does this tailer) lands on
+`expo.android.device`, not the emulator topic. `--serial` still wins, and
+`origin.device` carries the real model.
