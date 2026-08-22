@@ -21,6 +21,7 @@
     "tail:app": "node tailers/bin/superlog-tail.mjs app",
     "journal": "node tailers/bin/superlog-journal.mjs",
     "net": "node tailers/bin/superlog-net.mjs",
+    "mcp": "node sdk/js/packages/mcp/bin/superlog-mcp.mjs",
     "demo": "./demo/run.sh",
     "demo:ios": "node demo/js/clock.mjs ios",
     "demo:android": "node demo/js/clock.mjs android",

@@ -64,8 +64,11 @@ all streams in one totally-ordered view.
 - **Readable by scripts and agents.** `GET /recent?since=<cursor>&level=ERROR`
   answers "what happened since I last looked" over plain HTTP, with a
   cursor that never misses or repeats an event and a hard cap so nothing
-  gets handed the whole firehose. A coding agent debugging your app can
-  poll it with `curl`.
+  gets handed the whole firehose. For coding agents there is also an **MCP
+  server** ([sdk/js/packages/mcp](sdk/js/packages/mcp)) — register it once
+  and every project's agent can check the hub, list streams, tail and
+  search filtered logs, and *wait* for an event after triggering an action
+  instead of sleeping and hoping.
 - **Off in production, by construction.** Every SDK requires you to declare
   DEVELOPMENT or PRODUCTION (neither or both refuses to build), and each
   mode ships only what its policy allows. Production defaults to shipping
@@ -198,7 +201,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `hub/`          | `superlogd` - the one process everything meets at |
 | `sdk/cpp/`      | header-only: `snicholls::log` forward sink + spdlog sink |
 | `sdk/rust/`     | `super-log` crate: core + `tracing` layer |
-| `sdk/js/`       | `@super-log/client` - React Native, browser, Node |
+| `sdk/js/`       | `@super-log/client` - React Native, browser, Node; `@super-log/mcp` - the agent-facing MCP server |
 | `tailers/`      | zero-app-change scrapers: adb, simctl, OS logs, ssh, journal |
 | `viewer/imgui/` | native viewer |
 | `viewer/react/` | web viewer |

@@ -1,0 +1,17 @@
+{
+  "name": "@super-log/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server: let a coding agent query the super-log bench",
+  "author": "Saxon Herschel Nicholls",
+  "type": "module",
+  "bin": {
+    "superlog-mcp": "bin/superlog-mcp.mjs"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
