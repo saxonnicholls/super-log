@@ -63,6 +63,12 @@ export interface SuperLogOptions {
    *  native fetch where there is one. Never logs bodies, and redacts
    *  credential-shaped query values from URLs. */
   patchNetwork?: boolean;
+  /** Emit a TRACE breadcrumb every time an Error is CONSTRUCTED, whoever
+   *  constructs it - so an exception that third-party code throws and your
+   *  code catches and displays still reaches the bench, even though it was
+   *  never uncaught and nobody logged it. Off by default; see
+   *  captureErrorConstruction() for what it can and cannot see. */
+  captureErrorConstruction?: boolean;
   /** Log every uncaught exception and unhandled rejection (default true).
    *  Installs the right global hook for the runtime - React Native's
    *  ErrorUtils, the browser's error/unhandledrejection events, Node's
@@ -89,6 +95,53 @@ const RANK: Record<Level, number> = {
   TRACE: 1, DEBUG: 2, INFO: 3, WARN: 4, ERROR: 5, CRITICAL: 6,
 };
 const OFF_RANK = 7;
+
+/** Suppresses repeats and floods. Two limits, because they answer different
+ *  problems: dedupe stops the same error saying the same thing a thousand
+ *  times, and the bucket stops a thousand *different* errors from a hot
+ *  loop burying every other stream. Suppressed counts are reported when the
+ *  key next passes, so the bench says "and 412 more" rather than lying by
+ *  omission. */
+class RateLimiter {
+  private seen = new Map<string, { at: number; suppressed: number }>();
+  private tokens: number;
+  private refilled = Date.now();
+
+  constructor(
+    private readonly dedupeMs = 5000,
+    private readonly perSecond = 20,
+    private readonly burst = 40,
+  ) {
+    this.tokens = burst;
+  }
+
+  /** null = drop it. A number = emit, and that many were suppressed since
+   *  this key last passed. */
+  admit(key: string, now = Date.now()): number | null {
+    const prior = this.seen.get(key);
+    if (prior && now - prior.at < this.dedupeMs) {
+      prior.suppressed++;
+      return null;
+    }
+    // Refill before spending, so a quiet period restores the burst.
+    this.tokens = Math.min(this.burst, this.tokens + ((now - this.refilled) / 1000) * this.perSecond);
+    this.refilled = now;
+    if (this.tokens < 1) {
+      if (prior) prior.suppressed++;
+      else this.seen.set(key, { at: 0, suppressed: 1 });
+      return null;
+    }
+    this.tokens -= 1;
+    const suppressed = prior?.suppressed ?? 0;
+    this.seen.set(key, { at: now, suppressed: 0 });
+    // Keep the key table from growing without bound on unbounded messages.
+    if (this.seen.size > 500) {
+      const cutoff = now - this.dedupeMs * 4;
+      for (const [k, v] of this.seen) if (v.at < cutoff) this.seen.delete(k);
+    }
+    return suppressed;
+  }
+}
 
 /** The wire header carrying a correlation id between tiers (PROTOCOL.md). */
 export const TRACE_HEADER = 'X-Superlog-Trace';
@@ -167,6 +220,7 @@ export class SuperLog {
   private netRestore: (() => void) | undefined;
   private pending: Promise<void> | undefined;
   private currentTrace: string | undefined;
+  private errorCtorRestore: (() => void) | undefined;
 
   constructor(opts: SuperLogOptions) {
     // DEVELOPMENT xor PRODUCTION, enforced - a logging pipeline you *think*
@@ -213,6 +267,7 @@ export class SuperLog {
     if (opts.patchConsole) this.patchConsole();
     if (opts.captureUncaught !== false) this.captureUncaught();
     if (opts.patchNetwork) this.patchNetwork();
+    if (opts.captureErrorConstruction) this.captureErrorConstruction();
   }
 
   log(level: Level, msg: string, fields?: EventFields, tag?: string): void {
@@ -582,6 +637,94 @@ export class SuperLog {
     return this.netRestore;
   }
 
+  /** Breadcrumb every Error construction, so an exception that library code
+   *  throws and your code catches and renders still reaches the bench.
+   *  Returns an uninstall function; close() also uninstalls.
+   *
+   *  Be clear about what this is. It is a SAFETY NET, not a guarantee:
+   *   - Errors constructed by the engine itself (`undefined.foo` throwing a
+   *     TypeError) may never pass through the JS Error constructor,
+   *     especially on Hermes - so the faults that are hardest to find are
+   *     the ones it is weakest at.
+   *   - Things thrown that are not Errors - a string, a `{message}` from a
+   *     native bridge, a GraphQL errors array - are invisible to it by
+   *     definition.
+   *   - `class X extends Error` captures Error when the class is DEFINED,
+   *     so classes defined before this call still reach the original. Call
+   *     it early, before importing the libraries you want to observe.
+   *  The guarantee for "nothing renderable is missing" is a chokepoint
+   *  where errors are DISPLAYED, calling exception(). This complements it.
+   *
+   *  Construction is not evidence of a problem - libraries build Errors as
+   *  control flow, in retry loops and feature detection - so breadcrumbs
+   *  are TRACE, deduped, and rate-limited. Under a policy above TRACE they
+   *  cost one compare and vanish. */
+  captureErrorConstruction(): () => void {
+    if (!this.enabled || this.errorCtorRestore) return this.errorCtorRestore ?? (() => {});
+    const g = globalThis as Record<string, unknown>;
+    const RealError = g.Error as ErrorConstructor;
+    if (typeof RealError !== 'function') return () => {};
+
+    const limiter = new RateLimiter();
+    let inside = false; // our own logging must not re-enter through an Error
+
+    const breadcrumb = (err: unknown, ctorName?: string) => {
+      if (inside) return;
+      const e = err as { name?: string; message?: string; stack?: string };
+      const frames = (e?.stack ?? '').split('\n');
+      // The subclass name comes from newTarget, not from the instance: we
+      // are running inside super(), before `this.name = 'FfiException'`
+      // has happened, so the instance still calls itself Error. Which
+      // class threw is the whole identifying detail, so prefer newTarget.
+      const name =
+        ctorName && ctorName !== 'Error' ? ctorName : (e?.name ?? 'Error');
+      // Key on identity, not on the whole stack: the same fault from the
+      // same place should collapse even as line noise varies.
+      const key = `${name}:${e?.message ?? ''}:${(frames[1] ?? '').trim()}`;
+      const suppressed = limiter.admit(key);
+      if (suppressed === null) return;
+      inside = true;
+      try {
+        const fields: EventFields = { where: 'constructed' };
+        if (e?.stack) fields.stack = frames.slice(0, MAX_STACK_LINES).join('\n');
+        if (suppressed > 0) fields.suppressed = String(suppressed);
+        this.log(
+          'TRACE',
+          `constructed ${name}: ${e?.message ?? ''}` +
+            (suppressed > 0 ? ` (+${suppressed} suppressed)` : ''),
+          fields,
+          'exception',
+        );
+      } finally {
+        inside = false;
+      }
+    };
+
+    // A Proxy, not a replacement function. Reflect.construct with the
+    // original newTarget is what keeps `class X extends Error` working:
+    // the instance still gets X.prototype, and instanceof still holds,
+    // which a constructor that returned its own object would break.
+    const proxy = new Proxy(RealError, {
+      construct(target, argArray, newTarget) {
+        const err = Reflect.construct(target, argArray as unknown[], newTarget);
+        breadcrumb(err, (newTarget as { name?: string })?.name);
+        return err;
+      },
+      apply(target, thisArg, argArray) {
+        const err = Reflect.apply(target, thisArg, argArray as unknown[]);
+        breadcrumb(err);
+        return err;
+      },
+    });
+    g.Error = proxy;
+
+    this.errorCtorRestore = () => {
+      g.Error = RealError;
+      this.errorCtorRestore = undefined;
+    };
+    return this.errorCtorRestore;
+  }
+
   /** Install the runtime's global error hooks. Chains to whatever was
    *  there, so nothing that used to happen stops happening: RN still shows
    *  the red box, the browser still logs to its console, Node still exits.
@@ -691,6 +834,7 @@ export class SuperLog {
     this.consoleRestore?.();
     this.uncaughtRestore?.();
     this.netRestore?.();
+    this.errorCtorRestore?.();
     await this.flush();
   }
 

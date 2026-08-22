@@ -134,3 +134,42 @@ Note this is the app's own traffic. **Android logcat does not contain HTTP
 calls** — across ~20k lines of every logcat buffer on a real handset only
 30 even mentioned a URL, and those were config strings. Instrument the app,
 or front the service with `superlog-net`.
+
+## Catching exceptions nobody logs
+
+The hardest class to see is an exception that third-party code throws and
+your code **catches and displays**: never uncaught, never `console.error`'d,
+invisible to every global hook. Two layers, and they are not the same thing:
+
+**The guarantee — capture where errors are DISPLAYED.** Make one component
+or function the sanctioned way to show an error, and log there:
+
+```js
+function ErrorNotice({ error, where }) {
+  useEffect(() => { slog.exception(error, where ?? 'rendered'); }, [error]);
+  return <Text style={styles.error}>{messageOf(error)}</Text>;
+}
+```
+
+Render sites are countable; catch sites are not, and grow with every branch.
+This also catches what is thrown but is not an `Error` at all — a string, a
+`{message}` from a native bridge, a GraphQL errors array.
+
+**The safety net — `captureErrorConstruction: true`.** A TRACE breadcrumb
+whenever *anyone* constructs an Error, so a throw is visible even if nothing
+renders or logs it. Deduped and rate-limited, because construction is not
+evidence of a problem: libraries build Errors as control flow. In one test,
+801 constructed errors produced 40 breadcrumbs, with suppressed counts
+reported rather than silently dropped.
+
+It reports the real class (`constructed FfiException: …`, read from
+`new.target`, since inside `super()` the instance still calls itself
+`Error`) and uses a Proxy so `instanceof`, subclass prototypes and custom
+fields all survive untouched.
+
+Know its limits: errors the **engine** constructs (a `TypeError` from
+`undefined.foo`) may never pass through the JS constructor, especially on
+Hermes; non-Error throws are invisible; and `class X extends Error` captures
+`Error` when the class is *defined*, so install before importing the
+libraries you want to observe. It is a net, not a guarantee — which is why
+the render chokepoint is the guarantee.
