@@ -142,7 +142,39 @@ Two clocks, two counters, and what each is for:
 |------------------------|------|
 | `POST /ingest/:topic`  | ingest an NDJSON chunk → `202` |
 | `GET /ws?topic=<t>`    | subscribe; `*` = firehose |
+| `GET /recent?...`      | pull recent events over plain HTTP (added by superlogd) |
 | `GET /healthz`         | `200 ok` + hub stats JSON (added by superlogd) |
+
+### `GET /recent` — the pull half of the feed
+
+The WebSocket is the real-time path, but it needs a client that can hold a
+socket open. `/recent` answers "what happened since I last looked" over one
+GET, which is what scripts, cron jobs and agents actually want.
+
+| Param    | Default | Meaning |
+|----------|---------|---------|
+| `since`  | `0`     | return events with `id` greater than this |
+| `limit`  | `200`   | maximum events (hard cap 1000 — a reader is never handed the firehose) |
+| `topic`  | all     | exact topic, or a prefix ending in `.` (`cpp.` matches `cpp.clock`), or `*` |
+| `level`  | all     | minimum level: `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` |
+
+```json
+{
+  "events": [
+    {"id": 42, "seq": 7, "topic": "cpp.clock", "event": {"v":1, "level":"INFO", "msg":"tick 3"}}
+  ],
+  "next": 42, "count": 1, "oldest": 1, "newest": 42, "missed": false
+}
+```
+
+- `id` — superlogd's own per-**event** cursor. Poll with `since=<the last
+  next>` and you will neither miss nor repeat an event.
+- `seq` — the hub frame the event arrived in, so `/recent` lines up with the
+  WebSocket feed. One POSTed chunk is many events, so ids share a seq.
+- `next` advances past filtered-out events too, so a `level=ERROR` poller
+  does not re-scan the quiet events every time.
+- `missed` — true when the ring moved past `since`: that reader lost events.
+  Ring depth is 5000 events (`SUPER_LOG_RECENT`).
 
 Default port **7333** (`SUPER_LOG_PORT` overrides).
 

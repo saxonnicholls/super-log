@@ -61,6 +61,11 @@ all streams in one totally-ordered view.
   as JSON, CSV, or plain text. For continuous capture, `npm run journal`
   appends every frame verbatim to size-rotated NDJSON — lossless, and
   replayable later.
+- **Readable by scripts and agents.** `GET /recent?since=<cursor>&level=ERROR`
+  answers "what happened since I last looked" over plain HTTP, with a
+  cursor that never misses or repeats an event and a hard cap so nothing
+  gets handed the whole firehose. A coding agent debugging your app can
+  poll it with `curl`.
 - **Off in production, by construction.** Every SDK requires you to declare
   DEVELOPMENT or PRODUCTION (neither or both refuses to build), and each
   mode ships only what its policy allows. Production defaults to shipping
