@@ -7,7 +7,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
 
-const HUB = import.meta.env.VITE_SUPERLOG_URL ?? 'http://127.0.0.1:7333';
+// The hub lives on whichever machine served this page - true for the demo,
+// for scripts/dev.sh, and for anyone who opened the viewer over the LAN. A
+// hardcoded 127.0.0.1 meant "the machine I am *viewing* from", so opening
+// the viewer from a second machine silently talked to its own loopback.
+// ?hub=http://host:7333 overrides ad hoc; VITE_SUPERLOG_URL at build time.
+const HUB =
+  new URLSearchParams(window.location.search).get('hub') ??
+  import.meta.env.VITE_SUPERLOG_URL ??
+  `${window.location.protocol}//${window.location.hostname}:7333`;
 
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'] as const;
 const LEVEL_COLOR: Record<string, string> = {
