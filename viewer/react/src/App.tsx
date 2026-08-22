@@ -130,6 +130,12 @@ export default function App() {
           {visible.length}/{source.length}
           {paused && ` · live ${rows.length}`}
         </span>
+        {/* Which viewer build, and which hub it decided to talk to - the two
+            things you want when the screen is not showing what you expect. */}
+        <span style={{ color: '#3d434d', marginLeft: 'auto' }}
+              title={`viewer build ${__SUPERLOG_BUILD__}\nhub ${HUB}`}>
+          {HUB.replace(/^https?:\/\//, '')} · build {__SUPERLOG_BUILD__.slice(5)}
+        </span>
       </header>
 
       <main style={{ flex: 1, overflowY: 'auto', padding: '4px 12px' }}>

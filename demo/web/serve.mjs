@@ -37,7 +37,12 @@ createServer(async (req, res) => {
     return;
   }
   try {
-    res.writeHead(200, { 'content-type': hit[1] }).end(await readFile(join(root, hit[0])));
+    // no-store: this server hands out the page and the built client, and a
+    // browser holding an old copy of either is a debugging session spent
+    // on a bug that was already fixed.
+    res
+      .writeHead(200, { 'content-type': hit[1], 'cache-control': 'no-store, must-revalidate' })
+      .end(await readFile(join(root, hit[0])));
   } catch (e) {
     res.writeHead(500).end(String(e)); // most likely: client dist not built yet
   }

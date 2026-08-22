@@ -1,0 +1,31 @@
+{
+  "//": "Copy to fleet.json (gitignored) and edit. Every stream is PULLED over ssh from the machine running superlog-fleet: the servers need no agent, no open port, and no route to the hub, so the hub can stay loopback-bound.",
+  "url": "http://127.0.0.1:7333",
+  "hosts": [
+    {
+      "//": "A plain box: just its OS logs. `name` is the topic name - use a role, not the provider's hostname. os.<name>",
+      "ssh": "web1.example.com",
+      "name": "web1",
+      "os": true
+    },
+    {
+      "//": "A busy box. `unit` scopes the OS stream to one service; apps come from the log-path catalog; docker follows container stdout.",
+      "ssh": "deploy@10.0.1.20",
+      "name": "api",
+      "os": true,
+      "unit": "myapp",
+      "apps": ["nginx", "postgres"],
+      "files": ["/srv/app/current/log/production.log"],
+      "docker": ["api", "worker"]
+    },
+    {
+      "//": "A box with no ~/.ssh/config entry: an IP and a key is a complete answer.",
+      "ssh": "ubuntu@203.0.113.10",
+      "name": "notifier",
+      "identity": "~/.ssh/id_ed25519",
+      "port": 22,
+      "sshOpts": ["StrictHostKeyChecking=accept-new"],
+      "os": true
+    }
+  ]
+}

@@ -27,3 +27,6 @@ superlog-journal/
 
 # clangd
 .cache/
+
+# Fleet config: real hostnames and keys, never committed
+fleet.json

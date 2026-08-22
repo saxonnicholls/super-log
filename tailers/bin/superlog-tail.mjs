@@ -293,6 +293,10 @@ const fmtFor = (file, fallback) => {
 const fileLabel = (p) =>
   sanitizePart(p.split('/').filter(Boolean).slice(-2).join('.').replace(/\.log$/, ''));
 
+// `docker logs --timestamps` prefixes RFC3339Nano + space. Keep the line
+// itself for the format parsers, which expect the service's own shape.
+const stripDockerTs = (line) => line.replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z?\s/, '');
+
 const fileLine = (origin, fmt, tag, toTopic) => (line) => {
   if (!line.trim()) return;
   const g = FILE_FORMATS[fmt]?.(line) ?? FILE_FORMATS.generic(line);
@@ -591,6 +595,22 @@ if (mode === 'android') {
       children.forEach((c) => c.kill('SIGTERM'));
       void flush().then(() => process.exit(0));
     });
+} else if (mode === 'docker') {
+  // A container's stdout/stderr, which is where a containerised service
+  // logs whether or not it writes a file. --timestamps so the event keeps
+  // the container's clock rather than the moment we happened to read it.
+  const container = args[1];
+  if (!container || container.startsWith('--')) {
+    console.error('usage: superlog-tail docker <container> [--format F] [--topic T] [--url U]');
+    process.exit(2);
+  }
+  const label = sanitizePart(container);
+  topic = opt('topic', `app.${shortHost()}.${label}`);
+  const fmt = opt('format', guessFormat(container));
+  const origin = osOrigin(process.platform === 'darwin' ? 'macos' : 'linux');
+  const handle = fileLine(origin, fmt, label);
+  run('docker', ['logs', '-f', '--tail', '0', '--timestamps', container],
+      (line) => handle(stripDockerTs(line)));
 } else if (mode === 'ssh') {
   // A remote machine's OS logs, no install on the remote: detect its OS
   // over ssh, spawn the right stream command there, parse here. The logs
@@ -611,11 +631,28 @@ if (mode === 'android') {
   // --file or --app switch the feed from the OS log to app logs there
   const filePath = opt('file');
   const appName = opt('app');
+  const container = opt('docker');
   topic = opt('topic',
-    filePath ? `app.${host}.${fileLabel(filePath)}`
+    container ? `app.${host}.${sanitizePart(container)}`
+      : filePath ? `app.${host}.${fileLabel(filePath)}`
       : appName ? `app.${host}.${sanitizePart(appName)}`
       : `os.${host}`);
-  const SSH_BASE = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-T'];
+  // Not every box has a Host block in ~/.ssh/config, and production boxes
+  // usually have their own key - so the destination is not the only thing
+  // that needs saying. --identity, --ssh-port and repeatable --ssh-opt
+  // pass straight through, which keeps ssh's own config the source of
+  // truth when it has one and unblocks the machines it does not.
+  const identity = opt('identity');
+  const sshPort = opt('ssh-port');
+  const sshOpts = [];
+  for (let i = 0; i < args.length - 1; i++)
+    if (args[i] === '--ssh-opt') sshOpts.push('-o', args[i + 1]);
+  const SSH_BASE = [
+    '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-T',
+    ...(identity ? ['-i', identity] : []),
+    ...(sshPort ? ['-p', String(sshPort)] : []),
+    ...sshOpts,
+  ];
   const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -639,6 +676,15 @@ if (mode === 'android') {
 
   const remoteFor = async (os) => {
     const platform = os === 'darwin' ? 'macos' : os;
+    if (container) {
+      const label = sanitizePart(container);
+      const handle = fileLine(sshOrigin(platform, host), opt('format', guessFormat(container)),
+                              label, topic);
+      return {
+        cmd: `docker logs -f --tail 0 --timestamps ${shq(container)} 2>&1`,
+        onLine: (line) => handle(stripDockerTs(line)),
+      };
+    }
     if (appName) {
       // The catalog's default paths, expanded by the REMOTE shell - ls
       // globs there and keeps what exists. Patterns are our own static

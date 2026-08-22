@@ -44,6 +44,9 @@ export interface SuperLogOptions {
    *  on the wire). Metrics ride at INFO. */
   developmentPolicy?: Level | 'OFF';
   productionPolicy?: Level | 'OFF';
+  /** Suppress the one-line console notice an inert client prints to say
+   *  why it is sending nothing. */
+  quiet?: boolean;
   /** Detected when omitted; RN callers should pass 'ios' | 'android'. */
   platform?: string;
   /** Human-readable, e.g. from expo-device's deviceName. */
@@ -143,6 +146,7 @@ export class SuperLog {
   private readonly origin: { runtime: string; app: string; platform: string; device?: string };
   private readonly enabled: boolean;
   private readonly minRank: number;
+  private readonly policy: Level | 'OFF';
   private buf: string[] = [];
   private seq = 0;
   private droppedCount = 0;
@@ -165,6 +169,7 @@ export class SuperLog {
     // The active mode picks its policy: dev ships everything by default,
     // prod ships nothing until a dev deliberately loosens it.
     const policy = dev ? (opts.developmentPolicy ?? 'TRACE') : (opts.productionPolicy ?? 'OFF');
+    this.policy = policy;
     this.minRank = policy === 'OFF' ? OFF_RANK : RANK[policy];
     this.enabled = this.minRank < OFF_RANK;
     this.opts = { flushMs: 250, maxBatch: 256, maxQueue: 2048, ...opts };
@@ -176,7 +181,20 @@ export class SuperLog {
       platform: opts.platform ?? detectPlatform(),
       ...(opts.device ? { device: opts.device } : {}),
     };
-    if (!this.enabled) return; // production: inert shell, nothing scheduled
+    if (!this.enabled) {
+      // Say so, once. An inert client is indistinguishable from a broken
+      // one: nothing arrives, and dropped() reads 0 because nothing was
+      // ever queued - which reads as healthy. That ambiguity cost a
+      // consuming team a build cycle chasing the network, so a release
+      // build now states why it is quiet. `quiet: true` silences it.
+      if (!opts.quiet)
+        console.info(
+          `super-log: ${prod ? 'production' : 'development'} policy is OFF - ` +
+            `nothing will be sent to ${opts.url}. Set ` +
+            `${prod ? 'productionPolicy' : 'developmentPolicy'} (e.g. 'ERROR') to change that.`,
+        );
+      return; // inert shell, nothing scheduled
+    }
     this.timer = setInterval(() => void this.flush(), this.opts.flushMs);
     // Node: a log timer must never keep the process alive
     (this.timer as { unref?: () => void }).unref?.();
@@ -223,9 +241,37 @@ export class SuperLog {
     );
   }
 
-  /** Events dropped locally because the buffer was full or a POST failed. */
+  /** Events dropped locally because the buffer was full or a POST failed.
+   *  Note that 0 does NOT mean healthy: an inert client never queues, so it
+   *  never drops. Use status() to tell "sending nothing on purpose" from
+   *  "sending and failing". */
   dropped(): number {
     return this.droppedCount;
+  }
+
+  /** What this client actually resolved to - the first thing to print when
+   *  events are not arriving. `enabled: false` means the build's policy
+   *  turned it off, not that the network is broken. */
+  status(): {
+    enabled: boolean;
+    mode: 'development' | 'production';
+    policy: Level | 'OFF';
+    url: string;
+    topic: string;
+    session: string;
+    buffered: number;
+    dropped: number;
+  } {
+    return {
+      enabled: this.enabled,
+      mode: this.opts.development === true ? 'development' : 'production',
+      policy: this.policy,
+      url: this.opts.url,
+      topic: this.opts.topic,
+      session: this.session,
+      buffered: this.buf.length,
+      dropped: this.droppedCount,
+    };
   }
 
   /** Send what is buffered now. Called on a timer; call it yourself before exit.
