@@ -100,6 +100,7 @@ generate.
 | `level`   | string | `"INFO"`     | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` |
 | `origin`  | object | absent       | who is speaking: `runtime` (`cpp` `rust` `js` `node` `react` `react-native` `web`), `app`, `platform` (`ios` `android` `macos` `linux` `windows` `web`), `device` (human-readable) |
 | `tag`     | string | absent       | logical channel/logger name — spdlog logger name, tracing target, RN component |
+| `trace`   | string | absent       | correlation id: the same value on every event caused by one user action, across every stream. See below |
 | `msg`     | string | **required** | the line |
 | `fields`  | object | absent       | structured extras, string values |
 | `metric`  | object | absent       | telemetry riding the same pipeline (mirrors `snicholls::log::record::is_metric`): `{name, value}` — `msg` may be empty then |
@@ -111,6 +112,29 @@ extra keys, and a payload line that is not JSON at all — the last becomes
 `INFO`). Producers should be strict; readers must be forgiving. This is what
 lets a dumb `adb logcat` tailer share a pipeline with a structured spdlog
 sink.
+
+## Correlation: following one action across every stream
+
+A tap on a phone becomes an HTTP request, a database write, a chain call
+and four log streams. `trace` is what says they are the same story.
+
+- **One id per user action**, minted wherever the action starts (usually
+  the app), and carried unchanged by everything it causes. It is opaque:
+  16 hex characters here, but any short string a producer sets is legal.
+- **Over the wire it is the `X-Superlog-Trace` header.** A client puts it
+  on outbound HTTP; a server adopts it for the logs of that request and
+  passes it on. Anything that cannot read the header simply has no
+  `trace`, which is the tolerant-reader rule again — correlation is a
+  bonus on an event, never a requirement.
+- **Readers filter by it**: `GET /recent?trace=<id>`, the viewers' trace
+  filter, and `tail_logs(trace:)` in the MCP server. One id answers "show
+  me everything that happened when the user pressed Send", in hub order,
+  across the phone, the API and the box that actually failed.
+
+Deliberately *not* a span tree. Parent/child nesting is what a tracing
+system does, and this is a log bench: one flat id per action makes the
+common question cheap to ask and cheap to implement in four languages. If
+nesting ever earns its keep it goes in a `span` field beside this one.
 
 ## Level mappings
 

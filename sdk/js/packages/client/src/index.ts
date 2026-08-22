@@ -90,6 +90,17 @@ const RANK: Record<Level, number> = {
 };
 const OFF_RANK = 7;
 
+/** The wire header carrying a correlation id between tiers (PROTOCOL.md). */
+export const TRACE_HEADER = 'X-Superlog-Trace';
+
+/** A fresh correlation id: short, opaque, and enough entropy that two
+ *  actions on two devices will not collide inside one bench session. */
+export function newTraceId(): string {
+  return (
+    Math.random().toString(16).slice(2, 10) + Math.random().toString(16).slice(2, 10)
+  ).padEnd(16, '0');
+}
+
 // Deep enough to find the throw, short enough not to ship a book per crash.
 const MAX_STACK_LINES = 40;
 // How long a dying process waits for its last batch. Long enough for a
@@ -155,6 +166,7 @@ export class SuperLog {
   private uncaughtRestore: (() => void) | undefined;
   private netRestore: (() => void) | undefined;
   private pending: Promise<void> | undefined;
+  private currentTrace: string | undefined;
 
   constructor(opts: SuperLogOptions) {
     // DEVELOPMENT xor PRODUCTION, enforced - a logging pipeline you *think*
@@ -214,6 +226,7 @@ export class SuperLog {
       origin: this.origin,
       msg,
     };
+    if (this.currentTrace) ev.trace = this.currentTrace;
     if (tag) ev.tag = tag;
     if (fields && Object.keys(fields).length) ev.fields = fields;
     this.push(JSON.stringify(ev));
@@ -343,6 +356,69 @@ export class SuperLog {
     return this.consoleRestore;
   }
 
+  // ------------------------------------------------------ correlation
+  //
+  // One id per user action, carried by everything that action causes -
+  // including across the network, where patchNetwork puts it on the
+  // X-Superlog-Trace header for a server to adopt. See PROTOCOL.md.
+  //
+  // The current trace is a single value rather than async-local storage on
+  // purpose: RN and browsers have no AsyncLocalStorage, and a logger that
+  // behaves differently on three runtimes is worse than one whose rule is
+  // simple. `trace()` scopes it around a callback (including an async one,
+  // via the returned promise), and setTrace/clearTrace cover the cases
+  // where the action's boundaries are not a function call.
+
+  /** Start correlating: everything logged from here until clearTrace, and
+   *  every outbound HTTP call, carries this id. Returns the id. */
+  setTrace(id: string = newTraceId()): string {
+    this.currentTrace = id;
+    return id;
+  }
+
+  /** Stop correlating. */
+  clearTrace(): void {
+    this.currentTrace = undefined;
+  }
+
+  /** The id in force right now, if any - pass it across a boundary the
+   *  client cannot see (a worker message, a queue job). */
+  traceId(): string | undefined {
+    return this.currentTrace;
+  }
+
+  /** Run `fn` with a trace in force, restoring whatever was there before.
+   *  Awaits and restores correctly for an async `fn`. (Named withTrace,
+   *  not trace: trace() is the TRACE-level logger.) */
+  withTrace<T>(fn: (id: string) => T, id: string = newTraceId()): T {
+    const previous = this.currentTrace;
+    this.currentTrace = id;
+    let result: T;
+    try {
+      result = fn(id);
+    } catch (e) {
+      this.currentTrace = previous;
+      throw e;
+    }
+    // Hold the trace for the whole async body, not just its synchronous
+    // head, or everything after the first await loses correlation.
+    const p = result as unknown as Promise<unknown>;
+    if (p && typeof (p as { then?: unknown }).then === 'function') {
+      return (p as Promise<unknown>).then(
+        (v) => {
+          this.currentTrace = previous;
+          return v;
+        },
+        (e) => {
+          this.currentTrace = previous;
+          throw e;
+        },
+      ) as unknown as T;
+    }
+    this.currentTrace = previous;
+    return result;
+  }
+
   /** Log an Error with its stack, wherever it came from. `fatal` marks the
    *  ones that ended the process/render rather than merely being caught. */
   exception(err: unknown, where = 'uncaught', fields?: EventFields): void {
@@ -403,10 +479,22 @@ export class SuperLog {
       const proto = XHR.prototype as unknown as Record<string, unknown>;
       const openOrig = proto.open as (...a: unknown[]) => unknown;
       const sendOrig = proto.send as (...a: unknown[]) => unknown;
+      const client = this;
       proto.open = function (this: Record<string, unknown>, method: string, url: string, ...rest: unknown[]) {
         this.__slMethod = method;
         this.__slUrl = url;
-        return openOrig.call(this, method, url, ...rest);
+        const r = openOrig.call(this, method, url, ...rest);
+        // Propagate the trace so the server can log under the same id.
+        // After open(), which is when setRequestHeader becomes legal.
+        const t = client.currentTrace;
+        if (t && !String(url).startsWith(client.opts.url)) {
+          try {
+            (this as unknown as XMLHttpRequest).setRequestHeader(TRACE_HEADER, t);
+          } catch {
+            /* some polyfills disallow it; correlation is a bonus, not a duty */
+          }
+        }
+        return r;
       };
       const self = this;
       proto.send = function (this: Record<string, unknown> & XMLHttpRequest, ...a: unknown[]) {
@@ -442,12 +530,23 @@ export class SuperLog {
           typeof input === 'string' ? input
             : (input as { url?: string })?.url ?? String(input);
         const method = init?.method ?? (input as { method?: string })?.method ?? 'GET';
+        // Propagate the trace, without mutating the caller's init object.
+        const t = this.currentTrace;
+        let fetchInit = init;
+        if (t && !url.startsWith(this.opts.url)) {
+          const headers = new Headers(
+            (init as { headers?: HeadersInit })?.headers ??
+              (input as { headers?: HeadersInit })?.headers,
+          );
+          if (!headers.has(TRACE_HEADER)) headers.set(TRACE_HEADER, t);
+          fetchInit = { ...(init ?? {}), headers } as typeof init;
+        }
         // Not awaited here: the call must be started inside the window so
         // a polyfill's xhr.send() sees insideFetch > 0 and stays quiet.
         let p: Promise<Response>;
         insideFetch++;
         try {
-          p = fetchOrig(input, init);
+          p = fetchOrig(input, fetchInit);
         } finally {
           insideFetch--;
         }

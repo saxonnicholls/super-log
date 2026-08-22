@@ -89,8 +89,9 @@ function formatEvents(data, note) {
   return [...head, ...lines].join('\n') + (lines.length ? tail : '');
 }
 
-function query({ topic, level, since, limit, contains }) {
+function query({ topic, level, since, limit, contains, trace }) {
   const p = new URLSearchParams();
+  if (trace) p.set('trace', trace);
   if (since) p.set('since', String(since));
   // Ask the hub for more than we will show when we still have to filter
   // locally, so `contains` does not come back empty just because the first
@@ -207,6 +208,12 @@ const TOOLS = [
         since: { type: 'number', description: 'Cursor from a previous call; 0 or omitted starts from the oldest kept' },
         limit: { type: 'number', description: `Max events (default ${DEFAULT_LIMIT}, cap ${MAX_LIMIT})` },
         contains: { type: 'string', description: 'Only events whose text contains this (case-insensitive)' },
+        trace: {
+          type: 'string',
+          description:
+            'Follow ONE user action across every stream by its correlation id. This is the ' +
+            'best tool for "what happened when X was pressed" - it deliberately ignores topic.',
+        },
       },
       additionalProperties: false,
     },

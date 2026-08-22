@@ -20,6 +20,8 @@ export interface LogRow {
   seq?: number;
   session?: string;
   tag?: string;
+  /** Correlation id: everything caused by one user action shares it. */
+  trace?: string;
   msg: string;
   fields?: Record<string, string>;
   metric?: { name: string; value: number };
@@ -44,6 +46,7 @@ function parseLine(line: string, hubSeq: number, hubTs: number, topic: string, s
       seq: typeof ev.seq === 'number' ? ev.seq : undefined,
       session: typeof ev.session === 'string' ? ev.session : undefined,
       tag: typeof ev.tag === 'string' ? ev.tag : undefined,
+      trace: typeof ev.trace === 'string' ? ev.trace : undefined,
       fields: ev.fields as Record<string, string> | undefined,
       metric: ev.metric as { name: string; value: number } | undefined,
       origin: ev.origin as LogRow['origin'],

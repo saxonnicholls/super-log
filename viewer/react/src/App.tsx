@@ -36,6 +36,10 @@ export default function App() {
   const [minLevel, setMinLevel] = useState(0);
   const [needle, setNeedle] = useState('');
   const [topicFilter, setTopicFilter] = useState<string | null>(null);
+  // Following one action is a different question from filtering a stream:
+  // it deliberately ignores the topic filter, because the answer crosses
+  // streams by definition.
+  const [traceFilter, setTraceFilter] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -52,6 +56,7 @@ export default function App() {
   const visible = useMemo(() => {
     const q = needle.toLowerCase();
     return source.filter((r) => {
+      if (traceFilter) return r.trace === traceFilter;
       const li = LEVELS.indexOf(r.level as (typeof LEVELS)[number]);
       if (li >= 0 && li < minLevel) return false;
       if (topicFilter && r.topic !== topicFilter) return false;
@@ -59,7 +64,7 @@ export default function App() {
         return false;
       return true;
     });
-  }, [source, minLevel, needle, topicFilter]);
+  }, [source, minLevel, needle, topicFilter, traceFilter]);
 
   useEffect(() => {
     if (follow) bottom.current?.scrollIntoView();
@@ -97,6 +102,13 @@ export default function App() {
         <label style={{ userSelect: 'none' }}>
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow
         </label>
+        {traceFilter && (
+          <button onClick={() => setTraceFilter(null)}
+                  style={{ ...selStyle, borderColor: '#bb9af7', color: '#bb9af7' }}
+                  title="stop following this action">
+            ⇢ trace {traceFilter.slice(0, 8)} ✕
+          </button>
+        )}
         <button onClick={clear} style={selStyle}>clear</button>
         {/* copy + export act on the *visible* rows - export follows the
             filters, because that is the view someone just narrowed down to */}
@@ -146,6 +158,11 @@ export default function App() {
             <span style={{ color: '#5c6470' }}>{timeOf(r)}</span>
             <span style={{ color: topicColor(r.topic), minWidth: 130 }}>{r.topic}</span>
             <span style={{ color: LEVEL_COLOR[r.level] ?? '#d6dae2', minWidth: 56 }}>{r.level}</span>
+            {r.trace && (
+              <button className="rowcopy" title={`follow this action (trace ${r.trace})`}
+                      style={{ color: '#bb9af7' }}
+                      onClick={() => setTraceFilter(r.trace ?? null)}>⇢</button>
+            )}
             {r.tag && <span style={{ color: '#8a93a3' }}>[{r.tag}]</span>}
             <span style={{ flex: 1 }}>
               {r.msg}

@@ -89,11 +89,23 @@ int level_of(const std::string& line) noexcept
     return to == std::string::npos ? 3 : level_rank(std::string_view(line).substr(from, to - from));
 }
 
+// Same targeted-scan reasoning as level_of: one field, no parser.
+inline std::string trace_of(const std::string& line)
+{
+    const auto at = line.find("\"trace\":\"");
+    if (at == std::string::npos)
+        return {};
+    const auto from = at + 9;
+    const auto to = line.find('"', from);
+    return to == std::string::npos ? std::string() : line.substr(from, to - from);
+}
+
 struct recent_event {
     std::uint64_t id = 0;
     std::uint64_t seq = 0;                      // the hub frame this arrived in
     std::string topic;
     std::string line;                           // the event, verbatim
+    std::string trace;                          // correlation id, if the producer set one
     int level = 3;
 };
 
@@ -122,6 +134,7 @@ public:
         e.seq = seq;
         e.topic = topic;
         e.level = level_of(line);
+        e.trace = trace_of(line);
         e.line = std::move(line);
         auto& q = topics_[topic];
         q.push_back(std::move(e));
@@ -131,7 +144,8 @@ public:
 
     // Events with id > since, oldest first, at most limit of them.
     std::string query(std::uint64_t since, std::size_t limit,
-                      const std::string& topic, int min_level) const
+                      const std::string& topic, int min_level,
+                      const std::string& trace) const
     {
         std::lock_guard<std::mutex> g(m_);
         // Gather across topics, then order by id: the rings are per-topic
@@ -146,6 +160,12 @@ public:
                 continue;
             for (const auto& e : q) {
                 if (e.id <= since || e.level < min_level)
+                    continue;
+                // A trace query asks one question - "what happened when
+                // this action ran" - so it ignores the topic filter's
+                // usual job of narrowing to a stream: the whole point is
+                // that the answer crosses streams.
+                if (!trace.empty() && e.trace != trace)
                     continue;
                 picked.push_back(&e);
             }
@@ -170,6 +190,7 @@ public:
                    ",\"seq\":" + std::to_string(e->seq) + ",\"topic\":\"";
             snicholls::utils::json_escape(e->topic, out);
             out += "\",\"event\":";
+            (void)0;
             out += e->line;                     // already JSON; carried verbatim
             out += '}';
         }
@@ -277,7 +298,8 @@ int main()
         const std::string level = req.query_param("level");
         r.send(200, "application/json",
                recent.query(since, limit, req.query_param("topic"),
-                            level.empty() ? 1 : level_rank(level)));
+                            level.empty() ? 1 : level_rank(level),
+                            req.query_param("trace")));
     });
 
     srv.get("/healthz", [&hub](const http::request&, http::responder r) {
