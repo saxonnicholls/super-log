@@ -394,6 +394,12 @@ if (mode === 'android') {
   // second eviction wave. --backlog N asks for N lines of history instead.
   const backlog = opt('backlog');
   const since = backlog ? ['-T', String(Number(backlog) || 1)] : ['-T', '1'];
+  // adb reads main,system,crash by default and silently omits radio (RIL,
+  // telephony) and events (the binary system-event buffer) - "all" is the
+  // full picture, and is what you want when the interesting thing is not
+  // in your app. Costs volume, so it is opt-in.
+  const buffers = opt('buffers');
+  const bufArgs = buffers ? ['-b', buffers] : [];
 
   const onLine = (line) => {
     const m = line.match(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+\s+([VDIWEF])\s+([^:]+):\s?(.*)$/);
@@ -424,7 +430,7 @@ if (mode === 'android') {
   process.on('SIGTERM', stop);
 
   const startTail = (scope) => {
-    child = spawn('adb', [...adbArgs, 'logcat', '-v', 'threadtime', ...since, ...scope],
+    child = spawn('adb', [...adbArgs, 'logcat', '-v', 'threadtime', ...bufArgs, ...since, ...scope],
                   { stdio: ['ignore', 'pipe', 'inherit'] });
     child.on('error', (e) => {
       console.error(`superlog-tail: cannot run adb: ${e.message}`);

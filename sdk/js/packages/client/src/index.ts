@@ -53,6 +53,13 @@ export interface SuperLogOptions {
   maxQueue?: number;
   /** Mirror console.log/info/warn/error/debug onto the hub. */
   patchConsole?: boolean;
+  /** Log every HTTP call the app makes - method, URL, status, duration,
+   *  size - as `net.*` events tagged `http`. Off by default: it is the
+   *  loudest thing the client can do. Patches XMLHttpRequest (which is
+   *  what React Native's fetch, axios and most libraries end up using) and
+   *  native fetch where there is one. Never logs bodies, and redacts
+   *  credential-shaped query values from URLs. */
+  patchNetwork?: boolean;
   /** Log every uncaught exception and unhandled rejection (default true).
    *  Installs the right global hook for the runtime - React Native's
    *  ErrorUtils, the browser's error/unhandledrejection events, Node's
@@ -101,6 +108,23 @@ function detectRuntime(): string {
   return p === 'react-native' ? 'react-native' : p === 'node' ? 'node' : 'js';
 }
 
+// Credentials live in query strings more often than anyone admits. The URL
+// is worth having; the token in it is not worth shipping to a dev bench.
+const SECRET_PARAM = /^(token|access_token|id_token|refresh_token|key|api[-_]?key|secret|password|pwd|auth|signature|sig|session)$/i;
+
+function redactUrl(url: string): string {
+  const q = url.indexOf('?');
+  if (q < 0) return url.slice(0, 512);
+  const base = url.slice(0, q);
+  const parts = url.slice(q + 1).split('&').map((kv) => {
+    const eq = kv.indexOf('=');
+    if (eq < 0) return kv;
+    const k = kv.slice(0, eq);
+    return SECRET_PARAM.test(decodeURIComponent(k)) ? `${k}=<redacted>` : kv;
+  });
+  return `${base}?${parts.join('&')}`.slice(0, 512);
+}
+
 function safeString(v: unknown): string {
   if (typeof v === 'string') return v;
   if (v instanceof Error) return v.stack ?? `${v.name}: ${v.message}`;
@@ -125,6 +149,7 @@ export class SuperLog {
   private timer: ReturnType<typeof setInterval> | undefined;
   private consoleRestore: (() => void) | undefined;
   private uncaughtRestore: (() => void) | undefined;
+  private netRestore: (() => void) | undefined;
   private pending: Promise<void> | undefined;
 
   constructor(opts: SuperLogOptions) {
@@ -157,6 +182,7 @@ export class SuperLog {
     (this.timer as { unref?: () => void }).unref?.();
     if (opts.patchConsole) this.patchConsole();
     if (opts.captureUncaught !== false) this.captureUncaught();
+    if (opts.patchNetwork) this.patchNetwork();
   }
 
   log(level: Level, msg: string, fields?: EventFields, tag?: string): void {
@@ -291,6 +317,126 @@ export class SuperLog {
     void this.flush();
   }
 
+  /** Log every HTTP call the app makes. Returns an uninstall function;
+   *  close() also uninstalls.
+   *
+   *  Both fetch and XMLHttpRequest are patched, because different
+   *  libraries use different ones (axios uses XHR, most app code uses
+   *  fetch). The trick is counting each call ONCE: React Native's fetch is
+   *  a polyfill that calls XHR underneath, so a naive pair of patches
+   *  double-logs every RN fetch. The fetch wrapper therefore marks the
+   *  window in which it synchronously kicks off its request, and an XHR
+   *  started inside that window stays quiet and lets fetch report it. */
+  patchNetwork(): () => void {
+    if (!this.enabled || this.netRestore) return this.netRestore ?? (() => {});
+    const g = globalThis as Record<string, unknown>;
+    const undo: Array<() => void> = [];
+
+    const record = (method: string, url: string, status: number, started: number, bytes: number) => {
+      // Never log our own POSTs to the hub, or the client feeds itself.
+      if (!url || url.startsWith(this.opts.url)) return;
+      const ms = Math.round(Date.now() - started);
+      const level: Level = status >= 500 ? 'ERROR' : status >= 400 ? 'WARN' : 'INFO';
+      const fields: EventFields = {
+        method,
+        url: redactUrl(url),
+        status: String(status),
+        ms: String(ms),
+      };
+      if (bytes > 0) fields.bytes = String(bytes);
+      this.log(level, `${method} ${redactUrl(url)} → ${status || 'failed'} in ${ms}ms`, fields, 'http');
+    };
+
+    // >0 while a patched fetch is synchronously starting its request, which
+    // is when a polyfill would call xhr.send(). Read at send() time, not at
+    // loadend, which fires long after.
+    let insideFetch = 0;
+
+    const XHR = g.XMLHttpRequest as (new () => XMLHttpRequest) | undefined;
+    if (XHR?.prototype) {
+      const proto = XHR.prototype as unknown as Record<string, unknown>;
+      const openOrig = proto.open as (...a: unknown[]) => unknown;
+      const sendOrig = proto.send as (...a: unknown[]) => unknown;
+      proto.open = function (this: Record<string, unknown>, method: string, url: string, ...rest: unknown[]) {
+        this.__slMethod = method;
+        this.__slUrl = url;
+        return openOrig.call(this, method, url, ...rest);
+      };
+      const self = this;
+      proto.send = function (this: Record<string, unknown> & XMLHttpRequest, ...a: unknown[]) {
+        const started = Date.now();
+        const viaFetch = insideFetch > 0; // fetch will report this one
+        try {
+          this.addEventListener('loadend', () => {
+            try {
+              if (viaFetch) return;
+              record(String(this.__slMethod ?? 'GET'), String(this.__slUrl ?? ''),
+                     this.status, started,
+                     Number(this.getResponseHeader?.('content-length') ?? 0) || 0);
+            } catch {
+              /* a logger must never break the call it observed */
+            }
+          });
+        } catch {
+          /* no addEventListener (exotic polyfill): skip logging, still send */
+        }
+        return sendOrig.call(this, ...a);
+      };
+      undo.push(() => {
+        proto.open = openOrig;
+        proto.send = sendOrig;
+      });
+    }
+
+    const fetchOrig = g.fetch as ((...a: unknown[]) => Promise<Response>) | undefined;
+    if (typeof fetchOrig === 'function') {
+      g.fetch = (input: unknown, init?: { method?: string }) => {
+        const started = Date.now();
+        const url =
+          typeof input === 'string' ? input
+            : (input as { url?: string })?.url ?? String(input);
+        const method = init?.method ?? (input as { method?: string })?.method ?? 'GET';
+        // Not awaited here: the call must be started inside the window so
+        // a polyfill's xhr.send() sees insideFetch > 0 and stays quiet.
+        let p: Promise<Response>;
+        insideFetch++;
+        try {
+          p = fetchOrig(input, init);
+        } finally {
+          insideFetch--;
+        }
+        return p.then(
+          (res) => {
+            try {
+              record(method, url, res.status, started,
+                     Number(res.headers?.get?.('content-length') ?? 0) || 0);
+            } catch {
+              /* a logger must never break the call it observed */
+            }
+            return res;
+          },
+          (e) => {
+            try {
+              record(method, url, 0, started, 0);
+            } catch {
+              /* never break the call */
+            }
+            throw e; // the caller's error is the caller's, unchanged
+          },
+        );
+      };
+      undo.push(() => {
+        g.fetch = fetchOrig;
+      });
+    }
+
+    this.netRestore = () => {
+      for (const u of undo) u();
+      this.netRestore = undefined;
+    };
+    return this.netRestore;
+  }
+
   /** Install the runtime's global error hooks. Chains to whatever was
    *  there, so nothing that used to happen stops happening: RN still shows
    *  the red box, the browser still logs to its console, Node still exits.
@@ -399,6 +545,7 @@ export class SuperLog {
     this.timer = undefined;
     this.consoleRestore?.();
     this.uncaughtRestore?.();
+    this.netRestore?.();
     await this.flush();
   }
 

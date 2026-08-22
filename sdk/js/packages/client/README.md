@@ -106,3 +106,31 @@ render error is swallowed by React and unmounts the tree, so it never
 becomes an uncaught exception. `<SuperLogProvider>` wraps the tree in an
 error boundary and logs the **component stack** — which component threw,
 which no JS stack contains.
+
+## Logging every network call
+
+`patchNetwork: true` logs every HTTP call the app makes — method, URL,
+status, duration, size — as events tagged `http`, with 4xx as WARN and 5xx
+as ERROR. Off by default: it is the loudest thing the client can do.
+
+```js
+createSuperLog({ ..., patchNetwork: true });
+// GET https://api.example.com/v1/wallet → 200 in 42ms
+```
+
+It patches both `fetch` and `XMLHttpRequest`, because different libraries
+use different ones (axios uses XHR). React Native's `fetch` is a polyfill
+*over* XHR, so a naive pair of patches double-logs every RN fetch; the
+fetch wrapper marks the window in which it starts its request and an XHR
+started inside that window stays quiet. Verified: one fetch-over-XHR plus
+one direct XHR produce exactly two events.
+
+Never logs bodies or headers, and redacts credential-shaped query values
+(`token`, `api_key`, `signature`, …) from URLs — a URL is worth having, the
+token in it is not. Its own POSTs to the hub are excluded, or the client
+would feed itself.
+
+Note this is the app's own traffic. **Android logcat does not contain HTTP
+calls** — across ~20k lines of every logcat buffer on a real handset only
+30 even mentioned a URL, and those were config strings. Instrument the app,
+or front the service with `superlog-net`.
