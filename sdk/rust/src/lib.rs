@@ -234,10 +234,77 @@ impl SuperLog {
         self.s.dropped.load(Ordering::Relaxed)
     }
 
+    /// Log every panic, with its location, then let the previous hook run -
+    /// so the usual message still reaches stderr and any handler already
+    /// installed still fires. Call once at startup:
+    ///
+    /// ```no_run
+    /// # let log = super_log::SuperLog::new(Default::default());
+    /// log.install_panic_hook();
+    /// ```
+    ///
+    /// A panic normally unwinds rather than exiting immediately, so the
+    /// worker gets its chance to POST; on `panic = "abort"` the process
+    /// dies at once and the last batch may not make it - the hook flushes
+    /// what it can, which is the same trade every crash reporter makes.
+    pub fn install_panic_hook(&self) {
+        let log = self.clone();
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // The payload is &str or String for the ordinary panic!/expect
+            // paths; anything else only has its Display via the hook.
+            let msg = info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic".to_string());
+            let loc = info
+                .location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_default();
+            let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+            // Blocking, not queued: this thread is unwinding and will not
+            // be here for the worker's next tick.
+            log.emit_blocking(
+                Level::Critical,
+                &format!("panic: {msg}"),
+                Some(&[("where", "panic"), ("src", loc.as_str()), ("thread", thread.as_str())]),
+            );
+            previous(info);
+        }));
+    }
+
+    /// Serialise and POST one event from THIS thread, bypassing the worker.
+    /// For the dying process: a panicking thread does not survive to the
+    /// worker's next tick, so queueing the event loses it (measured).
+    fn emit_blocking(&self, level: Level, msg: &str, fields: Option<&[(&str, &str)]>) {
+        if level.rank() < self.s.min_rank {
+            return;
+        }
+        let mut body = self.build_event(level, msg, fields, None);
+        body.push('\n');
+        let path = format!("/ingest/{}", self.s.cfg.topic);
+        let _ = http_post(&self.s.cfg.host, self.s.cfg.port, &path, &body);
+    }
+
     fn emit(&self, level: Level, msg: &str, fields: Option<&[(&str, &str)]>, metric: Option<f64>) {
         if level.rank() < self.s.min_rank {
             return; // below this mode's policy: not even serialised
         }
+        let j = self.build_event(level, msg, fields, metric);
+        if self.s.tx.try_send(j).is_err() {
+            self.s.dropped.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn build_event(
+        &self,
+        level: Level,
+        msg: &str,
+        fields: Option<&[(&str, &str)]>,
+        metric: Option<f64>,
+    ) -> String {
         let s = &self.s;
         let seq = s.seq.fetch_add(1, Ordering::Relaxed);
         let mut j = String::with_capacity(160 + msg.len());
@@ -284,9 +351,7 @@ impl SuperLog {
             j.push('}');
         }
         j.push('}');
-        if self.s.tx.try_send(j).is_err() {
-            s.dropped.fetch_add(1, Ordering::Relaxed);
-        }
+        j
     }
 }
 

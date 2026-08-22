@@ -80,3 +80,29 @@ simulator are different streams even when they run the same build, and
   unpatches and flushes.
 - **Do not run a tailer on the same topic** at the same time, or the app's
   console lines are reported twice.
+
+## Logging every uncaught error
+
+On by default (`captureUncaught: false` opts out). The client installs the
+right hook for the runtime and **chains** rather than replaces, so nothing
+that used to happen stops happening:
+
+| Runtime | Hook | Behaviour preserved |
+|---------|------|---------------------|
+| React Native | `ErrorUtils.setGlobalHandler` | the red box still appears; a previously installed handler still runs |
+| Browser | `error` + `unhandledrejection` listeners | passive; the console still reports |
+| Node | `uncaughtException` (or `uncaughtExceptionMonitor` if you already handle it) | still prints the stack, still exits 1 |
+
+Each event is `ERROR`, tagged `exception`, with the stack in
+`fields.stack` (capped at 40 frames) and `fields.where` saying which hook
+caught it. A fatal crash flushes before the process dies — measured, and
+the reason `flush()` waits for an in-flight POST rather than returning on
+an empty buffer.
+
+`slog.exception(err, 'where', {extra})` logs a caught error the same way.
+
+For React, `@super-log/react` adds the part a global hook cannot reach: a
+render error is swallowed by React and unmounts the tree, so it never
+becomes an uncaught exception. `<SuperLogProvider>` wraps the tree in an
+error boundary and logs the **component stack** — which component threw,
+which no JS stack contains.

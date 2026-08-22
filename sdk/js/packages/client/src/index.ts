@@ -53,6 +53,13 @@ export interface SuperLogOptions {
   maxQueue?: number;
   /** Mirror console.log/info/warn/error/debug onto the hub. */
   patchConsole?: boolean;
+  /** Log every uncaught exception and unhandled rejection (default true).
+   *  Installs the right global hook for the runtime - React Native's
+   *  ErrorUtils, the browser's error/unhandledrejection events, Node's
+   *  uncaughtExceptionMonitor - and *chains* rather than swallows, so the
+   *  red box still appears, the browser console still reports, and Node
+   *  still crashes exactly as it would have. */
+  captureUncaught?: boolean;
 }
 
 interface EventFields {
@@ -72,6 +79,12 @@ const RANK: Record<Level, number> = {
   TRACE: 1, DEBUG: 2, INFO: 3, WARN: 4, ERROR: 5, CRITICAL: 6,
 };
 const OFF_RANK = 7;
+
+// Deep enough to find the throw, short enough not to ship a book per crash.
+const MAX_STACK_LINES = 40;
+// How long a dying process waits for its last batch. Long enough for a
+// loopback POST, short enough that a wedged hub cannot hang the exit.
+const FATAL_FLUSH_MS = 1500;
 
 function detectPlatform(): string {
   if (typeof navigator !== 'undefined' && (navigator as { product?: string }).product === 'ReactNative')
@@ -111,6 +124,8 @@ export class SuperLog {
   private droppedCount = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private consoleRestore: (() => void) | undefined;
+  private uncaughtRestore: (() => void) | undefined;
+  private pending: Promise<void> | undefined;
 
   constructor(opts: SuperLogOptions) {
     // DEVELOPMENT xor PRODUCTION, enforced - a logging pipeline you *think*
@@ -141,6 +156,7 @@ export class SuperLog {
     // Node: a log timer must never keep the process alive
     (this.timer as { unref?: () => void }).unref?.();
     if (opts.patchConsole) this.patchConsole();
+    if (opts.captureUncaught !== false) this.captureUncaught();
   }
 
   log(level: Level, msg: string, fields?: EventFields, tag?: string): void {
@@ -186,9 +202,15 @@ export class SuperLog {
     return this.droppedCount;
   }
 
-  /** Send what is buffered now. Called on a timer; call it yourself before exit. */
+  /** Send what is buffered now. Called on a timer; call it yourself before exit.
+   *  With an empty buffer it still awaits a POST already in flight - a
+   *  crashing process calls flush() to mean "make sure it left", and an
+   *  earlier fire-and-forget flush must not let it exit early. */
   async flush(): Promise<void> {
-    if (this.buf.length === 0) return;
+    if (this.buf.length === 0) {
+      await this.pending;
+      return;
+    }
     const lines = this.buf;
     this.buf = [];
     try {
@@ -198,7 +220,7 @@ export class SuperLog {
       // simple request - opaque response, but we never read it anyway, and
       // the hub treats payloads as opaque bytes whatever the content-type.
       const browser = this.origin.runtime === 'js';
-      await fetch(this.ingestUrl, {
+      const post = fetch(this.ingestUrl, {
         method: 'POST',
         body: lines.join('\n'),
         // Let the batch survive a page unload where supported
@@ -207,6 +229,15 @@ export class SuperLog {
           ? { mode: 'no-cors' }
           : { headers: { 'content-type': 'application/x-ndjson' } }),
       } as RequestInit);
+      // Published so a later flush() - a dying process asking "did it
+      // leave?" - can await this exact POST rather than an empty buffer.
+      this.pending = post.then(
+        () => undefined,
+        () => {
+          this.droppedCount += lines.length;
+        },
+      );
+      await this.pending;
     } catch {
       // The hub is down or unreachable; count, don't retry - the next batch
       // will succeed or count again, and a retry queue grows without bound
@@ -232,9 +263,6 @@ export class SuperLog {
         this.log(level, args.map(safeString).join(' '), undefined, 'console');
       };
     }
-    // TODO(M3): RN global error handler - ErrorUtils.setGlobalHandler - and
-    // browser window.onerror / onunhandledrejection, so crashes reach the
-    // bench even when nobody console.error'd them.
     this.consoleRestore = () => {
       const target = console as unknown as Record<string, (...a: unknown[]) => void>;
       for (const [name, orig] of originals) target[name] = orig;
@@ -243,10 +271,134 @@ export class SuperLog {
     return this.consoleRestore;
   }
 
+  /** Log an Error with its stack, wherever it came from. `fatal` marks the
+   *  ones that ended the process/render rather than merely being caught. */
+  exception(err: unknown, where = 'uncaught', fields?: EventFields): void {
+    const e = err as { name?: string; message?: string; stack?: string } | undefined;
+    const name = e?.name ?? 'Error';
+    const message = e?.message ?? safeString(err);
+    const extra: EventFields = { where, ...fields };
+    if (e?.stack) {
+      // The whole stack, but bounded: a deep RN stack can be hundreds of
+      // frames and the point is to identify the throw, not to ship a book.
+      const frames = e.stack.split('\n').slice(0, MAX_STACK_LINES);
+      extra.stack = frames.join('\n');
+      if (e.stack.split('\n').length > MAX_STACK_LINES) extra.stack_truncated = 'true';
+    }
+    this.log('ERROR', `${where}: ${name}: ${message}`, extra, 'exception');
+    // A crash is the one event worth trying to get out immediately - the
+    // process may not survive to the next flush tick.
+    void this.flush();
+  }
+
+  /** Install the runtime's global error hooks. Chains to whatever was
+   *  there, so nothing that used to happen stops happening: RN still shows
+   *  the red box, the browser still logs to its console, Node still exits.
+   *  Returns an uninstall function; close() also uninstalls. */
+  captureUncaught(): () => void {
+    if (!this.enabled || this.uncaughtRestore) return this.uncaughtRestore ?? (() => {});
+    const undo: Array<() => void> = [];
+    const g = globalThis as Record<string, unknown>;
+
+    // React Native. ErrorUtils is RN's own last line of defence; replacing
+    // it without calling the previous handler would kill the red box and
+    // any crash reporter already installed.
+    const EU = g.ErrorUtils as
+      | { getGlobalHandler?: () => (e: unknown, f?: boolean) => void;
+          setGlobalHandler?: (h: (e: unknown, f?: boolean) => void) => void }
+      | undefined;
+    if (EU?.setGlobalHandler) {
+      const prev = EU.getGlobalHandler?.();
+      EU.setGlobalHandler((e, fatal) => {
+        this.exception(e, fatal ? 'fatal' : 'uncaught');
+        prev?.(e, fatal);
+      });
+      undo.push(() => prev && EU.setGlobalHandler?.(prev));
+    }
+
+    // Browser. Listeners are passive - they observe and do not
+    // preventDefault, so the console still shows the error.
+    const w = g.window as
+      | { addEventListener?: (t: string, h: (e: never) => void) => void;
+          removeEventListener?: (t: string, h: (e: never) => void) => void }
+      | undefined;
+    if (w?.addEventListener && typeof g.document !== 'undefined') {
+      const onError = (ev: { error?: unknown; message?: string; filename?: string; lineno?: number }) =>
+        this.exception(ev.error ?? ev.message, 'uncaught', {
+          src: `${String(ev.filename ?? '').split('/').pop() ?? ''}:${ev.lineno ?? 0}`,
+        });
+      const onRejection = (ev: { reason?: unknown }) => this.exception(ev.reason, 'unhandledrejection');
+      w.addEventListener('error', onError as (e: never) => void);
+      w.addEventListener('unhandledrejection', onRejection as (e: never) => void);
+      undo.push(() => {
+        w.removeEventListener?.('error', onError as (e: never) => void);
+        w.removeEventListener?.('unhandledrejection', onRejection as (e: never) => void);
+      });
+    }
+
+    // Node. uncaughtExceptionMonitor exists precisely for observers: it is
+    // called for every uncaught exception and does NOT suppress the default
+    // crash, which a plain 'uncaughtException' listener would - turning a
+    // crash into a zombie process is not a logger's business.
+    const proc = g.process as
+      | { on?: (e: string, h: (...a: never[]) => void) => void;
+          off?: (e: string, h: (...a: never[]) => void) => void;
+          listenerCount?: (e: string) => number;
+          versions?: { node?: string } }
+      | undefined;
+    if (proc?.versions?.node && proc.on) {
+      // A fatal crash is the hard case: the POST is async and Node exits as
+      // soon as the handlers return, so observing with
+      // uncaughtExceptionMonitor logs into a buffer that dies with the
+      // process - measured, not assumed. So when nobody else is handling
+      // uncaughtException we take responsibility for the exit: log, flush,
+      // reproduce Node's own report, exit 1. If the app HAS its own handler
+      // we do not fight it - monitor only, best effort.
+      const owns = (proc.listenerCount?.('uncaughtException') ?? 0) === 0;
+      const onUncaught = (err: unknown) => {
+        this.exception(err, 'uncaught');
+        if (!owns) return;
+        void (async () => {
+          await Promise.race([this.flush(), new Promise((r) => setTimeout(r, FATAL_FLUSH_MS))]);
+          // What Node would have printed, since we suppressed it
+          const e = err as { stack?: string } | undefined;
+          console.error(e?.stack ?? safeString(err));
+          (proc as { exit?: (c: number) => void }).exit?.(1);
+        })();
+      };
+      proc.on(owns ? 'uncaughtException' : 'uncaughtExceptionMonitor',
+              onUncaught as (...a: never[]) => void);
+
+      // No monitor variant exists for rejections, and a listener suppresses
+      // Node's default crash - so log, then re-raise so the uncaught path
+      // above ends the process exactly as Node would have.
+      const onRejection = (reason: unknown) => {
+        this.exception(reason, 'unhandledrejection');
+        if ((proc.listenerCount?.('unhandledRejection') ?? 1) <= 1)
+          setTimeout(() => {
+            throw reason;
+          }, 0);
+      };
+      proc.on('unhandledRejection', onRejection as (...a: never[]) => void);
+      undo.push(() => {
+        proc.off?.(owns ? 'uncaughtException' : 'uncaughtExceptionMonitor',
+                   onUncaught as (...a: never[]) => void);
+        proc.off?.('unhandledRejection', onRejection as (...a: never[]) => void);
+      });
+    }
+
+    this.uncaughtRestore = () => {
+      for (const u of undo) u();
+      this.uncaughtRestore = undefined;
+    };
+    return this.uncaughtRestore;
+  }
+
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
     this.consoleRestore?.();
+    this.uncaughtRestore?.();
     await this.flush();
   }
 

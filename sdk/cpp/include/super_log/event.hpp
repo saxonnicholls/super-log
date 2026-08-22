@@ -143,7 +143,9 @@ inline std::string make_event_json(const char* level, const std::string& msg,
                                    const origin& o, const std::string& session,
                                    std::uint64_t seq,
                                    const std::string& tag = std::string(),
-                                   const std::string& src = std::string())
+                                   const std::string& src = std::string(),
+                                   const std::vector<std::pair<std::string, std::string>>& fields =
+                                       std::vector<std::pair<std::string, std::string>>())
 {
     std::string j = "{\"v\":1,\"ts\":\"";
     j += snicholls::log::detail::format_time(std::chrono::system_clock::now());
@@ -159,6 +161,21 @@ inline std::string make_event_json(const char* level, const std::string& msg,
     detail::append_kv(j, "msg", msg);
     if (!src.empty())
         detail::append_kv(j, "src", src);
+    if (!fields.empty()) {
+        j += ",\"fields\":{";
+        bool first = true;
+        for (const auto& f : fields) {
+            if (!first)
+                j += ',';
+            first = false;
+            j += '"';
+            detail::json_escape(f.first, j);
+            j += "\":\"";
+            detail::json_escape(f.second, j);
+            j += '"';
+        }
+        j += '}';
+    }
     j += '}';
     return j;
 }

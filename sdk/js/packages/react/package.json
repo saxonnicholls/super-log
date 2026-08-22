@@ -1,0 +1,34 @@
+{
+  "name": "@super-log/react",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider + error boundary: every error in a React tree reaches the bench",
+  "author": "Saxon Herschel Nicholls",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepare": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@super-log/client": "*"
+  },
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}

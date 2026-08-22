@@ -158,6 +158,29 @@ public:
 #endif
     }
 
+    // Drain what is queued now, from the calling thread, up to a deadline.
+    // For the dying process: terminate handlers and shutdown paths, where
+    // waiting for the worker's next tick is a tick that never comes. Safe
+    // to call from anywhere EXCEPT a signal handler (it locks and
+    // allocates - see exceptions.hpp on why crashes get stderr instead).
+    void flush_now(std::chrono::milliseconds budget = std::chrono::milliseconds(1500))
+    {
+#if SUPERLOG_ENABLED
+        const auto deadline = std::chrono::steady_clock::now() + budget;
+        for (;;) {
+            std::unique_lock<std::mutex> lk(m_);
+            if (q_.empty())
+                return;
+            drain_one(lk);                      // unlocks around the POST
+            lk.unlock();
+            if (std::chrono::steady_clock::now() >= deadline)
+                return;
+        }
+#else
+        (void)budget;
+#endif
+    }
+
     std::uint64_t dropped() const noexcept { return dropped_.load(std::memory_order_relaxed); }
     std::uint64_t post_failures() const noexcept { return failures_.load(std::memory_order_relaxed); }
 
