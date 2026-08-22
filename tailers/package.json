@@ -1,0 +1,14 @@
+{
+  "name": "@super-log/tailers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-side tailers: adb logcat and simctl log stream onto the super-log hub",
+  "author": "Saxon Herschel Nicholls",
+  "type": "module",
+  "bin": {
+    "superlog-tail": "bin/superlog-tail.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "super-log",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One hub for every log stream on the dev bench",
+  "author": "Saxon Herschel Nicholls",
+  "workspaces": [
+    "sdk/js/packages/*",
+    "tailers",
+    "viewer/react"
+  ],
+  "scripts": {
+    "viewer": "npm run dev --workspace @super-log/viewer-react",
+    "tail:android": "node tailers/bin/superlog-tail.mjs android",
+    "tail:ios-sim": "node tailers/bin/superlog-tail.mjs ios-sim",
+    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

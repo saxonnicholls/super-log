@@ -1,0 +1,18 @@
+[package]
+name = "super-log"
+version = "0.1.0"
+edition = "2021"
+description = "Forward log and tracing events to a super-log hub"
+authors = ["Saxon Herschel Nicholls"]
+publish = false
+
+# The core is dependency-free on purpose: std::net::TcpStream is one connect()
+# from the hub, and hand-rolled JSON escaping is the same trade the C++ SDK
+# makes. Only the tracing bridge pulls crates, and only when asked for.
+[dependencies]
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["registry", "std"] }
+
+[features]
+default = []
+tracing-layer = ["dep:tracing", "dep:tracing-subscriber"]
