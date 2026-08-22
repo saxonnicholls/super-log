@@ -14,6 +14,7 @@
 #include "http/ws_broadcast_hub.hpp"
 #include "logging/logger.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <csignal>
 #include <cstdint>
@@ -22,6 +23,8 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #if !SNICHOLLS_HAS_WS_BROADCAST_HUB
 #error "superlogd needs the ts-moveables WebSocket stack (POSIX-only in phase 1)"
@@ -97,9 +100,17 @@ struct recent_event {
 // Guarded because the ingest route and the /recent route are both server
 // handlers: one loop thread today, but a ring that assumes that is a trap
 // for whoever adds a worker later.
+//
+// One ring PER TOPIC, not one global ring. A single global FIFO means the
+// noisiest producer evicts everyone else: an unscoped Android logcat at
+// 600 lines/second erased a whole phone's worth of evidence from this ring
+// in minutes, and the people debugging the quiet stream had no idea their
+// events had ever arrived. Per-topic rings make a firehose expensive only
+// to itself. `id` stays globally monotonic so one cursor still works
+// across every stream.
 class recent_ring {
 public:
-    explicit recent_ring(std::size_t cap) : cap_(cap) {}
+    explicit recent_ring(std::size_t cap_per_topic) : cap_(cap_per_topic) {}
 
     void record(const std::string& topic, std::uint64_t seq, std::string line)
     {
@@ -112,56 +123,85 @@ public:
         e.topic = topic;
         e.level = level_of(line);
         e.line = std::move(line);
-        q_.push_back(std::move(e));
-        while (q_.size() > cap_)
-            q_.pop_front();
+        auto& q = topics_[topic];
+        q.push_back(std::move(e));
+        while (q.size() > cap_)
+            q.pop_front();
     }
 
     // Events with id > since, oldest first, at most limit of them.
     std::string query(std::uint64_t since, std::size_t limit,
                       const std::string& topic, int min_level) const
     {
-        std::string out = "{\"events\":[";
-        std::uint64_t next = since;
-        std::size_t n = 0;
-        bool first = true;
         std::lock_guard<std::mutex> g(m_);
-        // A reader that was away longer than the ring is deep has missed
-        // events; say so rather than let it believe it saw everything.
-        const bool gap = !q_.empty() && since != 0 && since + 1 < q_.front().id;
-        for (const auto& e : q_) {
-            if (e.id <= since)
+        // Gather across topics, then order by id: the rings are per-topic
+        // but the cursor is global, so a reader still sees one interleaved
+        // stream in publish order.
+        std::vector<const recent_event*> picked;
+        std::uint64_t oldest = 0;
+        for (const auto& [name, q] : topics_) {
+            if (!q.empty() && (oldest == 0 || q.front().id < oldest))
+                oldest = q.front().id;
+            if (!topic_matches(topic, name))
                 continue;
-            if (n >= limit)
-                break;
-            if (e.level < min_level)
-                { next = e.id; continue; }
-            if (!topic.empty() && topic != "*" && e.topic != topic &&
-                !(topic.back() == '.' && e.topic.compare(0, topic.size(), topic) == 0))
-                { next = e.id; continue; }
+            for (const auto& e : q) {
+                if (e.id <= since || e.level < min_level)
+                    continue;
+                picked.push_back(&e);
+            }
+        }
+        std::sort(picked.begin(), picked.end(),
+                  [](const recent_event* a, const recent_event* b) { return a->id < b->id; });
+
+        // Oldest-first, but when there are more matches than the caller
+        // wants it is the NEWEST that matter - keep the tail.
+        const bool truncated = picked.size() > limit;
+        if (truncated)
+            picked.erase(picked.begin(),
+                         picked.begin() + static_cast<std::ptrdiff_t>(picked.size() - limit));
+
+        std::string out = "{\"events\":[";
+        bool first = true;
+        for (const recent_event* e : picked) {
             if (!first)
                 out += ',';
             first = false;
-            out += "{\"id\":" + std::to_string(e.id) +
-                   ",\"seq\":" + std::to_string(e.seq) + ",\"topic\":\"";
-            snicholls::utils::json_escape(e.topic, out);
+            out += "{\"id\":" + std::to_string(e->id) +
+                   ",\"seq\":" + std::to_string(e->seq) + ",\"topic\":\"";
+            snicholls::utils::json_escape(e->topic, out);
             out += "\",\"event\":";
-            out += e.line;                      // already JSON; carried verbatim
+            out += e->line;                     // already JSON; carried verbatim
             out += '}';
-            next = e.id;
-            ++n;
         }
+        // Advance the cursor past everything considered, not just what was
+        // returned, so a filtered poll does not rescan the quiet events.
+        // When truncated, stop at what was actually handed over.
+        const std::uint64_t next =
+            truncated ? picked.back()->id : (last_id_ > since ? last_id_ : since);
+        // A reader away longer than the ring is deep has missed events; say
+        // so rather than let it believe it saw everything.
+        const bool gap = oldest != 0 && since != 0 && since + 1 < oldest;
         out += "],\"next\":" + std::to_string(next) +
-               ",\"count\":" + std::to_string(n) +
-               ",\"oldest\":" + std::to_string(q_.empty() ? 0 : q_.front().id) +
+               ",\"count\":" + std::to_string(picked.size()) +
+               ",\"oldest\":" + std::to_string(oldest) +
                ",\"newest\":" + std::to_string(last_id_) +
+               ",\"truncated\":" + (truncated ? "true" : "false") +
                ",\"missed\":" + (gap ? "true" : "false") + '}';
         return out;
     }
 
 private:
+    // Exact topic, "*"/empty for all, or a prefix ending in '.'
+    static bool topic_matches(const std::string& want, const std::string& name)
+    {
+        if (want.empty() || want == "*" || want == name)
+            return true;
+        return want.back() == '.' && name.size() > want.size() &&
+               name.compare(0, want.size(), want) == 0;
+    }
+
     mutable std::mutex m_;
-    std::deque<recent_event> q_;
+    std::unordered_map<std::string, std::deque<recent_event>> topics_;
     std::size_t cap_;
     std::uint64_t last_id_ = 0;
 };
@@ -194,7 +234,8 @@ int main()
 
     // Recent-event ring for GET /recent. ~5k events is a few minutes of a
     // busy bench; SUPER_LOG_RECENT overrides.
-    recent_ring recent{size_from_env("SUPER_LOG_RECENT", 5000)};
+    // Per topic, so a firehose is expensive only to itself.
+    recent_ring recent{size_from_env("SUPER_LOG_RECENT", 2000)};
 
     // Our own ingest route, registered BEFORE mount(): the router matches in
     // registration order, so this one wins and the hub's identical route is

@@ -384,34 +384,99 @@ if (mode === 'android') {
   const origin = rnOrigin('android', model || adbSerial || (isEmulator ? 'emulator' : 'android'));
 
   // Scope to one app, or logcat is the whole system: an OEM handset can
-  // push hundreds of unrelated ERROR lines a second and bury the app you
-  // came to read. --app resolves the pid; --pid takes one directly.
+  // push hundreds of unrelated lines a second and bury the app you came to
+  // read - and, worse, evict every other producer's events from the hub's
+  // recent ring. --app resolves the pid; --pid takes one directly.
   const appPkg = opt('app');
-  let pid = opt('pid');
-  if (appPkg && !pid) {
-    pid = adbOut(adbArgs, 'shell', 'pidof', '-s', appPkg);
-    if (!pid) {
-      console.error(`superlog-tail: ${appPkg} is not running on ${adbSerial || 'the device'} - ` +
-                    `start it and re-run, or pass --pid. Tailing unscoped for now.`);
-    }
-  }
-  const scope = pid ? [`--pid=${pid}`] : [];
-  if (!pid)
-    console.error('superlog-tail: android with no --app/--pid is the whole system log - expect volume');
+  const fixedPid = opt('pid');
+  // Start at "now" by default: without this, every restart re-ingests the
+  // device's whole logcat ring - tens of thousands of stale lines, and a
+  // second eviction wave. --backlog N asks for N lines of history instead.
+  const backlog = opt('backlog');
+  const since = backlog ? ['-T', String(Number(backlog) || 1)] : ['-T', '1'];
 
-  console.error(`superlog-tail: android ${adbSerial || '(single device)'}` +
-                `${isEmulator ? ' [emulator]' : ' [hardware]'}` +
-                `${pid ? ` pid ${pid}` : ''} -> ${topic}`);
-
-  // threadtime: "08-22 13:01:02.345  1234  5678 I ReactNativeJS: hello"
-  run('adb', [...adbArgs, 'logcat', '-v', 'threadtime', ...scope], (line) => {
+  const onLine = (line) => {
     const m = line.match(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+\s+([VDIWEF])\s+([^:]+):\s?(.*)$/);
     if (m) {
       push(baseEvent(LOGCAT_LEVEL[m[1]] ?? 'INFO', m[3], origin, m[2].trim()));
     } else if (line.trim()) {
       push(baseEvent('INFO', line, origin)); // tolerant-reader rule, producer side
     }
-  });
+  };
+
+  console.error(`superlog-tail: android ${adbSerial || '(single device)'}` +
+                `${isEmulator ? ' [emulator]' : ' [hardware]'} -> ${topic}`);
+  if (!appPkg && !fixedPid)
+    console.error('superlog-tail: android with no --app/--pid is the whole system log - expect volume');
+
+  // Supervised, because a scoped tail has two states worth handling: the
+  // app is not running yet, and the app restarted under a new pid. logcat
+  // --pid pins one process, so a restart makes the old tail go quiet
+  // forever - which looks exactly like a working, silent app.
+  let child = null;
+  let stopping = false;
+  const stop = () => {
+    stopping = true;
+    child?.kill('SIGTERM');
+    void flush().then(() => process.exit(0));
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  const startTail = (scope) => {
+    child = spawn('adb', [...adbArgs, 'logcat', '-v', 'threadtime', ...since, ...scope],
+                  { stdio: ['ignore', 'pipe', 'inherit'] });
+    child.on('error', (e) => {
+      console.error(`superlog-tail: cannot run adb: ${e.message}`);
+      process.exit(1);
+    });
+    createInterface({ input: child.stdout }).on('line', onLine);
+    return child;
+  };
+
+  void (async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (!appPkg) {
+      // Fixed pid, or deliberately unscoped: nothing to supervise.
+      startTail(fixedPid ? [`--pid=${fixedPid}`] : []);
+      return;
+    }
+    let warned = false;
+    for (;;) {
+      if (stopping) return;
+      const pid = adbOut(adbArgs, 'shell', 'pidof', '-s', appPkg);
+      if (!pid) {
+        // Fail CLOSED. Publishing the firehose because the scope could not
+        // be resolved is the worst outcome: the flag was accepted, so the
+        // stream looks scoped while it buries every other producer.
+        // Silence is recoverable; evicting other people's evidence is not.
+        if (!warned) {
+          console.error(`superlog-tail: ${appPkg} is not running on ${adbSerial || 'the device'} - ` +
+                        `publishing NOTHING and waiting for it to start (never the unscoped firehose).`);
+          warned = true;
+        }
+        await sleep(2000);
+        continue;
+      }
+      warned = false;
+      console.error(`superlog-tail: ${appPkg} pid ${pid} -> ${topic}`);
+      const c = startTail([`--pid=${pid}`]);
+      // Watch for the app going away: logcat --pid keeps running happily
+      // against a dead pid, so the child exiting is not the signal - the
+      // pid disappearing is.
+      for (;;) {
+        await sleep(2000);
+        if (stopping) return;
+        if (c.exitCode !== null) break;                       // logcat died
+        const now = adbOut(adbArgs, 'shell', 'pidof', '-s', appPkg);
+        if (now !== pid) {                                    // restarted, or gone
+          console.error(`superlog-tail: ${appPkg} pid changed ${pid} -> ${now || '(gone)'}; re-scoping`);
+          c.kill('SIGTERM');
+          break;
+        }
+      }
+    }
+  })();
 } else if (mode === 'ios-sim') {
   topic = opt('topic', 'expo.ios.sim');
   const origin = rnOrigin('ios', `simulator:${udid}`);
