@@ -30,3 +30,6 @@ superlog-journal/
 
 # Fleet config: real hostnames and keys, never committed
 fleet.json
+
+# Real credentials: RPC URLs carry provider keys. .env.example is the template.
+.env

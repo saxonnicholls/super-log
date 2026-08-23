@@ -20,13 +20,16 @@
     "tail:apps": "node tailers/bin/superlog-tail.mjs apps",
     "tail:app": "node tailers/bin/superlog-tail.mjs app",
     "journal": "node tailers/bin/superlog-journal.mjs",
+    "search": "node tailers/bin/superlog-search.mjs",
+    "replay": "node tailers/bin/superlog-replay.mjs",
     "net": "node tailers/bin/superlog-net.mjs",
     "mcp": "node sdk/js/packages/mcp/bin/superlog-mcp.mjs",
     "demo": "./demo/run.sh",
     "demo:ios": "node demo/js/clock.mjs ios",
     "demo:android": "node demo/js/clock.mjs android",
     "demo:web": "node demo/web/serve.mjs",
-    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react"
+    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react",
+    "chain": "node tailers/bin/superlog-chain.mjs"
   },
   "engines": {
     "node": ">=18"
