@@ -1,18 +1,29 @@
 #!/bin/sh
 #
-# The four-client clock demo: C++ (through spdlog and the vendored
-# third_party spdlog+fmt pair), Rust, and the two React Native stand-ins
-# (ios / android via @super-log/client) each log the time once a second into
-# one superlogd - watched side by side in the React viewer
-# (http://localhost:7334) and the native ImGui viewer.
+# The whole bench, one command:  ./demo/run.sh   (or: npm run demo)
 #
-# One command, whole bench:  ./demo/run.sh   (or: npm run demo)
+# Every client this repo ships is attempted - C++ through both paths, Rust,
+# Go, Python, Java, Swift, Fortran, shell, the two React Native stand-ins and
+# the browser page - plus this machine's OS log and both viewers.
+#
+# Nothing here is required. A missing toolchain is not an error and must not
+# be one: a stranger cloning this will not have gfortran, and a demo that
+# dies on that teaches them the project is broken rather than that one
+# optional client was skipped. So every producer is attempted, every failure
+# is caught, and - this is the point - every failure is PUBLISHED to the
+# hub as a WARN on demo.launcher.
+#
+# That is the honest version of a demo: what could not start is on the same
+# screen as what did, with the reason, rather than in a terminal nobody
+# scrolls back through. It is also a fair test of the thing being
+# demonstrated - the first job of a logger is to tell you what did not work.
+#
 # Close the ImGui window or Ctrl-C to tear everything down.
 #
-set -e
 cd "$(dirname "$0")/.."
 
 PORT="${SUPER_LOG_PORT:-7333}"
+HUB="http://127.0.0.1:${PORT}"
 
 # Loopback by default: the canned demo needs no LAN (the stand-ins, the
 # browser page and the Docker producer all reach loopback), the hub has no
@@ -28,126 +39,215 @@ else
     export SUPER_LOG_BIND="${SUPER_LOG_BIND:-127.0.0.1}"
     export SUPER_LOG_WEB_BIND="${SUPER_LOG_WEB_BIND:-127.0.0.1}"
 fi
+export SUPER_LOG_URL="$HUB"
 
-# ---- build everything first, so the run is start start start, not wait
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target superlogd superlog_clock_cpp superlog_viewer -j
-[ -d node_modules ] || npm install
-npm run build --workspace @super-log/client
-(cd sdk/rust && cargo build --release --features development --example clock)
-
-# ---- separate processes on purpose: kill any without the others
 pids=""
-cleanup() {
-    trap - EXIT INT TERM
-    [ -n "$pids" ] && kill $pids 2>/dev/null || true
-    wait 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
+started=""
+skipped=""
+
+# ---- the hub itself is the one hard requirement -------------------------
+#
+# Everything below reports its failures BY logging them, so the hub has to
+# exist before anything else is allowed to fail. If this part breaks there
+# is nowhere to say so, and the script says it on stderr and stops.
+
+if ! cmake -S . -B build -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1; then
+    echo "demo: cmake configure failed. Run it directly to see why:" >&2
+    echo "      cmake -S . -B build -DCMAKE_BUILD_TYPE=Release" >&2
+    exit 1
+fi
+if ! cmake --build build --target superlogd -j >/dev/null 2>&1; then
+    echo "demo: the hub did not build. Run it directly to see why:" >&2
+    echo "      cmake --build build --target superlogd -j" >&2
+    exit 1
+fi
 
 ./build/hub/superlogd &
 pids="$pids $!"
 i=0
-until curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; do
+until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
     i=$((i + 1))
     [ "$i" -gt 50 ] && { echo "demo: hub did not come up on :${PORT}" >&2; exit 1; }
     sleep 0.1
 done
 
-./build/demo/cpp/superlog_clock_cpp &
-pids="$pids $!"
-./sdk/rust/target/release/examples/clock &
-pids="$pids $!"
-# The RN stand-ins share topics with the real Expo app (demo/expo-clock) on
-# purpose - so run one or the other: SUPER_LOG_STANDINS=0 when the real
-# app is on the simulators.
-if [ "${SUPER_LOG_STANDINS:-1}" != "0" ]; then
-    node demo/js/clock.mjs ios &
+cleanup() {
+    trap - EXIT INT TERM
+    [ -n "$pids" ] && kill $pids 2>/dev/null
+    wait 2>/dev/null
+    return 0
+}
+trap cleanup EXIT INT TERM
+
+# ---- say things, on the bench and on the terminal -----------------------
+
+note() {
+    _lvl="$1"; _msg="$2"; _what="$3"
+    echo "demo: $_msg" >&2
+    ./tailers/bin/superlog-log --development --quiet --url "$HUB" \
+        --topic demo.launcher --level "$_lvl" --tag launcher \
+        --field "component=$_what" -- "$_msg" 2>/dev/null || true
+}
+
+# Run a producer, or say why not. Never returns non-zero: a missing client
+# must not end the demo, and `set -e` is deliberately not in force here.
+start() {
+    _what="$1"; shift
+    "$@" &
     pids="$pids $!"
-    node demo/js/clock.mjs android &
-    pids="$pids $!"
+    started="$started $_what"
+    note INFO "started $_what" "$_what"
+}
+skip() {
+    skipped="$skipped $1"
+    note WARN "$1 not started: $2" "$1"
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+note INFO "demo starting - attempting every client this repo ships" launcher
+
+# ---- C++ (both paths) and the native viewer ------------------------------
+
+if cmake --build build --target superlog_clock_cpp -j >/dev/null 2>&1; then
+    start "cpp.clock" ./build/demo/cpp/superlog_clock_cpp
+else
+    skip "cpp.clock" "the C++ demo target did not build"
 fi
-node demo/web/serve.mjs &
-pids="$pids $!"
-# The other language clients, off by default: each needs its own toolchain
-# and a compile, which would make the common demo slow and make a missing
-# compiler look like a broken demo. SUPER_LOG_LANGS="go python fortran" and
-# so on; anything whose toolchain is absent is named and skipped.
+
+# ---- Rust ---------------------------------------------------------------
+
+if ! have cargo; then
+    skip "rust.clock" "no cargo on PATH"
+elif (cd sdk/rust && cargo build --release --features development --example clock >/dev/null 2>&1); then
+    start "rust.clock" ./sdk/rust/target/release/examples/clock
+else
+    skip "rust.clock" "cargo build failed"
+fi
+
+# ---- the JS client, the RN stand-ins and the browser page ---------------
+
+if ! have node; then
+    skip "js" "no node on PATH - the stand-ins, browser page, tailers and web viewer all need it"
+else
+    [ -d node_modules ] || npm install >/dev/null 2>&1
+    if npm run build --workspace @super-log/client >/dev/null 2>&1; then
+        # The stand-ins share topics with the real Expo app (demo/expo-clock)
+        # on purpose - run one or the other. SUPER_LOG_STANDINS=0 when the
+        # real app is on the simulators.
+        if [ "${SUPER_LOG_STANDINS:-1}" != "0" ]; then
+            start "expo.ios.sim" node demo/js/clock.mjs ios
+            start "expo.android.emu" node demo/js/clock.mjs android
+        else
+            skip "expo stand-ins" "SUPER_LOG_STANDINS=0 - expecting the real Expo app"
+        fi
+        start "web.clock" node demo/web/serve.mjs
+    else
+        skip "js" "@super-log/client did not build"
+    fi
+fi
+
+# ---- every other language client ----------------------------------------
 #
-# Each compiles in the foreground and runs the resulting binary in the
-# background. `build && run &` would background the whole chain, so cleanup
-# would kill the wrapper shell and leave the clock it started running.
+# Attempted by default, because "one hub for every log stream" is a claim
+# that should be visible on first run rather than behind an env var. Each
+# compiles in the FOREGROUND and backgrounds the resulting binary: `build &&
+# run &` would background the whole chain, so cleanup would kill the wrapper
+# shell and leave the clock it started running.
+
 SL_TMP="${TMPDIR:-/tmp}"
-skip() { echo "demo: $1 - skipping $2" >&2; }
-for lang in ${SUPER_LOG_LANGS:-}; do
+for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell}; do
     case "$lang" in
     go)
+        if ! have go; then skip "go.clock" "no go toolchain"
         # -linkmode=external: Go 1.21's internal linker omits LC_UUID and
         # current macOS dyld refuses the binary outright.
-        command -v go >/dev/null || { skip "no go toolchain" go; continue; }
-        (cd demo/go && go build -ldflags=-linkmode=external -o "$SL_TMP/sl_clock_go" .) \
-            || { skip "go build failed" go; continue; }
-        "$SL_TMP/sl_clock_go" &
-        pids="$pids $!" ;;
+        elif (cd demo/go && go build -ldflags=-linkmode=external -o "$SL_TMP/sl_clock_go" . >/dev/null 2>&1); then
+            start "go.clock" "$SL_TMP/sl_clock_go"
+        else skip "go.clock" "go build failed"; fi ;;
     python)
-        command -v python3 >/dev/null || { skip "no python3" python; continue; }
-        python3 demo/python/clock.py &
-        pids="$pids $!" ;;
-    fortran)
-        command -v gfortran >/dev/null || { skip "no gfortran" fortran; continue; }
-        gfortran -cpp -DDEVELOPMENT -J"$SL_TMP" -o "$SL_TMP/sl_clock_f90" \
-            sdk/fortran/superlog.F90 demo/fortran/clock.f90 \
-            || { skip "gfortran build failed" fortran; continue; }
-        "$SL_TMP/sl_clock_f90" &
-        pids="$pids $!" ;;
+        if ! have python3; then skip "python.clock" "no python3"
+        else start "python.clock" python3 demo/python/clock.py; fi ;;
     java)
-        command -v javac >/dev/null || { skip "no javac" java; continue; }
-        javac -d "$SL_TMP/sl_java" $(find sdk/java -name '*.java') demo/java/Clock.java \
-            || { skip "javac failed" java; continue; }
-        java -cp "$SL_TMP/sl_java" Clock &
-        pids="$pids $!" ;;
+        if ! have javac; then skip "java.clock" "no javac"
+        elif javac -d "$SL_TMP/sl_java" $(find sdk/java -name '*.java') demo/java/Clock.java >/dev/null 2>&1; then
+            start "java.clock" java -cp "$SL_TMP/sl_java" Clock
+        else skip "java.clock" "javac failed"; fi ;;
     swift)
-        command -v swift >/dev/null || { skip "no swift toolchain" swift; continue; }
-        swift build --package-path demo/swift/clock -c release \
-            || { skip "swift build failed" swift; continue; }
-        ./demo/swift/clock/.build/release/clock &
-        pids="$pids $!" ;;
+        if ! have swift; then skip "swift.clock" "no swift toolchain"
+        elif swift build --package-path demo/swift/clock -c release >/dev/null 2>&1; then
+            start "swift.clock" ./demo/swift/clock/.build/release/clock
+        else skip "swift.clock" "swift build failed"; fi ;;
+    fortran)
+        if ! have gfortran; then skip "fortran.clock" "no gfortran"
+        elif gfortran -cpp -DDEVELOPMENT -J"$SL_TMP" -o "$SL_TMP/sl_clock_f90" \
+                sdk/fortran/superlog.F90 demo/fortran/clock.f90 >/dev/null 2>&1; then
+            start "fortran.clock" "$SL_TMP/sl_clock_f90"
+        else skip "fortran.clock" "gfortran build failed"; fi ;;
     shell)
-        [ -f demo/shell/clock.sh ] || { skip "demo/shell/clock.sh absent" shell; continue; }
-        sh demo/shell/clock.sh &
-        pids="$pids $!" ;;
-    *) echo "demo: unknown SUPER_LOG_LANGS entry '$lang'" >&2 ;;
+        if [ ! -f demo/shell/clock.sh ]; then skip "shell.clock" "demo/shell/clock.sh missing"
+        elif ! have curl; then skip "shell.clock" "no curl"
+        else start "shell.clock" sh demo/shell/clock.sh; fi ;;
+    *) skip "$lang" "not a client this repo ships" ;;
     esac
 done
-# This Mac's own OS logs beside the app streams (topic os.<host>). Kernel
-# messages, not the whole unified log - unfiltered is thousands of lines a
-# second and unreadable; kernel is the "what is the OS doing" feed at a
-# human rate. SUPER_LOG_OS_PROCESS widens or narrows it.
-node tailers/bin/superlog-tail.mjs os --process "${SUPER_LOG_OS_PROCESS:-kernel}" &
-pids="$pids $!"
-# Remote machines' OS logs over ssh (topic os.<name> each): OS auto-detected,
-# nothing installed remotely, logs travel over ssh so the hub stays loopback.
-# my-server is this bench's box; SUPER_LOG_SSH_HOSTS="a b c" for others,
-# SUPER_LOG_SSH_HOSTS= (empty) for none. Unreachable hosts just retry.
-for h in ${SUPER_LOG_SSH_HOSTS-my-server}; do
-    node tailers/bin/superlog-tail.mjs ssh "$h" &
-    pids="$pids $!"
-done
-# Well-known app logs on THIS machine (postgres, nginx, redis, ... - the
-# catalog): `node tailers/bin/superlog-tail.mjs apps` shows what exists
-# here; SUPER_LOG_APPS="postgres nginx" turns them on.
-if [ -n "${SUPER_LOG_APPS:-}" ]; then
-    node tailers/bin/superlog-tail.mjs app ${SUPER_LOG_APPS} &
-    pids="$pids $!"
+
+# ---- machines and services ----------------------------------------------
+
+if have node; then
+    # This Mac's own OS logs beside the app streams (topic os.<host>). Kernel
+    # messages, not the whole unified log - unfiltered is thousands of lines a
+    # second and unreadable; kernel is the "what is the OS doing" feed at a
+    # human rate. SUPER_LOG_OS_PROCESS widens or narrows it.
+    start "os.$(hostname -s 2>/dev/null || echo local)" \
+        node tailers/bin/superlog-tail.mjs os --process "${SUPER_LOG_OS_PROCESS:-kernel}"
+
+    # Remote machines' OS logs over ssh (topic os.<name> each): OS
+    # auto-detected, nothing installed remotely, logs travel over ssh so the
+    # hub stays loopback-bound. Off unless you name hosts - defaulting to a
+    # real box would make a stranger's first run open with a connection error.
+    for h in ${SUPER_LOG_SSH_HOSTS:-}; do
+        start "os.$h" node tailers/bin/superlog-tail.mjs ssh "$h"
+    done
+
+    # Well-known app logs on THIS machine (postgres, nginx, redis, ...):
+    # `superlog-tail apps` shows what exists here.
+    if [ -n "${SUPER_LOG_APPS:-}" ]; then
+        start "apps" node tailers/bin/superlog-tail.mjs app ${SUPER_LOG_APPS}
+    fi
 fi
-npm run viewer &
-pids="$pids $!"
+
+# ---- viewers ------------------------------------------------------------
+
+if have node; then
+    start "viewer.react" npm run viewer
+else
+    skip "viewer.react" "no node on PATH"
+fi
+
+# ---- what actually happened ---------------------------------------------
+
+n_started=$(echo $started | wc -w | tr -d ' ')
+n_skipped=$(echo $skipped | wc -w | tr -d ' ')
+if [ "$n_skipped" -gt 0 ]; then
+    note WARN "$n_started client(s) started, $n_skipped skipped:$skipped" launcher
+else
+    note INFO "$n_started client(s) started, none skipped" launcher
+fi
 
 sleep 2
-if command -v open >/dev/null 2>&1; then
+if have open; then
     open "http://localhost:7334"                # the viewer
     open "http://localhost:7335"                # the browser clock (web.clock)
 fi
 
-# Foreground, not exec: closing the window must still run the cleanup trap
-./build/viewer/imgui/superlog_viewer
+# The native viewer runs in the FOREGROUND, not exec: closing its window must
+# still run the cleanup trap. If it did not build, hold here instead so the
+# rest of the demo keeps running.
+if [ -x ./build/viewer/imgui/superlog_viewer ] ||
+   cmake --build build --target superlog_viewer -j >/dev/null 2>&1; then
+    ./build/viewer/imgui/superlog_viewer
+else
+    note WARN "viewer.imgui not started: it did not build (glfw/OpenGL headers?)" viewer.imgui
+    echo "demo: running without the native viewer - Ctrl-C to stop" >&2
+    wait
+fi
