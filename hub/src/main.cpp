@@ -100,6 +100,37 @@ inline std::string trace_of(const std::string& line)
     return to == std::string::npos ? std::string() : line.substr(from, to - from);
 }
 
+// Is this line safe to embed verbatim inside a JSON response? A structural
+// scan, not a parser: braces and brackets balanced, strings closed, escapes
+// respected, depth back to zero at the end. It cannot prove a line is valid
+// JSON, but it catches what actually turns up - truncated frames and log
+// lines that merely start with a brace - and the failure mode is safe,
+// because anything it rejects gets wrapped as a string instead.
+inline bool embeddable_json_object(const std::string& s) noexcept
+{
+    if (s.size() < 2 || s.front() != '{' || s.back() != '}')
+        return false;
+    int depth = 0;
+    bool in_string = false, escaped = false;
+    for (const char c : s) {
+        if (in_string) {
+            if (escaped)          escaped = false;
+            else if (c == '\\')   escaped = true;
+            else if (c == '"')    in_string = false;
+            else if (static_cast<unsigned char>(c) < 0x20)
+                return false;                   // a raw control char is never legal in a JSON string
+            continue;
+        }
+        switch (c) {
+        case '"': in_string = true; break;
+        case '{': case '[': if (++depth > 64) return false; break;   // absurd nesting is not ours to relay
+        case '}': case ']': if (--depth < 0) return false; break;
+        default: break;
+        }
+    }
+    return depth == 0 && !in_string;
+}
+
 struct recent_event {
     std::uint64_t id = 0;
     std::uint64_t seq = 0;                      // the hub frame this arrived in
@@ -190,8 +221,19 @@ public:
                    ",\"seq\":" + std::to_string(e->seq) + ",\"topic\":\"";
             snicholls::utils::json_escape(e->topic, out);
             out += "\",\"event\":";
-            (void)0;
-            out += e->line;                     // already JSON; carried verbatim
+            // PROTOCOL.md's tolerant-reader rule makes a non-JSON payload
+            // line legal, and a tailer relays plenty of them. Embedding one
+            // verbatim made this whole response unparseable and broke every
+            // consumer at once - the viewers, the MCP server, any script.
+            // So relay JSON as JSON, and wrap anything else the way the
+            // rule says a reader should: {"msg": "<the raw line>"}.
+            if (embeddable_json_object(e->line)) {
+                out += e->line;
+            } else {
+                out += "{\"msg\":\"";
+                snicholls::utils::json_escape(e->line, out);
+                out += "\"}";
+            }
             out += '}';
         }
         // Advance the cursor past everything considered, not just what was

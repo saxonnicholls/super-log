@@ -7,8 +7,10 @@
 //  An agent debugging an app should be able to ask "what did the logs say
 //  just now" without a human copying lines into a chat. This is an MCP
 //  server over stdio: it wraps the hub's GET /recent and /healthz in five
-//  tools, and every one of them is designed around the fact that an agent's
-//  context is small and the firehose is not - one 8-second sample of a
+//  tools, plus a sixth that reads the journal on disk when the question is
+//  older than the hub's few minutes of memory. Every one of them is
+//  designed around the fact that an agent's context is small and the
+//  firehose is not - one 8-second sample of a
 //  single OS stream on this bench was 8,400 events. So: filters first,
 //  hard caps everywhere, compact one-line output, and a summarise tool that
 //  answers "what is going on" in a paragraph instead of ten thousand rows.
@@ -23,9 +25,13 @@
 //  Wire contract: ../../../../docs/PROTOCOL.md
 //
 
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { createGunzip } from 'node:zlib';
 
 const HUB = process.env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333';
+const JOURNAL = process.env.SUPER_LOG_JOURNAL ?? './superlog-journal';
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];
 
@@ -34,6 +40,10 @@ const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const MAX_WAIT_MS = 120000;
+// A journal can be gigabytes. A tool call that reads all of it is a tool
+// call the agent is still waiting on, so the scan has a deadline and says
+// when it hit one.
+const MAX_SCAN_MS = 15000;
 
 // ---------------------------------------------------------------- the hub
 
@@ -60,6 +70,154 @@ async function hubOrExplain(path) {
         : `The hub at ${HUB} could not answer: ${why}`,
     };
   }
+}
+
+// -------------------------------------------------------------- the journal
+//
+// Everything above reads the hub's ring, which is minutes deep. "What
+// happened at 3am" is a different question and it is answered on disk: the
+// files superlog-journal writes, which are hub envelope frames verbatim,
+// one per line. Read a line at a time - a journal is measured in gigabytes
+// and this process has to stay small.
+//
+// The filter rules here are deliberately duplicated from
+// tailers/bin/journal-read.mjs rather than imported: this package ships
+// `files: ["bin"]` and is meant to install standalone via npx, so it cannot
+// reach across the repo. They are small and pinned by PROTOCOL.md - if one
+// side changes, change both.
+
+const levelRank = (l) => {
+  const i = LEVELS.indexOf(String(l ?? '').toUpperCase());
+  return i < 0 ? LEVELS.indexOf('INFO') : i; // tolerant-reader default
+};
+
+const topicMatches = (want, name) =>
+  !want || want === '*' || want === name ||
+  (want.endsWith('.') && name.length > want.length && name.startsWith(want));
+
+const UNIT_MS = { s: 1e3, m: 6e4, h: 36e5, d: 864e5, w: 6048e5 };
+
+/** `30m`, `2h`, `3d`, `03:00` (today), `2026-08-22`, or a full ISO stamp.
+ *  Bare times are UTC, because UTC is what the events carry. */
+function parseWhen(spec, now = Date.now()) {
+  if (spec === undefined || spec === null || spec === '') return undefined;
+  const s = String(spec).trim();
+  if (s === 'now') return now;
+  const rel = /^-?(\d+(?:\.\d+)?)\s*(s|m|h|d|w)$/i.exec(s);
+  if (rel) return now - Number(rel[1]) * UNIT_MS[rel[2].toLowerCase()];
+  let iso = s;
+  const hm = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(iso);
+  if (hm) iso = `${new Date(now).toISOString().slice(0, 10)}T${hm[1].padStart(2, '0')}:${hm[2]}:${hm[3] ?? '00'}Z`;
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) iso += 'T00:00:00Z';
+  else if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso)) iso += 'Z';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t))
+    throw new Error(`cannot read a time from ${JSON.stringify(s)} - try 30m, 2h, 3d, 03:00 or a full ISO timestamp`);
+  return t;
+}
+
+function journalFiles(where) {
+  if (!existsSync(where)) return [];
+  if (statSync(where).isFile()) return [where];
+  return readdirSync(where)
+    .filter((n) => /\.ndjson(\.gz)?$/.test(n))
+    .sort()                                   // the writer's stamp sorts chronologically
+    .map((n) => join(where, n));
+}
+
+/** Streams the journal and returns at most `limit` rows - the newest ones,
+ *  the way /recent truncates - plus the totals needed to be honest about
+ *  what was left out. */
+async function searchJournal({ dir, topic, level, contains, trace, since, until, limit }) {
+  const files = journalFiles(dir);
+  const minLevel = level ? levelRank(level) : 0;
+  const needle = contains ? String(contains).toLowerCase() : '';
+  // A needle that JSON-escaping cannot touch also works as a gate on the raw
+  // frame line, which skips the parse entirely for most of the journal.
+  const fast = needle && /^[\x20-\x21\x23-\x5b\x5d-\x7e]+$/.test(contains) ? needle : '';
+  const deadline = Date.now() + MAX_SCAN_MS;
+  const stats = { files: 0, frames: 0, events: 0, matched: 0, bad: 0, timedOut: false };
+  const kept = [];
+  let ringAt = 0;
+  let earliest, latest;
+  let stop = false;
+
+  for (const path of files) {
+    stats.files++;
+    const file = createReadStream(path);
+    const input = path.endsWith('.gz') ? file.pipe(createGunzip()) : file;
+    const rl = createInterface({ input, crlfDelay: Infinity });
+    try {
+      for await (const line of rl) {
+        if (!line) continue;
+        if (Date.now() > deadline) {
+          stats.timedOut = true;
+          break;
+        }
+        const tm = /"topic":"([^"]*)"/.exec(line);
+        if (topic && tm && !topicMatches(topic, tm[1])) continue;
+        if (fast && !line.toLowerCase().includes(fast)) continue;
+        let frame;
+        try {
+          frame = JSON.parse(line);
+        } catch {
+          stats.bad++;                        // a truncated tail is still worth reading
+          continue;
+        }
+        if (!frame || typeof frame.payload !== 'string' || typeof frame.topic !== 'string') {
+          stats.bad++;
+          continue;
+        }
+        if (topic && !topicMatches(topic, frame.topic)) continue;
+        // The window is on hub arrival time, not the producer's `ts`:
+        // arrival is monotonic (PROTOCOL.md - phone clocks drift, hub order
+        // is the truth), so it needs no slack for skew and the scan can
+        // stop the moment it passes `until`.
+        if (Number.isFinite(frame.ts_ms)) {
+          if (since !== undefined && frame.ts_ms < since) continue;
+          if (until !== undefined && frame.ts_ms > until) {
+            stop = true;
+            break;
+          }
+        }
+        stats.frames++;
+        for (const raw of frame.payload.split('\n')) {
+          const text = raw.trim();
+          if (!text) continue;
+          stats.events++;
+          let ev;
+          try {
+            ev = JSON.parse(text);
+            if (ev === null || typeof ev !== 'object' || Array.isArray(ev)) ev = { msg: text };
+          } catch {
+            ev = { msg: text };               // PROTOCOL.md's tolerant-reader rule
+          }
+          const ts = typeof ev.ts === 'string' ? ev.ts : new Date(frame.ts_ms).toISOString();
+          const at = frame.ts_ms;             // arrival, in the same terms as the window
+          if (minLevel > 0 && levelRank(ev.level) < minLevel) continue;
+          if (trace && ev.trace !== trace) continue;
+          if (needle && !text.toLowerCase().includes(needle)) continue;
+          stats.matched++;
+          if (earliest === undefined || at < earliest) earliest = at;
+          if (latest === undefined || at > latest) latest = at;
+          const row = { seq: frame.seq, topic: frame.topic, event: ev.ts ? ev : { ...ev, ts } };
+          if (kept.length < limit) kept.push(row);
+          else {
+            kept[ringAt] = row;
+            ringAt = (ringAt + 1) % limit;
+          }
+        }
+      }
+    } finally {
+      rl.close();
+      input.destroy?.();
+      file.destroy?.();
+    }
+    if (stats.timedOut || stop) break;
+  }
+
+  const rows = kept.length < limit || ringAt === 0 ? kept : [...kept.slice(ringAt), ...kept.slice(0, ringAt)];
+  return { rows, stats, earliest, latest, fileCount: files.length };
 }
 
 // ------------------------------------------------------------- formatting
@@ -256,6 +414,76 @@ const TOOLS = [
     },
   },
   {
+    name: 'search_history',
+    description:
+      'Search the on-disk journal: hours or days of history, not the few minutes the ' +
+      'hub keeps in memory. This is the tool for "what happened at 3am" or anything ' +
+      'older than the live ring - tail_logs and search_logs cannot see that far back. ' +
+      'Needs superlog-journal to have been running at the time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        since: {
+          type: 'string',
+          description:
+            'Start of the window: 30m, 2h, 3d, 03:00 (today, UTC), 2026-08-22, or a full ISO timestamp. ' +
+            'Windows on hub arrival time, which is the only reliable clock across streams',
+        },
+        until: { type: 'string', description: 'End of the window, same forms as since' },
+        topic: {
+          type: 'string',
+          description: 'Exact topic (cpp.clock), a prefix ending in a dot (expo. matches every device stream), or *',
+        },
+        level: { type: 'string', enum: LEVELS, description: 'Minimum level' },
+        contains: { type: 'string', description: 'Case-insensitive substring of the whole event, fields included' },
+        trace: { type: 'string', description: 'One correlation id, across every stream' },
+        limit: { type: 'number', description: `Max events (default ${DEFAULT_LIMIT}, cap ${MAX_LIMIT}); the NEWEST matches` },
+        dir: { type: 'string', description: `Journal directory (default ${JOURNAL}, or $SUPER_LOG_JOURNAL)` },
+      },
+      additionalProperties: false,
+    },
+    run: async (a) => {
+      const limit = Math.min(Math.max(Number(a.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+      const dir = a.dir || JOURNAL;
+      const r = await searchJournal({
+        dir,
+        topic: a.topic,
+        level: a.level,
+        contains: a.contains,
+        trace: a.trace,
+        since: parseWhen(a.since),
+        until: parseWhen(a.until),
+        limit,
+      });
+      if (r.fileCount === 0)
+        return (
+          `No journal files at ${dir}.\n` +
+          `History is only searchable if superlog-journal was running: start it with ` +
+          `npm run journal (set SUPER_LOG_JOURNAL, or pass dir, if it writes elsewhere).\n` +
+          `For the last few minutes, tail_logs reads the hub's live ring instead.`
+        );
+      const head = [
+        `Journal ${dir}: ${r.stats.files} file(s), ${r.stats.events} events read, ` +
+          `${r.stats.matched} match(es).`,
+      ];
+      if (r.earliest !== undefined)
+        head.push(
+          `Matches span ${new Date(r.earliest).toISOString()} .. ${new Date(r.latest).toISOString()} ` +
+            `(hub arrival, UTC - the window filters on this, the lines show the producer's own clock).`,
+        );
+      if (r.stats.matched > r.rows.length)
+        head.push(`Showing the newest ${r.rows.length}; narrow with since/topic/level for the rest.`);
+      if (r.stats.timedOut)
+        head.push(
+          `WARNING: the scan stopped after ${MAX_SCAN_MS / 1000}s, so older files were not read. ` +
+            `Narrow the window and ask again.`,
+        );
+      if (r.stats.bad) head.push(`${r.stats.bad} unreadable line(s) skipped.`);
+      if (r.rows.length === 0) head.push('No matching events.');
+      return [...head, '', ...r.rows.map(formatEvent)].join('\n');
+    },
+  },
+  {
     name: 'wait_for',
     description:
       'Block until a matching event appears, then return it. This is the one to use ' +
@@ -333,6 +561,8 @@ async function handle(msg) {
         `Log streams from the super-log bench at ${HUB}. Start with hub_status or ` +
         `list_streams to see what is running, then tail_logs/search_logs narrowed by ` +
         `topic and level. Use wait_for after triggering an action instead of sleeping. ` +
+        `Those four read the hub's live ring, which is only minutes deep - for anything ` +
+        `older, search_history reads the journal on disk (${JOURNAL}). ` +
         `Never try to read every event: streams can produce thousands per second.`,
     });
   }

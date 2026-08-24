@@ -149,6 +149,86 @@ fields, sessions, real levels). A tailer and the SDK publishing to the *same
 topic* at the same time will double-report the app's own console lines — run
 one or the other per device.
 
+## History: journal, search, replay
+
+The hub remembers minutes. `superlog-journal` remembers as long as the disk
+does - it subscribes to the firehose and appends every envelope frame
+verbatim, one per line, so nothing is interpreted on the way in and nothing
+is lost. The other two tools are what make that worth having:
+
+```sh
+npm run journal -- --max-files 40                # write, and never fill the volume
+npm run search  -- --since 2h --level ERROR      # read it back
+npm run replay  -- --since 03:00 --until 04:00   # put it back on the wire
+```
+
+### superlog-search - "what happened at 3am"
+
+Same filters as the hub's `/recent`, over files instead of a ring, printing
+the same line the viewers print:
+
+```sh
+node bin/superlog-search.mjs --since 2h --level ERROR
+node bin/superlog-search.mjs --topic expo. --contains "order 7" --limit 50
+node bin/superlog-search.mjs --trace 9f1c0a2b7d4e5f60      # one tap, every stream
+node bin/superlog-search.mjs --since 03:00 --until 04:00 --count
+node bin/superlog-search.mjs --topic cpp. --json | jq .
+```
+
+`--since`/`--until` take `30m`, `2h`, `3d`, `03:00`, `2026-08-22` or a full
+ISO stamp. `--topic` is exact or a prefix ending in a dot, `--level` is a
+minimum, `--contains` is case-insensitive and reaches the whole event (field
+values and all), `--trace` crosses topics on purpose. `--count` gives totals
+per topic instead of lines, `--json` gives the raw events one per line, and
+`.ndjson.gz` files are read as they are.
+
+**Bounded by default**, because an unfiltered grep over a journal measured in
+gigabytes is how a terminal hangs. `--limit` (200) keeps the *newest*
+matches, the way `/recent` truncates, and the footer says how many there
+really were; `--head` keeps the oldest instead and stops reading early, which
+is the escape hatch when the journal is far bigger than the question.
+Reading is a line at a time over a stream - a 1.0 GB journal searched here
+peaked at 147 MB of RSS - and a line that is not JSON is skipped and counted,
+never fatal, so a journal killed mid-write still reads.
+
+One subtlety worth knowing: the time window is on **hub arrival** time,
+while the line shows the **producer's** `ts`. On a healthy bench they agree
+to the millisecond. When a phone's clock is wrong they do not, and
+PROTOCOL.md is clear about which of the two is truth.
+
+### superlog-replay - put it back on the wire
+
+```sh
+node bin/superlog-replay.mjs                                  # original pace
+node bin/superlog-replay.mjs --speed 0                        # flat out
+node bin/superlog-replay.mjs --since 03:00 --until 04:00 --speed 10
+node bin/superlog-replay.mjs --topic expo. --prefix replay.   # own topics
+```
+
+Payloads are re-POSTed byte for byte, so `seq`, `session`, `ts` and `trace`
+all still line up and last night's incident arrives exactly as it happened -
+which is the point, and also the hazard: **nothing downstream can tell a
+replay from live**. Hence the unmissable banner on stderr, and `--prefix`,
+which republishes to `replay.<topic>` when a stream of its own is the honest
+answer. Long silences are compressed to 10s by default (`--max-gap`) so an
+overnight journal does not replay overnight; the banner says when it does.
+`--dry-run` counts without publishing.
+
+Filtering is per **frame**, not per event: splitting a POSTed batch would
+mean rewriting it, and a rewritten record is not a replay.
+
+### Retention
+
+`superlog-journal` rotates by size (`--rotate-mb`, 64 by default) and keeps
+everything unless told otherwise - losing history nobody asked to lose is
+worse than a full folder. `--max-files N` and `--max-days D` prune the
+oldest on every rotation (and at startup). Only files this writer created
+(`superlog-<stamp>.ndjson[.gz]`) are ever candidates: a retention sweep that
+can delete a stranger's file is a bug waiting for someone's data.
+
+Agents get the same history through the MCP server's `search_history` tool -
+same filters, capped at 50/200 like the rest of them.
+
 ### Scoping the Android tailer
 
 `logcat` is the whole **system** log, not your app's: an OEM handset can push
