@@ -50,7 +50,8 @@
     "serial": "node tailers/bin/superlog-serial.mjs",
     "socket": "node tailers/bin/superlog-socket.mjs",
     "demo:mcp": "node demo/mcp/drive.mjs",
-    "ros": "node tailers/bin/superlog-ros.mjs"
+    "ros": "node tailers/bin/superlog-ros.mjs",
+    "demo:inlets": "node demo/inlets/demo.mjs"
   },
   "engines": {
     "node": ">=18"

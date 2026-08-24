@@ -66,3 +66,20 @@ npm run demo:mcp
 
 It exits non-zero if a tool fails or if the server grows a tool the demo does
 not exercise, so it doubles as the smoke test for that wiring.
+
+## The inlets, without the hardware
+
+`superlog-socket`, `superlog-serial` and `superlog-ws` look like they need a
+router, a board and a WebSocket service. They do not, and a feature nobody
+can try is a feature nobody believes:
+
+```sh
+npm run demo:inlets
+```
+
+It sends real RFC 5424 and RFC 3164 syslog datagrams and a raw TCP line at
+the socket inlet; opens a pseudo-terminal - a character device in every way
+that matters - and feeds it genuine ESP-IDF and Zephyr console output,
+including a panic that arrives as CRITICAL; and serves a real RFC 6455
+WebSocket locally for the frame logger. Everything lands on the same hub as
+the clocks.

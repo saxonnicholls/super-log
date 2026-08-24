@@ -495,11 +495,39 @@ replay over a 1 GB journal, correlation across tiers, the error hooks in all
 four SDKs, and the Docker image (which smoke-tests itself during
 `docker build`).
 
+Also verified since: the Go, Java, Swift, Fortran and shell SDKs against a
+live hub; sanitizer and valgrind capture against real ASan/TSan/UBSan and
+valgrind output; the git and GitHub watchers (the latter catching real
+commits as they were pushed); the ROS tailer against genuine ROS 2 Jazzy
+`/rosout`; the socket inlet against real syslog datagrams; the serial tailer
+against a pty; and a 20-minute Binance soak that found the hub's replay ring
+holding 66 MB for one topic — `leaks(1)` confirmed no leak, the ring was
+bounded by chunk count rather than bytes, and it now peaks at 30 MB under
+the same load.
+
 Still **written but not verified**: the Windows event-log path (no Windows
-machine here) and the iOS-hardware tailer. Not built yet: viewer "load
-session" and metric sparklines.
+machine here), the iOS-hardware tailer, Kotlin (no `kotlinc` here), Swift on
+iOS and Linux, and the serial tailer against real hardware at a real baud
+rate. Not built yet: viewer "load session" and metric sparklines.
 
 CI lives in `.github/workflows/ci.yml`; `scripts/smoke.sh` is the one smoke
 test that CI, the Docker image and your terminal all run identically.
+
+## Contributing
+
+This was built for my own bench and then it turned out to be useful, so here
+it is. **Pull requests are welcome** — new streams especially: if something
+on your desk emits logs and this cannot read it yet, that is the gap worth
+filling.
+
+Two things make a change easy to accept. Run it against a real hub before
+you open the PR, and say in the description what you actually observed —
+this repo's habit is to label what is verified and what is merely written,
+and that habit is the reason it can be trusted. And keep the producer
+contract: bounded queue, drop oldest, count what was dropped, and never
+block the program you are observing.
+
+Issues describing a stream you wish it read are useful too, even without a
+patch.
 
 Copyright 2026 Saxon Herschel Nicholls.
