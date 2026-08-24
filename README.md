@@ -326,6 +326,9 @@ npm run git -- --ssh web1 --repo /srv/app   # ...a deployed checkout
 npm run github -- --repo owner/name         # CI runs, PRs, releases
 npm run watch -- --dir src                  # files created, modified, deleted
 make 2>&1 | npx superlog --topic build.local # anything that prints (tee)
+npm run ws -- wss://stream.binance.com:9443/ws/btcusdt@trade
+npm run serial -- --list                    # boards plugged in
+npm run serial -- --port /dev/ttyUSB0       # the serial console, as events
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 

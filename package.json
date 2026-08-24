@@ -45,7 +45,9 @@
     "tee": "node tailers/bin/superlog-tee.mjs",
     "git": "node tailers/bin/superlog-git.mjs",
     "github": "node tailers/bin/superlog-github.mjs",
-    "watch": "node tailers/bin/superlog-watch.mjs"
+    "watch": "node tailers/bin/superlog-watch.mjs",
+    "ws": "node tailers/bin/superlog-ws.mjs",
+    "serial": "node tailers/bin/superlog-serial.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -58,6 +60,8 @@
     "superlog-watch": "tailers/bin/superlog-watch.mjs",
     "superlog-log": "tailers/bin/superlog-log",
     "superlog-build": "tailers/bin/superlog-build.mjs",
-    "superlog-tail": "tailers/bin/superlog-tail.mjs"
+    "superlog-tail": "tailers/bin/superlog-tail.mjs",
+    "superlog-ws": "tailers/bin/superlog-ws.mjs",
+    "superlog-serial": "tailers/bin/superlog-serial.mjs"
   }
 }
