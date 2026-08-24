@@ -149,6 +149,36 @@ fields, sessions, real levels). A tailer and the SDK publishing to the *same
 topic* at the same time will double-report the app's own console lines — run
 one or the other per device.
 
+## Shell scripts: superlog-log
+
+Every other producer here needs something installed. [bin/superlog-log](bin/superlog-log)
+needs `sh` and `curl`, which is what a deploy script, a cron job or a box
+you have just ssh-ed into actually has. POSIX sh, not bash; no node, no
+python, no jq.
+
+```sh
+superlog-log --topic deploy.web "rolling back to 1.4.2"
+tail -f /var/log/nginx/error.log | superlog-log --topic app.web --level WARN
+some-build 2>&1 | superlog-log --topic build.ci --app ci --trace "$TRACE_ID"
+superlog-log --status            # the first thing to run when nothing arrives
+```
+
+With a message it is one event and one POST. With no message it reads
+stdin, one event per line, batched ~50 lines or ~1s per POST - and a
+`tail -f` that is interrupted still delivers what it was holding, because
+the batch buffer lives in the shell where a trap can reach it.
+
+`--level --topic --app --url --trace --tag --field k=v` shape the event;
+`--field` repeats. Quoting is awk's job, so a line carrying `"`, `\`, a tab
+or an ANSI escape arrives byte-exact instead of corrupting the batch.
+
+It follows the same **DEVELOPMENT xor PRODUCTION** rule as the SDKs and has
+no default: declare `SUPERLOG_MODE=development|production` (the repo `.env`
+is the usual place), or it refuses to run. Production ships nothing until
+`SUPERLOG_PROD_POLICY` names a level, and an inert run says so on stderr
+rather than being silently quiet. [demo/shell/clock.sh](../demo/shell/clock.sh)
+is the worked example: the demo clock, on `shell.clock`, in 40 lines of sh.
+
 ## History: journal, search, replay
 
 The hub remembers minutes. `superlog-journal` remembers as long as the disk

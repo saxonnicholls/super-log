@@ -1,0 +1,693 @@
+#!/bin/sh
+#
+#  superlog-log - any shell script, on the bench.
+#
+#  Copyright 2026 Saxon Herschel Nicholls
+#
+#  The producer of last resort. A deploy script, a cron job, a Makefile
+#  recipe or a box you have just ssh-ed into has no SDK to link and often
+#  nothing installed to link one with - but it has sh and it has curl. That
+#  is the entire dependency list here: no node, no python, no jq, nothing
+#  to install on the machine you are already trying to debug.
+#
+#    superlog-log --topic deploy.web "rolling back to 1.4.2"
+#    tail -f /var/log/nginx/error.log | superlog-log --topic app.web --level WARN
+#    echo "deploying" | superlog-log --topic deploy
+#    superlog-log --status          # the first thing to run when nothing arrives
+#
+#  Two shapes, one contract. With a message argument it is one event and
+#  one POST. With no message it reads stdin, one event per line, batching
+#  ~50 lines or ~1s per POST - a line-per-POST tailer spends its life in
+#  TCP handshakes, and a batch is one hub frame either way (PROTOCOL.md).
+#
+#  awk writes the JSON, and that is the load-bearing decision. Quoting a
+#  log line by hand is where every improvised shell logger corrupts its own
+#  stream - one embedded quote and the rest of the batch is garbage - so
+#  escaping is one function with a table covering every control character,
+#  not a chain of sed expressions that each know about one of them. Values
+#  reach awk through the environment (ENVIRON) rather than -v or argv,
+#  because -v re-interprets backslashes and a message is not a format.
+#
+#  The batch buffer lives in sh, not in awk, so a trap can flush it: a
+#  tailer that is killed must still deliver the lines it was holding, and
+#  awk cannot be trapped. awk stays a pure function - text in, one JSON
+#  object per line out - which is also what makes it testable on its own.
+#
+#  DEVELOPMENT xor PRODUCTION, the same as every other SDK here: declare
+#  exactly one, or this refuses to run. Production ships nothing until
+#  SUPERLOG_PROD_POLICY says otherwise. Deciding is the point; the usual
+#  place to decide once for a bench is the repo .env.
+#
+
+# Deliberately no `set -e`. A logger must never be the reason the script it
+# is watching stops: what is fatal here is bad usage, and everything else -
+# a hub that is down, a POST that times out - is a warning on stderr and a
+# zero exit. `set -u` stays, because an unset variable here is a bug.
+set -u
+
+SELF=superlog-log
+DEFAULT_URL=http://127.0.0.1:7333
+
+# One POST per 50 lines or per second, whichever comes first. Fifty lines
+# is a comfortable hub frame and a second is under the threshold where a
+# human notices a stream lagging; neither number is load-bearing.
+BATCH=50
+FLUSH_SECS=1
+
+# ------------------------------------------------------------------ usage
+
+usage() {
+    cat <<'EOF'
+superlog-log - put a shell script on the bench
+
+  superlog-log [options] "message"        one event, one POST
+  ... | superlog-log [options]            one event per input line, batched
+
+Options:
+  --level LEVEL   TRACE DEBUG INFO WARN ERROR CRITICAL      (default INFO)
+  --topic TOPIC   stream name, [a-z0-9._-]                  (default shell.app)
+  --app NAME      origin.app, and the default topic suffix  (default app)
+  --url URL       hub base url        (default $SUPER_LOG_URL or 127.0.0.1:7333)
+  --trace ID      correlation id, shared with every other stream in the story
+  --tag NAME      logical channel - subsystem, logger name, script name
+  --field k=v     structured extra, repeatable; values are strings
+  --development   declare the mode (or SUPERLOG_MODE=development)
+  --production    declare the mode (or SUPERLOG_MODE=production)
+  --quiet         do not print the inert-client notice
+  --status        print what this resolved to, probe the hub, and exit
+  -h, --help      this
+  --              end of options; everything after it is the message
+
+Environment (a .env at the repo root supplies defaults; real environment
+variables win):
+  SUPER_LOG_URL SUPER_LOG_TOPIC SUPER_LOG_APP SUPER_LOG_LEVEL SUPER_LOG_TRACE
+  SUPER_LOG_QUIET
+  SUPERLOG_MODE=development|production
+  SUPERLOG_DEVELOPMENT=1 | SUPERLOG_PRODUCTION=1     (declare exactly one)
+  SUPERLOG_DEV_POLICY   minimum level shipped in development (default TRACE)
+  SUPERLOG_PROD_POLICY  minimum level shipped in production  (default OFF)
+  SUPER_LOG_ENV         path to the .env to read
+EOF
+}
+
+die() {
+    printf '%s: %s\n' "$SELF" "$1" >&2
+    exit "${2:-2}"
+}
+
+usage_err() {
+    printf '%s: %s\n\n' "$SELF" "$1" >&2
+    usage >&2
+    exit 2
+}
+
+# --------------------------------------------------------------- defaults
+
+LEVEL=""
+TOPIC=""
+APP=""
+URL=""
+TRACE=""
+TAG=""
+NFIELDS=0
+WANT_STATUS=0
+QUIET=0
+MODE_FLAG=""
+MSG=""
+HAVE_MSG=0
+WARNED=0
+buf=""
+n=0
+
+# ------------------------------------------------------------------- .env
+#
+# Same convention as tailers/bin/env.mjs - KEY=value, # comments, optional
+# quotes, an optional `export` prefix - and the same rule: the environment
+# wins, because a file is a default and a container or CI job has to be
+# able to override one it cannot edit. The file is *parsed*, never sourced
+# or eval-ed: a .env is edited by whoever can write to the checkout, and a
+# logger that executes it is a shell injection with extra steps.
+
+find_env_file() {
+    if [ -n "${SUPER_LOG_ENV:-}" ]; then
+        [ -f "$SUPER_LOG_ENV" ] && printf '%s' "$SUPER_LOG_ENV"
+        return 0
+    fi
+    case "$0" in
+        */*) _d=${0%/*} ;;
+        *)   _d=. ;;
+    esac
+    _i=0
+    while [ "$_i" -lt 5 ]; do
+        if [ -f "$_d/.env" ]; then
+            printf '%s' "$_d/.env"
+            return 0
+        fi
+        _d="$_d/.."
+        _i=$((_i + 1))
+    done
+    [ -f ./.env ] && printf '%s' ./.env
+    return 0
+}
+
+read_env_file() {
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        while :; do
+            case "$_line" in
+                ' '*|'	'*) _line=${_line#?} ;;
+                *) break ;;
+            esac
+        done
+        case "$_line" in
+            ''|'#'*) continue ;;
+            'export '*) _line=${_line#export } ;;
+        esac
+        case "$_line" in
+            *=*) : ;;
+            *) continue ;;
+        esac
+        _k=${_line%%=*}
+        _v=${_line#*=}
+        case "$_v" in
+            '"'*'"') _v=${_v#\"}; _v=${_v%\"} ;;
+            "'"*"'") _v=${_v#\'}; _v=${_v%\'} ;;
+        esac
+        [ -n "$_v" ] || continue
+        # Only the keys this tool understands, so a .env full of RPC
+        # credentials for the chain watcher stays none of its business.
+        case "$_k" in
+            SUPER_LOG_URL)        [ -n "${SUPER_LOG_URL:-}" ]        || SUPER_LOG_URL=$_v ;;
+            SUPER_LOG_TOPIC)      [ -n "${SUPER_LOG_TOPIC:-}" ]      || SUPER_LOG_TOPIC=$_v ;;
+            SUPER_LOG_APP)        [ -n "${SUPER_LOG_APP:-}" ]        || SUPER_LOG_APP=$_v ;;
+            SUPER_LOG_LEVEL)      [ -n "${SUPER_LOG_LEVEL:-}" ]      || SUPER_LOG_LEVEL=$_v ;;
+            SUPER_LOG_TRACE)      [ -n "${SUPER_LOG_TRACE:-}" ]      || SUPER_LOG_TRACE=$_v ;;
+            SUPER_LOG_QUIET)      [ -n "${SUPER_LOG_QUIET:-}" ]      || SUPER_LOG_QUIET=$_v ;;
+            SUPERLOG_MODE)        [ -n "${SUPERLOG_MODE:-}" ]        || SUPERLOG_MODE=$_v ;;
+            SUPERLOG_DEVELOPMENT) [ -n "${SUPERLOG_DEVELOPMENT:-}" ] || SUPERLOG_DEVELOPMENT=$_v ;;
+            SUPERLOG_PRODUCTION)  [ -n "${SUPERLOG_PRODUCTION:-}" ]  || SUPERLOG_PRODUCTION=$_v ;;
+            SUPERLOG_DEV_POLICY)  [ -n "${SUPERLOG_DEV_POLICY:-}" ]  || SUPERLOG_DEV_POLICY=$_v ;;
+            SUPERLOG_PROD_POLICY) [ -n "${SUPERLOG_PROD_POLICY:-}" ] || SUPERLOG_PROD_POLICY=$_v ;;
+        esac
+    done < "$1"
+}
+
+# ------------------------------------------------------------------ flags
+
+add_field() {
+    case "$1" in
+        *=*) : ;;
+        *) usage_err "--field wants k=v, got '$1'" ;;
+    esac
+    _k=${1%%=*}
+    _v=${1#*=}
+    [ -n "$_k" ] || usage_err "--field with an empty key"
+    # Dynamic names need eval, but only names are ever expanded into the
+    # command: the value is passed by reference, so a field carrying a
+    # backtick or a semicolon is data, exactly like a message is.
+    eval "SL_F${NFIELDS}_K=\$_k; SL_F${NFIELDS}_V=\$_v"
+    eval "export SL_F${NFIELDS}_K SL_F${NFIELDS}_V"
+    NFIELDS=$((NFIELDS + 1))
+}
+
+# An empty value is a mistake, not a reset: `--topic "$UNSET_VAR"` would
+# otherwise fall through to the default and publish a stream nobody is
+# watching, which is the hardest kind of missing log to find.
+need() {
+    [ -n "$2" ] || usage_err "$1 must not be empty"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --level)   [ $# -ge 2 ] || usage_err "--level needs a value"; need --level "$2"; LEVEL=$2; shift 2 ;;
+        --level=*) need --level "${1#*=}"; LEVEL=${1#*=}; shift ;;
+        --topic)   [ $# -ge 2 ] || usage_err "--topic needs a value"; need --topic "$2"; TOPIC=$2; shift 2 ;;
+        --topic=*) need --topic "${1#*=}"; TOPIC=${1#*=}; shift ;;
+        --app)     [ $# -ge 2 ] || usage_err "--app needs a value"; need --app "$2"; APP=$2; shift 2 ;;
+        --app=*)   need --app "${1#*=}"; APP=${1#*=}; shift ;;
+        --url)     [ $# -ge 2 ] || usage_err "--url needs a value"; need --url "$2"; URL=$2; shift 2 ;;
+        --url=*)   need --url "${1#*=}"; URL=${1#*=}; shift ;;
+        --trace)   [ $# -ge 2 ] || usage_err "--trace needs a value"; TRACE=$2; shift 2 ;;
+        --trace=*) TRACE=${1#*=}; shift ;;
+        --tag)     [ $# -ge 2 ] || usage_err "--tag needs a value"; TAG=$2; shift 2 ;;
+        --tag=*)   TAG=${1#*=}; shift ;;
+        --field)   [ $# -ge 2 ] || usage_err "--field needs k=v"; add_field "$2"; shift 2 ;;
+        --field=*) add_field "${1#*=}"; shift ;;
+        --development) MODE_FLAG="${MODE_FLAG}development "; shift ;;
+        --production)  MODE_FLAG="${MODE_FLAG}production "; shift ;;
+        --quiet|-q) QUIET=1; shift ;;
+        --status)  WANT_STATUS=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        --) shift; break ;;
+        -*) usage_err "unknown option '$1'" ;;
+        *) break ;;
+    esac
+done
+
+if [ $# -gt 0 ]; then
+    # Several words are one message, so `superlog-log deploy finished` reads
+    # the way echo does rather than needing quotes it will not get.
+    MSG="$*"
+    HAVE_MSG=1
+fi
+
+ENV_FILE=$(find_env_file)
+[ -n "$ENV_FILE" ] && read_env_file "$ENV_FILE"
+
+# ---------------------------------------------------------- mode + policy
+#
+# DEVELOPMENT xor PRODUCTION. Three ways to say it because a shell tool is
+# configured from three places - the command line, the environment, and a
+# .env checked into the bench - but exactly one answer, and no default: a
+# producer that guesses which mode it is in is how a production box starts
+# shipping debug lines to somebody's laptop.
+
+DECLARED=""
+MODE_ERR=""
+truthy() {
+    case "${1:-}" in
+        1|true|TRUE|yes|YES|on|ON) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+case "$MODE_FLAG" in
+    '') : ;;
+    *development*production*|*production*development*)
+        MODE_ERR="--development and --production are exclusive; pass one" ;;
+    *development*) DECLARED=development ;;
+    *production*)  DECLARED=production ;;
+esac
+
+if [ -z "$DECLARED" ] && [ -z "$MODE_ERR" ]; then
+    _env_declared=""
+    _env_var=""
+    truthy "${SUPERLOG_DEVELOPMENT:-}" && { _env_declared=development; _env_var=SUPERLOG_DEVELOPMENT; }
+    if truthy "${SUPERLOG_PRODUCTION:-}"; then
+        if [ -n "$_env_declared" ]; then
+            MODE_ERR="SUPERLOG_DEVELOPMENT and SUPERLOG_PRODUCTION are both set; set exactly one"
+        fi
+        _env_declared=production
+        _env_var=SUPERLOG_PRODUCTION
+    fi
+    case "${SUPERLOG_MODE:-}" in
+        '') : ;;
+        development|production)
+            if [ -n "$_env_declared" ] && [ "$_env_declared" != "$SUPERLOG_MODE" ]; then
+                MODE_ERR="SUPERLOG_MODE=$SUPERLOG_MODE contradicts $_env_var; set one or the other"
+            fi
+            _env_declared="$SUPERLOG_MODE"
+            ;;
+        *) MODE_ERR="SUPERLOG_MODE must be development or production, got '${SUPERLOG_MODE}'" ;;
+    esac
+    [ -n "$MODE_ERR" ] || DECLARED="$_env_declared"
+fi
+
+if [ -z "$DECLARED" ] && [ -z "$MODE_ERR" ]; then
+    MODE_ERR="no mode declared - set exactly one of SUPERLOG_MODE=development|production,
+       SUPERLOG_DEVELOPMENT=1 or SUPERLOG_PRODUCTION=1 (or pass --development
+       / --production). The repo .env is the usual place to decide once."
+fi
+
+MODE="${DECLARED:-none}"
+if [ "$MODE" = production ]; then
+    POLICY="${SUPERLOG_PROD_POLICY:-OFF}"
+    POLICY_VAR=SUPERLOG_PROD_POLICY
+else
+    POLICY="${SUPERLOG_DEV_POLICY:-TRACE}"
+    POLICY_VAR=SUPERLOG_DEV_POLICY
+fi
+
+# Ranks, shared by the policy and the event level. OFF is a rank above
+# every level so "below policy" is one comparison and never a special case.
+rank_of() {
+    case "$1" in
+        TRACE|trace)       echo 0 ;;
+        DEBUG|debug)       echo 1 ;;
+        INFO|info)         echo 2 ;;
+        WARN|warn)         echo 3 ;;
+        ERROR|error)       echo 4 ;;
+        CRITICAL|critical) echo 5 ;;
+        OFF|off)           echo 6 ;;
+        *) echo -1 ;;
+    esac
+}
+canon_level() {
+    case "$1" in
+        TRACE|trace)       echo TRACE ;;
+        DEBUG|debug)       echo DEBUG ;;
+        INFO|info)         echo INFO ;;
+        WARN|warn)         echo WARN ;;
+        ERROR|error)       echo ERROR ;;
+        CRITICAL|critical) echo CRITICAL ;;
+        OFF|off)           echo OFF ;;
+        *) echo '' ;;
+    esac
+}
+
+POLICY=$(canon_level "$POLICY")
+[ -n "$POLICY" ] || die "$POLICY_VAR is not a level name: use TRACE DEBUG INFO WARN ERROR CRITICAL or OFF"
+POLICY_RANK=$(rank_of "$POLICY")
+
+LEVEL="${LEVEL:-${SUPER_LOG_LEVEL:-INFO}}"
+LEVEL=$(canon_level "$LEVEL")
+[ -n "$LEVEL" ] || usage_err "--level wants TRACE DEBUG INFO WARN ERROR or CRITICAL"
+[ "$LEVEL" != OFF ] || usage_err "--level OFF is not a level; that is a policy"
+LEVEL_RANK=$(rank_of "$LEVEL")
+
+# ------------------------------------------------------------ destination
+
+URL="${URL:-${SUPER_LOG_URL:-$DEFAULT_URL}}"
+while :; do
+    case "$URL" in
+        */) URL=${URL%/} ;;
+        *) break ;;
+    esac
+done
+case "$URL" in
+    http://*|https://*) : ;;
+    *) usage_err "--url must be http:// or https://, got '$URL'" ;;
+esac
+
+APP="${APP:-${SUPER_LOG_APP:-app}}"
+TOPIC="${TOPIC:-${SUPER_LOG_TOPIC:-shell.$APP}}"
+# PROTOCOL.md: lowercase, dot-separated, [a-z0-9._-]. Enforced rather than
+# sanitised, because a topic that quietly becomes something else is a
+# stream nobody can find - and because it is pasted into a URL path.
+case "$TOPIC" in
+    '') usage_err "--topic must not be empty" ;;
+    *[!a-z0-9._-]*) usage_err "--topic must match [a-z0-9._-], got '$TOPIC'" ;;
+esac
+INGEST="$URL/ingest/$TOPIC"
+
+TRACE="${TRACE:-${SUPER_LOG_TRACE:-}}"
+truthy "${SUPER_LOG_QUIET:-}" && QUIET=1
+
+# PROTOCOL.md names the platforms it knows; anything else ships its uname
+# unchanged rather than being forced into one of them, which is the
+# tolerant-reader rule pointed the other way.
+PLATFORM=$(uname -s 2>/dev/null || echo unknown)
+case "$PLATFORM" in
+    Darwin) PLATFORM=macos ;;
+    Linux) PLATFORM=linux ;;
+    MINGW*|MSYS*|CYGWIN*|Windows*) PLATFORM=windows ;;
+    FreeBSD) PLATFORM=freebsd ;;
+    OpenBSD) PLATFORM=openbsd ;;
+    NetBSD) PLATFORM=netbsd ;;
+    SunOS) PLATFORM=solaris ;;
+    AIX) PLATFORM=aix ;;
+esac
+DEVICE=$(uname -n 2>/dev/null || echo '')
+
+# One session per run, so `seq` means something and a gap in it proves this
+# producer lost lines. /dev/urandom where there is one; a seeded rand with
+# the pid mixed in where there is not, because two invocations inside the
+# same second must not collide.
+SESSION=$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | awk '{ for (i = 1; i <= NF; i++) printf "%s", $i }')
+if [ -z "$SESSION" ]; then
+    SESSION=$(awk -v p="$$" 'BEGIN {
+        srand(); s = srand(); srand(s + p)
+        printf "%04x%04x%04x%04x", int(rand() * 65536), int(rand() * 65536),
+               int(rand() * 65536), int(rand() * 65536)
+    }')
+fi
+
+# Sub-second precision comes from the clock the box actually has: GNU and
+# busybox date carry %N, BSD date historically does not, and sh has no
+# clock of its own. Where nanoseconds are unavailable the fraction is
+# .000 - stated, not invented.
+TS_FMT='%Y-%m-%dT%H:%M:%S.%NZ'
+case "$(date -u +%N 2>/dev/null)" in
+    ''|*[!0-9]*) TS_FMT='%Y-%m-%dT%H:%M:%S.000Z' ;;
+esac
+TS_CMD="date -u +$TS_FMT"
+
+# ----------------------------------------------------------------- status
+
+if [ "$WANT_STATUS" -eq 1 ]; then
+    if ! command -v curl >/dev/null 2>&1; then
+        hub_state="unknown - no curl on this machine"
+    elif curl -sf --max-time 2 -o /dev/null "$URL/healthz" 2>/dev/null; then
+        hub_state=reachable
+    else
+        hub_state="unreachable (nothing is listening, or it is not superlogd)"
+    fi
+    if [ -n "$MODE_ERR" ]; then
+        enabled="no - no mode, see below"
+    elif [ "$POLICY" = OFF ]; then
+        enabled="no - $MODE policy is OFF, so this mode ships nothing"
+    elif [ "$LEVEL_RANK" -lt "$POLICY_RANK" ]; then
+        enabled="no - $LEVEL is below the $POLICY policy"
+    else
+        enabled=yes
+    fi
+    policy_shown="$POLICY ($POLICY_VAR)"
+    [ -n "$MODE_ERR" ] && policy_shown="(undecided - no mode)"
+    printf '%s\n' "$SELF status"
+    printf '  %-9s %s\n' \
+        mode      "$MODE" \
+        policy    "$policy_shown" \
+        level     "$LEVEL" \
+        enabled   "$enabled" \
+        url       "$URL" \
+        topic     "$TOPIC" \
+        ingest    "$INGEST" \
+        hub       "$hub_state" \
+        app       "$APP" \
+        platform  "$PLATFORM" \
+        device    "${DEVICE:-(none)}" \
+        session   "$SESSION" \
+        trace     "${TRACE:-(none)}" \
+        fields    "$NFIELDS" \
+        ts        "$TS_CMD" \
+        env       "${ENV_FILE:-(none found)}"
+    if [ -n "$MODE_ERR" ]; then
+        printf '\n%s: %s\n' "$SELF" "$MODE_ERR" >&2
+        exit 2
+    fi
+    exit 0
+fi
+
+[ -n "$MODE_ERR" ] && die "$MODE_ERR"
+
+# An inert client is indistinguishable from a broken one - nothing arrives,
+# nothing complains - and that ambiguity is worth a line on stderr every
+# time, because the fix is one variable away and the message names it.
+if [ "$POLICY" = OFF ]; then
+    [ "$QUIET" -eq 1 ] || printf '%s\n' \
+        "$SELF: $MODE policy is OFF - nothing will be sent to $URL. Set $POLICY_VAR (e.g. ERROR) to change that." >&2
+    exit 0
+fi
+if [ "$LEVEL_RANK" -lt "$POLICY_RANK" ]; then
+    exit 0      # below this mode's policy: not even serialised
+fi
+
+command -v curl >/dev/null 2>&1 || die "curl is required (sh and curl are the whole dependency list)" 127
+command -v awk >/dev/null 2>&1 || die "awk is required" 127
+
+# ------------------------------------------------------------------- json
+#
+# The one part that has to be exactly right. Everything reaches awk through
+# ENVIRON, so no argument is ever re-parsed on the way in, and every string
+# leaves through esc(), so no byte in a log line can end the JSON string it
+# is inside. The fast path is a claim about the common case, not about
+# correctness: a line with no quote, no backslash and no control character
+# is already its own JSON body.
+
+export SL_LEVEL="$LEVEL" SL_SESSION="$SESSION" SL_APP="$APP" \
+       SL_PLATFORM="$PLATFORM" SL_DEVICE="$DEVICE" SL_TRACE="$TRACE" \
+       SL_TAG="$TAG" SL_NFIELDS="$NFIELDS" SL_TS_CMD="$TS_CMD"
+
+AWK_PROG='
+function esc(s,   i, n, c, out) {
+    if (index(s, "\\") == 0 && index(s, "\"") == 0 && s ~ /^[[:print:]]*$/)
+        return s
+    out = ""
+    n = length(s)
+    for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c in ESC) out = out ESC[c]
+        else out = out c
+    }
+    return out
+}
+
+# POSIX awk has no clock - systime() is a gawk and mawk extension that the
+# awk on a Mac does not have - so the time comes from a date the same way
+# everything else in sh does. That is a fork per event, which is free at
+# the rates a shell script logs at and the wrong price under a flood: on
+# this Mac a fork costs ~8 ms, so 1000 lines took 9.5 s with a clock read
+# each and 2.5 s with the budget below. Past the budget, events in that
+# tick window share the last real reading rather than the process spending
+# its life in fork() - precision degrades exactly where volume matters
+# more than precision, and `seq` still orders them.
+function now(   t) {
+    if (FIXED != "") return FIXED
+    if (forks < BUDGET) {
+        t = ""
+        TSCMD | getline t
+        close(TSCMD)
+        if (t != "") { last = t; forks++ }
+    }
+    return last
+}
+
+function emit(msg,   line, t) {
+    line = "{\"v\":1"
+    t = now()
+    # No timestamp beats a wrong one: PROTOCOL.md says a missing ts means
+    # hub arrival, which is the honest answer when the clock did not answer.
+    if (t != "") line = line ",\"ts\":\"" t "\""
+    line = line ",\"seq\":" seq ",\"session\":\"" SESSION "\""
+    line = line ",\"level\":\"" LEVEL "\",\"origin\":{" ORIGIN "}"
+    if (TAG != "") line = line ",\"tag\":\"" esc(TAG) "\""
+    if (TRACE != "") line = line ",\"trace\":\"" esc(TRACE) "\""
+    line = line ",\"msg\":\"" esc(msg) "\""
+    if (FIELDS != "") line = line ",\"fields\":{" FIELDS "}"
+    print line "}"
+    seq++
+    # awk block-buffers a pipe, and a batch nobody has flushed is a batch
+    # the trap downstream cannot save.
+    fflush()
+}
+
+BEGIN {
+    for (i = 1; i < 32; i++) ESC[sprintf("%c", i)] = sprintf("\\u%04x", i)
+    ESC["\b"] = "\\b"; ESC["\t"] = "\\t"; ESC["\n"] = "\\n"
+    ESC["\f"] = "\\f"; ESC["\r"] = "\\r"
+    ESC["\""] = "\\\""; ESC["\\"] = "\\\\"
+
+    LEVEL   = ENVIRON["SL_LEVEL"]
+    SESSION = ENVIRON["SL_SESSION"]
+    TRACE   = ENVIRON["SL_TRACE"]
+    TAG     = ENVIRON["SL_TAG"]
+    TSCMD   = ENVIRON["SL_TS_CMD"]
+    FIXED   = ENVIRON["SL_TS"]
+    ONE     = ENVIRON["SL_ONE"]
+    TICK    = ENVIRON["SL_TICK"]
+    MARK    = ENVIRON["SL_MARK"]
+    BUDGET  = 200
+    forks = 0; seq = 0; last = ""; body = ""
+
+    ORIGIN = "\"runtime\":\"shell\",\"app\":\"" esc(ENVIRON["SL_APP"]) "\""
+    if (ENVIRON["SL_PLATFORM"] != "")
+        ORIGIN = ORIGIN ",\"platform\":\"" esc(ENVIRON["SL_PLATFORM"]) "\""
+    if (ENVIRON["SL_DEVICE"] != "")
+        ORIGIN = ORIGIN ",\"device\":\"" esc(ENVIRON["SL_DEVICE"]) "\""
+
+    FIELDS = ""
+    nf = ENVIRON["SL_NFIELDS"] + 0
+    for (i = 0; i < nf; i++) {
+        if (FIELDS != "") FIELDS = FIELDS ","
+        FIELDS = FIELDS "\"" esc(ENVIRON["SL_F" i "_K"]) "\":\"" \
+                 esc(ENVIRON["SL_F" i "_V"]) "\""
+    }
+}
+
+# A message argument is one event however many lines it spans; a stream is
+# one event per line. Same escaping either way - the newline that separates
+# NDJSON records is the one byte a message is never allowed to contain.
+ONE == "1" { body = (NR == 1 ? $0 : body "\n" $0); next }
+
+$0 == TICK { print MARK; forks = 0; fflush(); next }
+/^[ \t]*$/ { next }
+{ emit($0) }
+
+END { if (ONE == "1") emit(body) }
+'
+
+# ------------------------------------------------------------------- post
+
+send_failed() {
+    [ "$WARNED" -eq 1 ] && return 0
+    WARNED=1
+    printf '%s\n' \
+        "$SELF: POST to $INGEST failed - is superlogd up? ($SELF --status probes it)" >&2
+}
+
+flush() {
+    [ "$n" -eq 0 ] && return 0
+    # --data-binary @- because the body goes in on stdin: no argument length
+    # limit, and no chance of curl reading a leading @ in a log line as a
+    # filename. --max-time so a wedged hub cannot wedge the caller.
+    printf '%s\n' "$buf" | curl -sf --max-time 5 \
+        -H 'Content-Type: application/x-ndjson' \
+        --data-binary @- "$INGEST" >/dev/null 2>&1 || send_failed
+    buf=""
+    n=0
+}
+
+if [ "$HAVE_MSG" -eq 1 ]; then
+    SL_TS=$($TS_CMD)
+    export SL_TS SL_ONE=1
+    buf=$(printf '%s' "$MSG" | awk "$AWK_PROG")
+    # An empty buffer means awk itself failed; posting it would put a blank
+    # line into a stream whose whole promise is that every line is an event.
+    [ -n "$buf" ] || die "the event could not be serialised (awk failed)" 1
+    n=1
+    flush
+    exit 0
+fi
+
+# ---------------------------------------------------------------- stdin
+#
+# Nothing to say and nowhere to read it from is a usage error, not a wait:
+# a logger that blocks on a terminal looks exactly like a logger that hung.
+if [ -t 0 ]; then
+    usage_err "no message and stdin is a terminal - pass a message or pipe one in"
+fi
+
+export SL_TICK="__superlog_tick_${SESSION}__"
+export SL_MARK="__superlog_flush__"
+
+# The flush timer is a line in the stream, not a signal: POSIX `read` has no
+# timeout (that is a bash extension), and a trap firing mid-read loses the
+# line being read. So a heartbeat writes a sentinel into the same pipe once
+# a second and awk turns it into a flush marker - the reader stays a plain
+# blocking read, and a stream that goes quiet still delivers what it had.
+heartbeat() {
+    while :; do
+        # sleep's stdout goes to /dev/null on purpose. It inherits this
+        # pipe otherwise, and then awk waits a whole second for an EOF that
+        # already happened - which is a second of latency on every
+        # `echo ... | superlog-log`.
+        sleep "$FLUSH_SECS" >/dev/null 2>&1
+        printf '%s\n' "$SL_TICK" || return 0
+    done
+}
+
+{
+    heartbeat &
+    hb=$!
+    cat
+    kill "$hb" 2>/dev/null
+} | awk "$AWK_PROG" | {
+    # The buffer lives here, in sh, so these traps can empty it. Ctrl-C on
+    # a `tail -f | superlog-log` must still deliver the last lines: they are
+    # usually the interesting ones.
+    trap 'flush; exit 0' INT TERM
+    trap flush EXIT
+    while IFS= read -r line; do
+        if [ "$line" = "$SL_MARK" ]; then
+            flush
+            # $$ is still the pid of the script itself in here, so this asks
+            # "was I killed?". A signal aimed at that pid alone - a
+            # supervisor stopping one tailer rather than a terminal
+            # interrupting a whole process group - never reaches this
+            # subshell, and a pipeline that outlives the process that owns
+            # it goes on publishing with nothing left to stop it. One tick
+            # of latency to notice is the price, and the batch went first.
+            kill -0 "$$" 2>/dev/null || exit 0
+            continue
+        fi
+        if [ "$n" -eq 0 ]; then
+            buf="$line"
+        else
+            buf="$buf
+$line"
+        fi
+        n=$((n + 1))
+        [ "$n" -ge "$BATCH" ] && flush
+    done
+    flush
+}
+exit 0
