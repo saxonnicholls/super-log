@@ -246,8 +246,13 @@ const counts = { CRITICAL: 0, ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0 };
 // ends mid-snippet.
 let pending = null;
 
-function settle() {
-  if (!pending) return;
+// force=false is the periodic flush, which must NOT settle a report that is
+// still arriving: over ssh a sanitizer report spans seconds, so the timer
+// fires mid-report, the event is sealed, and every remaining line is dropped
+// on the floor. Locally the whole report lands inside one tick, which is
+// exactly why this only showed up against a remote build.
+function settle(force = false) {
+  if (!pending || (capturing && !force)) return;
   buf.push(JSON.stringify(pending));
   pending = null;
   if (buf.length >= 256) void flush();
@@ -286,7 +291,11 @@ function captureReport(line) {
 }
 
 function publish(level, msg, fields) {
-  settle();
+  // A new event beginning means whatever was in flight is finished, so this
+  // settles even mid-capture - which is how the closing verdict seals a
+  // report whose terminator the tool never printed.
+  settle(true);
+  capturing = null;
   counts[level] = (counts[level] ?? 0) + 1;
   pending = {
     v: 1, ts: new Date().toISOString(), seq: seq++, session, level,
