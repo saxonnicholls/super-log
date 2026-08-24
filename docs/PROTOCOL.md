@@ -61,6 +61,9 @@ host-side tailer scraping the same device:
 | `os.<host>`           | a machine's own OS logs (macOS unified log, journald, Windows event log) - one topic per machine, tailed locally, from the LAN, or over ssh |
 | `app.<host>.<name>`   | a service's log file on that machine (postgres, nginx, redis, ...); `.<file>` suffix when one service writes several |
 | `net.<host>.<target>` | HTTP/HTTPS calls through the logging proxy - one event per request/response pair |
+| `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
+| `net.<host>.listeners`| listening sockets and the processes that own them |
+| `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.
 

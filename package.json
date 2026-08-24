@@ -31,7 +31,9 @@
     "demo:web": "node demo/web/serve.mjs",
     "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react",
     "chain": "node tailers/bin/superlog-chain.mjs",
-    "dns": "node tailers/bin/superlog-dns.mjs"
+    "dns": "node tailers/bin/superlog-dns.mjs",
+    "ports": "node tailers/bin/superlog-ports.mjs",
+    "build": "node tailers/bin/superlog-build.mjs"
   },
   "engines": {
     "node": ">=18"

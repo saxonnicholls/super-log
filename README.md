@@ -76,8 +76,19 @@ on `patchNetwork` in the app and see the calls it makes. HTTPS targets need
 no certificate work. Bodies are opt-in; credentials are always redacted.
 
 **Blockchain addresses, beside the code that touched them.** Watch any EVM
-address and its transfers and contract events land on the same screen, in
-hub order, next to the app code that sent them.
+address and its transfers, contract events and native balance moves land on
+the same screen, in hub order, next to the app code that sent them.
+
+**Infrastructure that only speaks when something changes.** DNS records and
+TLS expiry, listening ports and the processes that own them — all watched by
+diffing snapshots, so the stream is silent until it matters: an NS record you
+did not change, a certificate three weeks out, a new public listener on a
+production box, a service that restarted without saying so.
+
+**Builds as events, not walls of text.** Wrap any build — cmake, clang, gcc,
+cargo, npm, xcodebuild, local or over ssh — and compiler diagnostics become
+WARN/ERROR rows with `file:line`, with one summary event carrying exit
+status, duration and counts.
 
 **History, not just the last few minutes.** The journal writes every frame
 verbatim to disk; `search` reads it back with the same filters as the live
@@ -189,7 +200,30 @@ npm run tail:ssh -- my-server               # a remote box, OS auto-detected
 npm run tail:ssh -- db1 --app postgres      # ...or its postgres
 npm run net -- 9000 http://localhost:3000   # every HTTP call through :9000
 npm run chain                               # watched addresses (see .env)
+npm run dns -- example.com --once           # every DNS record + cert, then exit
+npm run dns -- example.com mail.example.com # ...or watch them for change
+npm run ports -- --once                     # what is listening, and which process
+npm run ports -- --ssh web1 --procs nginx   # ...on a server, watched
+npm run build -- --label cxx -- cmake --build build -j
+npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
+
+### Infrastructure watches
+
+These three diff a snapshot rather than streaming, so the first poll is a
+silent baseline and only *changes* are reported — a watcher that announces
+everything it sees teaches you to ignore it.
+
+| Watch | Publishes | Notable levels |
+|-------|-----------|----------------|
+| `dns` | `dns.<domain>` — A, AAAA, NS, MX, TXT, CAA and the TLS certificate | **NS/CAA change is WARN** (you probably did not do it; it is how a domain gets taken), a record type vanishing is ERROR, certs go WARN at 3 weeks → ERROR at 1 → CRITICAL once expired. TXT changes are named by kind, so it says *"SPF/DMARC record changed"* rather than making you diff two long strings. |
+| `ports` | `net.<host>.listeners` — listening sockets, owning process, pid | A **new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR. |
+| `build` | `build.<host>.<label>` — one event per diagnostic, one verdict | Compiler errors are ERROR with `file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships. |
+
+`dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
+record changed, not that a laptop moved networks and hit a different cache.
+`build` is transparent: it prints the output and exits with the build's own
+status, so it can sit inside a Makefile or a CI step unchanged.
 
 ## Whole fleets
 
