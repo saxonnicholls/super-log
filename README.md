@@ -101,6 +101,14 @@ or repeats an event. For coding agents there is an **MCP server**: check the
 hub, list streams, tail and search (live *and* history), follow a trace, and
 `wait_for` an event after triggering an action instead of sleeping.
 
+**Something reaches you when nobody is watching.** Rules over the live feed
+fire to a desktop notification, a webhook, a command, or back onto the bench
+as `alert.*`. Three shapes, because production breaks in three ways:
+something bad was logged, *too much* of it was logged, or something
+**stopped** being logged — the last being the one most tools miss, since a
+server with nothing to say and a server that is gone look identical until
+you check. Rate and silence rules report recovery too.
+
 **Producers never block.** Every SDK uses a bounded queue that drops oldest
 under burst — counted, never hidden. A logger that can stall the app it
 observes is worse than no logger.
@@ -206,6 +214,8 @@ npm run ports -- --once                     # what is listening, and which proce
 npm run ports -- --ssh web1 --procs nginx   # ...on a server, watched
 npm run vitals -- --once                    # disk, memory, CPU, load
 npm run vitals -- --ssh web1                # ...on a server, watched
+npm run alert                               # rules from alerts.json
+npm run alert -- --test                     # prove delivery without waiting
 npm run build -- --label cxx -- cmake --build build -j
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```

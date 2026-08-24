@@ -33,3 +33,6 @@ fleet.json
 
 # Real credentials: RPC URLs carry provider keys. .env.example is the template.
 .env
+
+# Alert rules: may carry a webhook URL, which is a credential
+alerts.json

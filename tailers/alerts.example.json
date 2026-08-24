@@ -1,0 +1,57 @@
+{
+  "//": "Copy to alerts.json (gitignored - a webhook URL is a credential) and edit. Rules fire to `notify` targets: console, desktop, webhook, hub, command. Alerts are also published to alert.<name>, so they appear in the viewers beside the events that caused them.",
+  "url": "http://127.0.0.1:7333",
+  "notify": ["console", "hub"],
+  "webhook": "",
+
+  "rules": [
+    {
+      "//": "Anything bad from production. cooldown stops one broken service filling your notification centre.",
+      "name": "production errors",
+      "topic": "os.",
+      "level": "ERROR",
+      "cooldown": 300,
+      "notify": ["console", "desktop", "hub"]
+    },
+    {
+      "//": "Not any one error - a burst of them. This is what a deploy going wrong looks like.",
+      "name": "error spike",
+      "topic": "*",
+      "level": "ERROR",
+      "rate": { "count": 20, "window": 60 },
+      "cooldown": 600,
+      "notify": ["console", "desktop", "hub"]
+    },
+    {
+      "//": "The one most tools miss: a stream that STOPPED. A server with nothing to say and a server that is gone look identical until you check.",
+      "name": "handset went quiet",
+      "topic": "expo.ios.device",
+      "silence": 600,
+      "notify": ["console", "hub"]
+    },
+    {
+      "//": "Disk and certificates: the outages you can see coming.",
+      "name": "host trouble",
+      "topic": "host.",
+      "level": "WARN",
+      "cooldown": 3600,
+      "notify": ["console", "desktop", "hub"]
+    },
+    {
+      "//": "Anything that reads on a domain's control plane. NS and CAA changes are how a domain gets taken.",
+      "name": "dns changed",
+      "topic": "dns.",
+      "level": "WARN",
+      "cooldown": 60,
+      "notify": ["console", "desktop", "hub"]
+    },
+    {
+      "//": "Business-specific: match text rather than level. `command` receives SUPERLOG_ALERT_TITLE and SUPERLOG_ALERT_BODY in its environment - never interpolated into a shell string.",
+      "name": "payments failing",
+      "contains": "payment declined",
+      "cooldown": 120,
+      "notify": ["console", "hub", "command"],
+      "command": "echo \"$SUPERLOG_ALERT_TITLE\" >> /tmp/payment-alerts.log"
+    }
+  ]
+}

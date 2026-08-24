@@ -34,7 +34,8 @@
     "dns": "node tailers/bin/superlog-dns.mjs",
     "ports": "node tailers/bin/superlog-ports.mjs",
     "build": "node tailers/bin/superlog-build.mjs",
-    "vitals": "node tailers/bin/superlog-vitals.mjs"
+    "vitals": "node tailers/bin/superlog-vitals.mjs",
+    "alert": "node tailers/bin/superlog-alert.mjs"
   },
   "engines": {
     "node": ">=18"

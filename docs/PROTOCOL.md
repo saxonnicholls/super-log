@@ -64,6 +64,8 @@ host-side tailer scraping the same device:
 | `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
 | `net.<host>.listeners`| listening sockets and the processes that own them |
 | `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict |
+| `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
+| `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.
 
