@@ -318,9 +318,21 @@ int main()
     const std::uint16_t want_port = port_from_env();
 
     http::ws_broadcast_hub::config hcfg;
-    // Each ring entry is one POSTed chunk (~a quarter second of one stream),
-    // so 1024 is minutes of history for a viewer that just connected.
-    hcfg.ring_capacity   = 1024;
+    // Each ring entry is one POSTed chunk, so this is a count of CHUNKS and
+    // not of events or of bytes - which is the whole reason it is not 1024
+    // any more. A chunk is whatever a producer chose to batch: the SDKs send
+    // ~250ms or 256 events, and a firehose (250 Binance streams) makes those
+    // 64-256KB each. At 1024 the replay ring alone held 66MB for ONE topic on
+    // a 20-minute soak, on its way to ~118MB, and max_message_bytes allows
+    // 1MB chunks - so the true worst case was a gigabyte per topic. The
+    // subscriber queues are bounded by bytes as well as count; this ring is
+    // bounded by count only, so the count has to be the conservative one.
+    //
+    // 128 chunks is still thousands of events of replay - far more than a
+    // freshly-opened viewer needs to look non-blank, which is all this ring
+    // is for. Real history lives in /recent (its own per-topic ring) and in
+    // the journal, both of which are cheaper per event than a retained chunk.
+    hcfg.ring_capacity   = size_from_env("SUPER_LOG_REPLAY_CHUNKS", 128);
     hcfg.max_queue_msgs  = 4096;            // a viewer paused in a debugger
     http::ws_broadcast_hub hub{hcfg};
 
