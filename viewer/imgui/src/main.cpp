@@ -138,11 +138,11 @@ row parse_row(std::string line, const std::string& topic, std::uint64_t hub_seq)
             // the full value is still in the export and the journal.
             const std::size_t nl = val.find('\n');
             if (nl != std::string::npos) {
-                val = val.substr(0, nl) + " …";
+                val = val.substr(0, nl) + " ...";
                 r.multiline = true;
             }
             if (val.size() > 160)
-                val = val.substr(0, 160) + " …";
+                val = val.substr(0, 160) + " ...";
             r.extra += ' ' + k + '=' + val;
         }
     if (j.contains("src") && j["src"].is_string())
@@ -420,9 +420,12 @@ int main()
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(110);
+        // ASCII ">=" and not the nicer "\u2265": ImGui's built-in font carries
+        // Basic Latin and Latin-1 only, so anything above U+00FF renders as a
+        // literal "?". The web viewer, which has real fonts, keeps the symbol.
         ImGui::Combo("##minlevel", &min_level,
-                     "\xE2\x89\xA5 TRACE\0\xE2\x89\xA5 DEBUG\0\xE2\x89\xA5 INFO\0"
-                     "\xE2\x89\xA5 WARN\0\xE2\x89\xA5 ERROR\0\xE2\x89\xA5 CRITICAL\0");
+                     ">= TRACE\0>= DEBUG\0>= INFO\0"
+                     ">= WARN\0>= ERROR\0>= CRITICAL\0");
         ImGui::SameLine();
         {
             std::string items = "all streams";
