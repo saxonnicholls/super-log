@@ -96,7 +96,40 @@ const PATTERNS = [
   // ld:                   ld: symbol(s) not found for architecture arm64
   { rx: /^(?:ld|lld|link\.exe): (?:(error|warning): )?(.*)$/,
     map: (m) => ({ sev: m[1] ?? 'error', msg: `ld: ${m[2]}` }) },
+  // xcodebuild/swiftpm:   ** BUILD FAILED **        (the verdict, not a
+  // diagnostic - xcodebuild can print it after a wall of INFO progress)
+  { rx: /^\*\* (?:BUILD|TEST|ARCHIVE|CLEAN)[A-Z ]* (FAILED|SUCCEEDED) \*\*/,
+    map: (m) => ({ sev: m[1] === 'FAILED' ? 'error' : 'ok', msg: '' }) },
+  { rx: /^(?:The following build commands failed:|Undefined symbols for architecture)/,
+    map: () => ({ sev: 'error', msg: '' }) },
+  // XCTest:               Test Case '-[FooTests testBar]' failed (0.003 s)
+  { rx: /^Test Case .+? (failed|passed)\b/,
+    map: (m) => ({ sev: m[1] === 'failed' ? 'error' : 'ok', msg: '' }) },
+  // swift runtime:        Fatal error: Unexpectedly found nil ...
+  { rx: /^(?:Fatal error|Swift runtime failure):/,
+    map: () => ({ sev: 'fatal error', msg: '' }) },
 ];
+
+// Modern compilers quote the offending source under each diagnostic - Swift
+// and GCC with a numbered gutter, rustc with arrows and notes, clang with a
+// caret. Those lines are not events: publishing them as siblings turns one
+// Swift error into six rows and buries the diagnostic that matters. They are
+// folded into the preceding diagnostic as a `snippet` field instead, which
+// the viewers collapse to one line and expand on demand.
+const CONTINUATION = [
+  /^\s*\d+\s*\|/,              // swift/gcc:  3 | let s: Int = "nope"
+  /^\s*\|/,                    // swift/gcc/rustc gutter and caret rows
+  /^\s*-->\s/,                 // rustc:      --> src/main.rs:4:18
+  /^\s*=\s+(?:note|help):/,    // rustc:      = note: expected type `i32`
+  /^\s*[\^~]+[\s\^~]*$/,       // clang:            ^~~~~
+  /^\[#[A-Za-z0-9]+\]:\s*</,   // swift:      [#DeprecatedDeclaration]: <https://…>
+];
+const isContinuation = (line) => CONTINUATION.some((rx) => rx.test(line));
+
+// Deep enough to show the offending expression in context, short enough that
+// a build with a thousand warnings does not become the payload problem.
+const SNIPPET_LINES = 24;
+const SNIPPET_CHARS = 4000;
 
 const LEVEL = { 'fatal error': 'CRITICAL', error: 'ERROR', Error: 'ERROR',
                 warning: 'WARN', Warning: 'WARN', note: 'DEBUG' };
@@ -106,9 +139,9 @@ function classify(line) {
     const m = p.rx.exec(line);
     if (!m) continue;
     const got = p.map(m);
-    return { level: LEVEL[got.sev] ?? 'INFO', src: got.src, msg: line };
+    return { level: LEVEL[got.sev] ?? 'INFO', src: got.src, msg: line, matched: true };
   }
-  return { level: 'INFO', msg: line };
+  return { level: 'INFO', msg: line, matched: false };
 }
 
 // ------------------------------------------------------------- publishing
@@ -118,20 +151,45 @@ let buf = [];
 let seq = 0;
 const counts = { CRITICAL: 0, ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0 };
 
+// The most recent diagnostic, held open so the snippet lines that follow it
+// can be folded in. Nothing is lost by waiting: settle() runs before every
+// flush and at close, so the last event still leaves even if the compiler
+// ends mid-snippet.
+let pending = null;
+
+function settle() {
+  if (!pending) return;
+  buf.push(JSON.stringify(pending));
+  pending = null;
+  if (buf.length >= 256) void flush();
+}
+
+// Returns false when there was no diagnostic to attach to, so the caller can
+// fall back to publishing the line normally rather than dropping it.
+function appendSnippet(line) {
+  if (!pending) return false;
+  const f = (pending.fields ??= {});
+  const have = f.snippet ? f.snippet.split('\n') : [];
+  if (have.length >= SNIPPET_LINES || (f.snippet?.length ?? 0) >= SNIPPET_CHARS) return true;
+  f.snippet = [...have, line].join('\n');
+  return true;
+}
+
 function publish(level, msg, fields) {
+  settle();
   counts[level] = (counts[level] ?? 0) + 1;
-  buf.push(JSON.stringify({
+  pending = {
     v: 1, ts: new Date().toISOString(), seq: seq++, session, level,
     origin: { runtime: 'node', app: 'build', platform: 'build', device: host },
     tag: label, msg, ...(fields?.src ? { src: fields.src } : {}),
     ...(fields && Object.keys(fields).some((k) => k !== 'src')
       ? { fields: Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'src')) }
       : {}),
-  }));
-  if (buf.length >= 256) void flush();
+  };
 }
 
 async function flush() {
+  settle();
   if (!buf.length) return;
   const body = buf.join('\n');
   buf = [];
@@ -166,12 +224,13 @@ const feed = (which, chunk) => {
   const lines = text.split('\n');
   carry[which] = lines.pop() ?? '';           // an unterminated tail is not a line yet
   for (const line of lines) {
+    if (!quiet) (which === 'err' ? process.stderr : process.stdout).write(line + '\n');
     if (!line.trim()) continue;
     // stderr is where compilers put diagnostics, but plenty of tools log
     // progress there too - so classify by content, not by stream.
+    if (isContinuation(line) && appendSnippet(line)) continue;
     const c = classify(line);
     publish(c.level, c.msg.slice(0, 2000), { src: c.src, stream: which });
-    if (!quiet) (which === 'err' ? process.stderr : process.stdout).write(line + '\n');
   }
 };
 child.stdout.on('data', (d) => feed('out', d));
