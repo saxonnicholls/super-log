@@ -135,6 +135,9 @@ cp .env.example .env             # optional: chain endpoints, hub defaults
 # OS-log streams, both viewers - one command
 npm run demo                     # see demo/README.md for the tour
 
+# ...and the other languages on the same screen, if their toolchains are here
+SUPER_LOG_LANGS="go python java swift fortran shell" npm run demo
+
 # Or piece by piece:
 ./scripts/dev.sh                 # build + run the hub
 npm install && npm run viewer    # web viewer on http://localhost:7334

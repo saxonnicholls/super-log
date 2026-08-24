@@ -69,6 +69,56 @@ if [ "${SUPER_LOG_STANDINS:-1}" != "0" ]; then
 fi
 node demo/web/serve.mjs &
 pids="$pids $!"
+# The other language clients, off by default: each needs its own toolchain
+# and a compile, which would make the common demo slow and make a missing
+# compiler look like a broken demo. SUPER_LOG_LANGS="go python fortran" and
+# so on; anything whose toolchain is absent is named and skipped.
+#
+# Each compiles in the foreground and runs the resulting binary in the
+# background. `build && run &` would background the whole chain, so cleanup
+# would kill the wrapper shell and leave the clock it started running.
+SL_TMP="${TMPDIR:-/tmp}"
+skip() { echo "demo: $1 - skipping $2" >&2; }
+for lang in ${SUPER_LOG_LANGS:-}; do
+    case "$lang" in
+    go)
+        # -linkmode=external: Go 1.21's internal linker omits LC_UUID and
+        # current macOS dyld refuses the binary outright.
+        command -v go >/dev/null || { skip "no go toolchain" go; continue; }
+        (cd demo/go && go build -ldflags=-linkmode=external -o "$SL_TMP/sl_clock_go" .) \
+            || { skip "go build failed" go; continue; }
+        "$SL_TMP/sl_clock_go" &
+        pids="$pids $!" ;;
+    python)
+        command -v python3 >/dev/null || { skip "no python3" python; continue; }
+        python3 demo/python/clock.py &
+        pids="$pids $!" ;;
+    fortran)
+        command -v gfortran >/dev/null || { skip "no gfortran" fortran; continue; }
+        gfortran -cpp -DDEVELOPMENT -J"$SL_TMP" -o "$SL_TMP/sl_clock_f90" \
+            sdk/fortran/superlog.F90 demo/fortran/clock.f90 \
+            || { skip "gfortran build failed" fortran; continue; }
+        "$SL_TMP/sl_clock_f90" &
+        pids="$pids $!" ;;
+    java)
+        command -v javac >/dev/null || { skip "no javac" java; continue; }
+        javac -d "$SL_TMP/sl_java" $(find sdk/java -name '*.java') demo/java/Clock.java \
+            || { skip "javac failed" java; continue; }
+        java -cp "$SL_TMP/sl_java" Clock &
+        pids="$pids $!" ;;
+    swift)
+        command -v swift >/dev/null || { skip "no swift toolchain" swift; continue; }
+        swift build --package-path demo/swift/clock -c release \
+            || { skip "swift build failed" swift; continue; }
+        ./demo/swift/clock/.build/release/clock &
+        pids="$pids $!" ;;
+    shell)
+        [ -f demo/shell/clock.sh ] || { skip "demo/shell/clock.sh absent" shell; continue; }
+        sh demo/shell/clock.sh &
+        pids="$pids $!" ;;
+    *) echo "demo: unknown SUPER_LOG_LANGS entry '$lang'" >&2 ;;
+    esac
+done
 # This Mac's own OS logs beside the app streams (topic os.<host>). Kernel
 # messages, not the whole unified log - unfiltered is thousands of lines a
 # second and unreadable; kernel is the "what is the OS doing" feed at a
