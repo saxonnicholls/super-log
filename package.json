@@ -36,7 +36,8 @@
     "build": "node tailers/bin/superlog-build.mjs",
     "vitals": "node tailers/bin/superlog-vitals.mjs",
     "alert": "node tailers/bin/superlog-alert.mjs",
-    "demo:python": "python3 demo/python/clock.py"
+    "demo:python": "python3 demo/python/clock.py",
+    "demo:swift": "swift run --package-path demo/swift/clock clock"
   },
   "engines": {
     "node": ">=18"
