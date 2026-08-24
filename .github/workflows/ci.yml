@@ -141,3 +141,48 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - run: go vet ./...
+        working-directory: sdk/go
+      - run: go build ./...
+        working-directory: sdk/go
+      - name: demo builds against the SDK through its replace directive
+        run: go vet ./... && go build -o /dev/null .
+        working-directory: demo/go
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      # No pom and no gradle on purpose: the SDK is plain javac, and a build
+      # tool in CI would prove something the consuming project never runs.
+      - run: javac -Xlint:all -Werror -d /tmp/sl $(find sdk/java -name '*.java') demo/java/Clock.java
+
+  fortran:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: gfortran -cpp -DDEVELOPMENT -Wall -J/tmp -o /tmp/clock sdk/fortran/superlog.F90 demo/fortran/clock.f90
+      - run: gfortran -cpp -DPRODUCTION -Wall -J/tmp -o /tmp/clock-prod sdk/fortran/superlog.F90 demo/fortran/clock.f90
+      - name: mode guard refuses neither and both
+        run: |
+          ! gfortran -cpp -J/tmp -c sdk/fortran/superlog.F90 -o /tmp/x.o 2>/dev/null
+          ! gfortran -cpp -DDEVELOPMENT -DPRODUCTION -J/tmp -c sdk/fortran/superlog.F90 -o /tmp/x.o 2>/dev/null
+
+  swift:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build --package-path sdk/swift
+      - run: swift build --package-path demo/swift/clock
