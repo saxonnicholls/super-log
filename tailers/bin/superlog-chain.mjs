@@ -192,6 +192,51 @@ async function rpc(url, method, params = []) {
   return j.result;
 }
 
+// ------------------------------------------------- native value movement
+//
+// A plain ETH transfer emits NO log, so eth_getLogs cannot see it: watching
+// an ordinary wallet by logs alone shows nothing when someone sends it
+// money, which is the one thing the owner of that wallet cares about.
+// Scanning every block's transactions would catch it exactly but costs a
+// full block fetch per block per chain. Balance deltas cost one call per
+// address per tick and answer the actual question - "did this wallet's
+// money move" - so that is what this does, and it says `balance` rather
+// than `transfer` because a delta is not a transaction.
+
+const lastBalance = new Map();
+let lastBalanceCheck = 0;
+
+async function checkBalances(chain, url, byAddress) {
+  for (const [address, w] of byAddress) {
+    let now;
+    try {
+      now = hexToBig(await rpc(url, 'eth_getBalance', [address, 'latest']));
+    } catch {
+      continue;                                 // a hiccup is not a balance change
+    }
+    const key = `${chain}|${address}`;
+    const before = lastBalance.get(key);
+    lastBalance.set(key, now);
+    // The first reading establishes the baseline; reporting it as a change
+    // would announce a transfer that never happened.
+    if (before === undefined || before === now) continue;
+    const delta = now - before;
+    const inbound = delta > 0n;
+    publish(`chain.${chain}.${w.label}`, 'INFO',
+            `balance ${inbound ? 'increased' : 'decreased'} by ` +
+            `${formatUnits(inbound ? delta : -delta)} (now ${formatUnits(now)})`,
+            {
+              chain, address, event: 'BalanceChange',
+              direction: inbound ? 'in' : 'out',
+              delta_raw: delta.toString(),
+              delta: formatUnits(inbound ? delta : -delta),
+              balance_raw: now.toString(),
+              balance: formatUnits(now),
+              decimals: '18',                   // native currency, always 18
+            });
+  }
+}
+
 // ------------------------------------------------------------ the watcher
 
 async function emitLog(chain, log, byAddress, rpcUrl) {
@@ -300,10 +345,16 @@ async function subscribe(chain, url, filters, byAddress) {
         if (m.result && typeof m.result === 'string') { subs.add(m.result); return; }
         const p = m.params?.result;
         if (!p) return;
-        if (p.topics) void emitLog(chain, p, byAddress, url.replace(/^wss:/, "https:").replace(/^ws:/, "http:"));
-        // newHeads arrive too; they are the heartbeat that says the
-        // subscription is alive, and are deliberately not published - a
-        // block every few seconds on every chain is noise, not signal.
+        const httpUrl = url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+        if (p.topics) { void emitLog(chain, p, byAddress, httpUrl); return; }
+        // newHeads are the heartbeat that says the subscription is alive.
+        // They are never published - a block every few seconds on every
+        // chain is noise - but they are the natural moment to notice that
+        // a watched wallet's native balance moved, which no log reports.
+        if (p.number && Date.now() - lastBalanceCheck > pollSeconds * 1000) {
+          lastBalanceCheck = Date.now();
+          void checkBalances(chain, httpUrl, byAddress);
+        }
       };
       ws.onerror = () => {};
       ws.onclose = () => resolve(false);
@@ -327,9 +378,11 @@ async function poll(chain, url, filters, byAddress) {
     return;
   }
   console.error(`superlog-chain: ${chain} polling from block ${from} every ${pollSeconds}s`);
+  await checkBalances(chain, url, byAddress);   // establish the baseline quietly
   for (;;) {
     await new Promise((r) => setTimeout(r, pollSeconds * 1000));
     try {
+      await checkBalances(chain, url, byAddress);
       const head = hexToBig(await rpc(url, 'eth_blockNumber'));
       const safe = head - BigInt(confirmations);
       if (safe <= from) continue;
