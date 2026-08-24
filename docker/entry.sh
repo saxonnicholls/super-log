@@ -7,6 +7,7 @@
 # verification of that tailer against a real journald.
 #
 # Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
 #
 set -e
 

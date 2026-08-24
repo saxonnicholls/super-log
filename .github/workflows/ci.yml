@@ -186,3 +186,75 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --package-path sdk/swift
       - run: swift build --package-path demo/swift/clock
+
+  # Building a client proves it compiles and nothing else. This runs each one
+  # against a real hub and reads the events back out, which is the only way a
+  # client that starts and delivers nothing gets caught.
+  sdk-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: gfortran
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gfortran
+      - name: build the hub
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build --target superlogd superlog_clock_cpp -j
+      - run: npm ci
+      # swift is absent on this runner and is skipped, which the script
+      # reports rather than hides; the macOS job below covers it.
+      - name: every SDK actually delivers
+        run: ./scripts/verify-sdks.sh cpp rust go python java fortran shell node
+
+  sdk-runtime-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: build the hub
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build --target superlogd -j
+      - name: swift client delivers
+        run: ./scripts/verify-sdks.sh swift
+
+  # The shell producer has to work where there is no bash, no node and no GNU
+  # date - which is most embedded Linux and every Alpine container.
+  shell-producer-posix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: build the hub
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build --target superlogd -j
+      - name: busybox ash + busybox awk, no date %N
+        run: |
+          SUPER_LOG_PORT=7361 SUPER_LOG_BIND=0.0.0.0 ./build/hub/superlogd &
+          for i in $(seq 1 50); do curl -sf http://127.0.0.1:7361/healthz >/dev/null && break; sleep 0.1; done
+          docker run --rm --network host -v "$PWD:/w" -w /w alpine:3.20 sh -c '
+            apk add --no-cache curl >/dev/null
+            ./tailers/bin/superlog-log --development --url http://127.0.0.1:7361 \
+              --topic shell.alpine --level WARN -- "he said \"hi\" \\ and$(printf '\t')tabbed"
+          '
+          sleep 1
+          curl -sf "http://127.0.0.1:7361/recent?topic=shell.alpine&limit=5" | tee /dev/stderr | grep -q '"level":"WARN"'

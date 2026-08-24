@@ -44,3 +44,6 @@ alerts.json
 # The working ledger: internal notes, real host names, what is verified
 # and what is not. Useful to whoever is building this, not to the public.
 HANDOFF.md
+
+# Agent/editor session state - local to whoever is working, not the project
+.claude/
