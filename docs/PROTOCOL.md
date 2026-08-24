@@ -58,6 +58,11 @@ host-side tailer scraping the same device:
 | `rust.<app>`          | a Rust process                  |
 | `node.<app>`          | a Node process                  |
 | `python.<app>`        | a Python process                |
+| `go.<app>`            | a Go process                    |
+| `java.<app>`          | a JVM process (Java, Kotlin)    |
+| `swift.<app>`         | a Swift process                 |
+| `fortran.<app>`       | a Fortran program               |
+| `shell.<app>`         | a shell script                  |
 | `web.<app>`           | a browser app                   |
 | `os.<host>`           | a machine's own OS logs (macOS unified log, journald, Windows event log) - one topic per machine, tailed locally, from the LAN, or over ssh |
 | `app.<host>.<name>`   | a service's log file on that machine (postgres, nginx, redis, ...); `.<file>` suffix when one service writes several |
@@ -104,7 +109,7 @@ generate.
 | `seq`     | uint64 | absent       | per-`session` monotonic counter, starts at 0. Orders events *within* one producer; a gap means that producer dropped |
 | `session` | string | absent       | one random id per process/app run; `seq` is meaningless without it |
 | `level`   | string | `"INFO"`     | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` |
-| `origin`  | object | absent       | who is speaking: `runtime` (`cpp` `rust` `python` `js` `node` `react` `react-native` `web`), `app`, `platform` (`ios` `android` `macos` `linux` `windows` `web`), `device` (human-readable) |
+| `origin`  | object | absent       | who is speaking: `runtime` (`cpp` `rust` `python` `go` `java` `swift` `fortran` `shell` `js` `node` `react` `react-native` `web`), `app`, `platform` (`ios` `android` `macos` `linux` `windows` `web`), `device` (human-readable) |
 | `tag`     | string | absent       | logical channel/logger name — spdlog logger name, tracing target, RN component |
 | `trace`   | string | absent       | correlation id: the same value on every event caused by one user action, across every stream. See below |
 | `msg`     | string | **required** | the line |

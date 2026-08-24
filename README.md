@@ -36,11 +36,18 @@ filtered by stream, minimum level or substring. Pause freezes the display
 while collection continues; copy a row or the whole filtered view; export
 JSON, CSV or plain text.
 
-**Your apps need almost nothing.** Dependency-free SDKs: header-only C++
-(both a **spdlog** sink and a native `snicholls::log` one), a Rust crate
-with an optional `tracing` layer, a Python package that plugs into stdlib
-`logging`, and one JS client for React Native, the browser and Node — `patchConsole: true` and every `console.log` is on the
-bench.
+**Your apps need almost nothing.** Nine dependency-free SDKs: header-only
+C++ (both a **spdlog** sink and a native `snicholls::log` one), a Rust
+crate with an optional `tracing` layer, Python plugging into stdlib
+`logging`, Go with a `log/slog` handler, Java with a `java.util.logging`
+bridge (and Kotlin), Swift, Fortran over raw POSIX sockets, a `sh`
+one-liner for scripts, and one JS client for React Native, the browser and
+Node — `patchConsole: true` and every `console.log` is on the bench.
+
+Five of them hook the logging framework the language already has — the
+spdlog sink, `logging.Handler`, `slog.Handler`, `java.util.logging.Handler`
+and `patchConsole` — so everything a program *already* logs reaches the
+bench without a single call site changing.
 
 **Follow one action across every tier.** A tap becomes a request, a database
 write and a chain call on four streams. `withTrace()` mints a correlation
@@ -50,7 +57,7 @@ viewer, `GET /recent?trace=…`, or an agent tool — returns the whole story in
 order.
 
 **Every error, including the ones nobody logged.** Uncaught exceptions and
-unhandled rejections are captured by default in all four SDKs, with stacks —
+unhandled rejections are captured by default in every SDK, with stacks —
 chaining to whatever was already installed, so React Native still shows its
 red box, Node still exits 1, and C++ still aborts. C++ traces are demangled
 (`pricer::Engine::quote(int)`) with no boost dependency. For the hardest
@@ -205,6 +212,78 @@ And `capture_locals` attaches the local variables of the failing frames, so
 an exception says `symbol='DOGE', n=7` rather than only where it happened —
 secret-looking names are redacted and values truncated.
 
+**Go** (a `log/slog` handler, so existing calls need no changes):
+
+```go
+log, _ := superlog.New(superlog.Config{
+    Topic: "go.pricer", App: "pricer", Development: true,
+})
+defer log.Close()
+slog.SetDefault(slog.New(log.SlogHandler(nil)))   // everything already logged
+
+ctx, _ := superlog.WithTrace(context.Background(), "")
+slog.InfoContext(ctx, "order received")           // ...on the tick's trace
+
+go func() { defer log.Recover("worker"); work() }()  // panics, with stack
+```
+
+Trace lives in `context.Context` rather than a goroutine-local, because Go
+deliberately has none — so the id travels exactly where the context does.
+`Recover` logs the panic and re-panics: a logger that swallows a crash has
+changed the program it was meant to observe.
+
+**Java and Kotlin** (`java.util.logging` bridge; `InheritableThreadLocal`
+trace, so a pooled task inherits its submitter's id):
+
+```java
+var log = SuperLog.builder().topic("java.pricer").app("pricer")
+                  .development(true).build();
+Logger.getLogger("").addHandler(log.julHandler());   // everything already logged
+log.installUncaughtHandler();                        // and every crash
+
+log.traceScope(() -> {
+    log.info("order received");
+    pool.submit(log.wrap(() -> log.debug("settled")));  // same trace
+});
+```
+
+**Swift** (`@TaskLocal` trace, inherited by child tasks):
+
+```swift
+let log = try SuperLog(topic: "swift.pricer", app: "pricer", development: true)
+try SuperLog.withTrace {
+    log.info("order received")
+    Task { log.debug("pricing pass") }   // same trace, nothing passed in
+}
+```
+
+There is deliberately no `setTrace()`: a `TaskLocal` binds to a scope and
+nothing else, which makes the usual leak — one request's id surviving into
+the next — impossible to express rather than merely discouraged.
+
+**Fortran** (raw POSIX sockets through `ISO_C_BINDING`, no libcurl):
+
+```fortran
+call sl_init(topic='fortran.solver', app='solver')
+call sl_set_trace(sl_new_trace())
+call sl_metric('solver.residual', residual)
+if (residual /= residual) call sl_error('residual is NaN')
+call sl_close()
+```
+
+A solver is the hardest program on the bench to observe: hours long, often
+somewhere you cannot attach, and the evidence is a slurm file nobody reads
+until the allocation is spent. `DEVELOPMENT` xor `PRODUCTION` is a
+preprocessor error like the C++ SDK, and `SIGPIPE` is ignored at init so a
+hub that goes away cannot kill a run twelve hours in.
+
+**Shell** (any script, one line):
+
+```sh
+superlog-log --topic deploy "starting rollout"
+tail -f /var/log/app.log | superlog-log --topic app.foo --level WARN
+```
+
 **Rust** (build with `--features development` or `--features production`):
 
 ```rust
@@ -294,7 +373,8 @@ monotonic, so the window is exact and the scan can stop early.
 ## Modes and policies
 
 Every SDK enforces **DEVELOPMENT xor PRODUCTION** — neither or both is a
-compile error (C++ defines, Rust features) or a thrown error (JS). Each mode
+compile error (C++ and Fortran defines, Rust features) or a raised error
+(JS, Python, Go, Java, Swift). Each mode
 then ships what its *policy* allows: development everything, production
 **nothing**. Want crash triage from release builds? Say so explicitly —
 `-DSUPERLOG_PROD_POLICY=ERROR`, `prod_policy: Policy::AtLeast(Level::Error)`,
@@ -331,7 +411,12 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Hub + viewers:** macOS or Linux (POSIX phase 1), a C++17 compiler,
   CMake ≥ 3.16. Windows machines join as producers (SDKs, ssh tailer).
 - **JS:** Node ≥ 18 (≥ 22 for journal, chain watcher and MCP).
-  **Rust:** any recent stable.
+  **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
+  **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
+  **Swift:** ≥ 5.9, SwiftPM. **Fortran:** gfortran or any compiler with
+  `-cpp`. **Shell:** `sh` and `curl`, nothing else.
+- On macOS, Go 1.21's internal linker omits `LC_UUID`, which current dyld
+  rejects; build with `-ldflags=-linkmode=external` or use Go ≥ 1.22.
 - [ts-moveables](https://github.com/saxonnicholls/ts-moveables) provides the
   transport/fan-out/logging fabric — a sibling checkout if present, GitHub
   otherwise.
@@ -348,6 +433,10 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook |
 | `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture |
+| `sdk/go/`       | `superlog`: client, `log/slog` handler, panic recovery |
+| `sdk/java/`     | `SuperLog`: client, `java.util.logging` bridge, Kotlin notes |
+| `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace |
+| `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets |
 | `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp` |
 | `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy |
 | `viewer/imgui/` | native viewer |

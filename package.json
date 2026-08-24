@@ -37,7 +37,10 @@
     "vitals": "node tailers/bin/superlog-vitals.mjs",
     "alert": "node tailers/bin/superlog-alert.mjs",
     "demo:python": "python3 demo/python/clock.py",
-    "demo:swift": "swift run --package-path demo/swift/clock clock"
+    "demo:swift": "swift run --package-path demo/swift/clock clock",
+    "demo:go": "cd demo/go && go run -ldflags=-linkmode=external .",
+    "demo:java": "javac -d /tmp/superlog-java $(find sdk/java -name \"*.java\") demo/java/Clock.java && java -cp /tmp/superlog-java Clock",
+    "demo:fortran": "gfortran -cpp -DDEVELOPMENT -J/tmp -o /tmp/superlog-fortran-clock sdk/fortran/superlog.F90 demo/fortran/clock.f90 && /tmp/superlog-fortran-clock"
   },
   "engines": {
     "node": ">=18"
