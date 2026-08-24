@@ -14,6 +14,14 @@
 //    superlog-build --label ios -- xcodebuild -scheme App
 //    superlog-build --ssh web1 -- 'cd /srv/app && cargo build --release'
 //
+//  It is worth wrapping a TEST RUN too, not only a build: AddressSanitizer,
+//  ThreadSanitizer, UBSan and valgrind all report at run time, and each of
+//  their findings is one bug spread over thirty to ninety lines. Those are
+//  captured whole into a single event at the level the tool itself assigned:
+//
+//    superlog-build --label asan -- ./build/tests
+//    superlog-build --label memcheck -- valgrind --leak-check=full ./app
+//
 //  Publishes to build.<host>.<label>. What it adds over piping to a file:
 //
 //    - Compiler diagnostics become WARN and ERROR events with file and
@@ -55,6 +63,7 @@ if (!command.length || flags.includes('--help') || flags.includes('-h')) {
 
 Publishes to build.<host>.<label>. Compiler warnings and errors become WARN
 and ERROR events with file:line; the exit status and duration are one event.
+Sanitizer and valgrind findings are captured whole, one event each.
 Output is still printed locally unless --quiet.`);
   process.exit(command.length ? 0 : 2);
 }
@@ -80,6 +89,13 @@ const PATTERNS = [
   // clang/gcc:            src/main.cpp:42:17: error: no member named 'x'
   { rx: /^(.+?):(\d+):(?:(\d+):)?\s+(fatal error|error|warning|note):\s*(.*)$/,
     map: (m) => ({ src: `${m[1]}:${m[2]}`, sev: m[4], msg: m[5] }) },
+  // UBSan:                main.cpp:5:10: runtime error: signed integer overflow
+  // It reports one line per finding and keeps going, so unlike the other
+  // sanitizers there is no block to capture - but "runtime error" is not
+  // one of the severities the clang pattern above knows, so without this it
+  // lands as INFO.
+  { rx: /^(.+?):(\d+):(?:(\d+):)?\s+runtime error:\s*(.*)$/,
+    map: (m) => ({ src: `${m[1]}:${m[2]}`, sev: 'error', msg: m[4] }) },
   // rustc:                error[E0308]: mismatched types
   { rx: /^(error|warning)(\[[A-Z0-9]+\])?:\s+(.*)$/,
     map: (m) => ({ sev: m[1], msg: `${m[2] ?? ''}${m[2] ? ' ' : ''}${m[3]}` }) },
@@ -131,6 +147,79 @@ const isContinuation = (line) => CONTINUATION.some((rx) => rx.test(line));
 const SNIPPET_LINES = 24;
 const SNIPPET_CHARS = 4000;
 
+// ------------------------------------------------------------- sanitizers
+//
+// A sanitizer or valgrind finding is one bug reported across thirty to
+// ninety lines - two stack traces, an allocation site, sometimes a shadow
+// byte dump. Line-at-a-time that is thirty INFO events with the finding
+// somewhere inside; whichever line happened to match a compiler pattern
+// becomes the only one with a level, which is worse than useless because it
+// is arbitrary. So a report is captured whole into one event, at the level
+// the tool itself assigned, with the full text as a `report` field.
+//
+// This is also why the wrapper is worth using on a *test run* and not only
+// a build: `superlog-build -- ./tests` under ASAN_OPTIONS is where these
+// actually appear.
+
+const REPORT_START = [
+  // ==1234==ERROR: AddressSanitizer: heap-use-after-free on address 0x...
+  { rx: /^==\d+==\s*ERROR:\s*(\w*Sanitizer):\s*(.*)$/,
+    level: 'CRITICAL', tool: (m) => m[1], msg: (m) => `${m[1]}: ${m[2]}` },
+  // ThreadSanitizer announces itself without the pid prefix
+  { rx: /^(?:==\d+==)?\s*WARNING:\s*(ThreadSanitizer|MemorySanitizer):\s*(.*)$/,
+    level: 'ERROR', tool: (m) => m[1], msg: (m) => `${m[1]}: ${m[2]}` },
+  // LeakSanitizer's own header, which arrives after a clean-looking run
+  { rx: /^==\d+==\s*ERROR:\s*(LeakSanitizer):\s*(.*)$/,
+    level: 'ERROR', tool: (m) => m[1], msg: (m) => `${m[1]}: ${m[2]}` },
+  // valgrind: ==1234== Invalid read of size 4
+  { rx: /^==\d+==\s+(Invalid (?:read|write|free|memory access)[^\n]*|Mismatched free[^\n]*|Use of uninitialised[^\n]*|Conditional jump[^\n]*|Syscall param[^\n]*)$/,
+    level: 'ERROR', tool: () => 'valgrind', msg: (m) => `valgrind: ${m[1]}` },
+  // valgrind leaks: ==1234==    4 bytes in 1 blocks are definitely lost in ...
+  { rx: /^==\d+==\s+([\d,]+ bytes in [\d,]+ blocks are (?:definitely|indirectly|possibly) lost[^\n]*)$/,
+    level: 'ERROR', tool: () => 'valgrind', msg: (m) => `valgrind: ${m[1]}` },
+  // valgrind's tallies. INFO, not ERROR: they restate findings that have
+  // already been reported at their own level, and counting them again would
+  // make the closing verdict claim more errors than the run actually found.
+  // Captured as blocks all the same, because six lines of accounting is one
+  // fact.
+  { rx: /^==\d+==\s+((?:HEAP|LEAK) SUMMARY:.*)$/,
+    level: 'INFO', tool: () => 'valgrind', msg: (m) => `valgrind: ${m[1]}` },
+];
+
+// The rule a sanitizer draws above its report. On its own it carries
+// nothing, and as an event it is a row of equals signs with a level.
+const RULE = /^[=-]{10,}$/;
+
+// Everything else valgrind says about itself - its banner, copyright, the
+// command line, "rerun with -v". Worth keeping, not worth a level.
+const VALGRIND_CHATTER = /^==\d+==(\s|$)/;
+
+// A report ends at its tool's own terminator. Valgrind separates findings
+// with a bare `==pid==` line; the LLVM sanitizers use a rule of `=` or an
+// explicit ABORTING.
+const REPORT_END = {
+  valgrind: (l) => /^==\d+==\s*$/.test(l),
+  default: (l) => /^={10,}$/.test(l) || /^==\d+==\s*ABORTING/.test(l),
+};
+
+// Stack traces are the point, so this cap is much higher than a compiler
+// snippet's - but a shadow-byte dump still must not run away with the feed.
+const REPORT_LINES = 120;
+const REPORT_CHARS = 20000;
+
+// SUMMARY: AddressSanitizer: heap-use-after-free /src/main.cpp:10:3 in main
+const SUMMARY_SRC = /^SUMMARY:\s*\w+:\s*\S+\s+([^\s:]+):(\d+)(?::\d+)?/;
+// valgrind:  ==1234==    at 0x4005D6: main (main.c:10)
+const VALGRIND_SRC = /^==\d+==\s+(?:at|by)\s+0x[0-9A-Fa-f]+:\s+\S+\s+\(([^:)]+):(\d+)\)/;
+
+function reportStart(line) {
+  for (const r of REPORT_START) {
+    const m = r.rx.exec(line);
+    if (m) return { level: r.level, tool: r.tool(m), msg: r.msg(m) };
+  }
+  return null;
+}
+
 const LEVEL = { 'fatal error': 'CRITICAL', error: 'ERROR', Error: 'ERROR',
                 warning: 'WARN', Warning: 'WARN', note: 'DEBUG' };
 
@@ -166,13 +255,34 @@ function settle() {
 
 // Returns false when there was no diagnostic to attach to, so the caller can
 // fall back to publishing the line normally rather than dropping it.
-function appendSnippet(line) {
+function appendSnippet(line, key = 'snippet', maxLines = SNIPPET_LINES, maxChars = SNIPPET_CHARS) {
   if (!pending) return false;
   const f = (pending.fields ??= {});
-  const have = f.snippet ? f.snippet.split('\n') : [];
-  if (have.length >= SNIPPET_LINES || (f.snippet?.length ?? 0) >= SNIPPET_CHARS) return true;
-  f.snippet = [...have, line].join('\n');
+  const have = f[key] ? f[key].split('\n') : [];
+  if (have.length >= maxLines || (f[key]?.length ?? 0) >= maxChars) return true;
+  f[key] = [...have, line].join('\n');
   return true;
+}
+
+// Non-null while a sanitizer or valgrind report is being read: { tool, lines }.
+let capturing = null;
+
+// Everything between a report's first line and its terminator belongs to
+// that one finding, whatever it happens to look like - a stack frame can
+// resemble anything, so content-matching mid-report would split the finding
+// back into the pieces this exists to join.
+function captureReport(line) {
+  const done = (REPORT_END[capturing.tool] ?? REPORT_END.default)(line);
+  capturing.lines += 1;
+  if (!done) {
+    appendSnippet(line, 'report', REPORT_LINES, REPORT_CHARS);
+    const s = SUMMARY_SRC.exec(line) ?? VALGRIND_SRC.exec(line);
+    // The tool names the offending line itself; taking it is more reliable
+    // than picking a frame out of the stack, where the top frame is often
+    // inside the allocator rather than in anyone's code.
+    if (s && pending && !pending.src) pending.src = `${s[1]}:${s[2]}`;
+  }
+  if (done || capturing.lines >= REPORT_LINES) capturing = null;
 }
 
 function publish(level, msg, fields) {
@@ -225,12 +335,23 @@ const feed = (which, chunk) => {
   carry[which] = lines.pop() ?? '';           // an unterminated tail is not a line yet
   for (const line of lines) {
     if (!quiet) (which === 'err' ? process.stderr : process.stdout).write(line + '\n');
-    if (!line.trim()) continue;
+    // A report's own blank lines are part of it - and valgrind's terminator
+    // IS a near-blank line - so the capture runs before the blank skip.
+    if (capturing) { captureReport(line); continue; }
+    const rep = reportStart(line);
+    if (rep) {
+      publish(rep.level, rep.msg.slice(0, 2000), { stream: which, tool: rep.tool });
+      capturing = { tool: rep.tool === 'valgrind' ? 'valgrind' : 'default', lines: 0 };
+      continue;
+    }
+    // A bare `==pid==` is valgrind's paragraph break, not a line of output.
+    if (!line.trim() || RULE.test(line) || /^==\d+==\s*$/.test(line)) continue;
     // stderr is where compilers put diagnostics, but plenty of tools log
     // progress there too - so classify by content, not by stream.
     if (isContinuation(line) && appendSnippet(line)) continue;
     const c = classify(line);
-    publish(c.level, c.msg.slice(0, 2000), { src: c.src, stream: which });
+    const level = !c.matched && VALGRIND_CHATTER.test(line) ? 'DEBUG' : c.level;
+    publish(level, c.msg.slice(0, 2000), { src: c.src, stream: which });
   }
 };
 child.stdout.on('data', (d) => feed('out', d));
