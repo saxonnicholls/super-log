@@ -329,6 +329,8 @@ make 2>&1 | npx superlog --topic build.local # anything that prints (tee)
 npm run ws -- wss://stream.binance.com:9443/ws/btcusdt@trade
 npm run serial -- --list                    # boards plugged in
 npm run serial -- --port /dev/ttyUSB0       # the serial console, as events
+npm run socket -- --udp 5514                # syslog from routers, switches, NAS
+npm run socket -- --tcp 5515                # ...or plain lines on a raw socket
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 

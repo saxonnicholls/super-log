@@ -47,7 +47,8 @@
     "github": "node tailers/bin/superlog-github.mjs",
     "watch": "node tailers/bin/superlog-watch.mjs",
     "ws": "node tailers/bin/superlog-ws.mjs",
-    "serial": "node tailers/bin/superlog-serial.mjs"
+    "serial": "node tailers/bin/superlog-serial.mjs",
+    "socket": "node tailers/bin/superlog-socket.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -62,6 +63,7 @@
     "superlog-build": "tailers/bin/superlog-build.mjs",
     "superlog-tail": "tailers/bin/superlog-tail.mjs",
     "superlog-ws": "tailers/bin/superlog-ws.mjs",
-    "superlog-serial": "tailers/bin/superlog-serial.mjs"
+    "superlog-serial": "tailers/bin/superlog-serial.mjs",
+    "superlog-socket": "tailers/bin/superlog-socket.mjs"
   }
 }

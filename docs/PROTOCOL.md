@@ -76,6 +76,8 @@ host-side tailer scraping the same device:
 | `tee.<host>`          | anything piped through superlog-tee; `--topic` names it something better |
 | `ws.<host>.<stream>`  | frames on a WebSocket, with a periodic frames/s `metric` |
 | `serial.<host>.<port>`| a board's serial console; ESP-IDF, Zephyr and bracketed levels recognised |
+| `syslog.<host>.<app>` | anything that speaks syslog over UDP or TCP - routers, switches, appliances, rsyslog |
+| `socket.<host>.<peer>`| plain lines on a raw TCP or UDP socket |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
 | `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 
@@ -115,7 +117,7 @@ generate.
 | `seq`     | uint64 | absent       | per-`session` monotonic counter, starts at 0. Orders events *within* one producer; a gap means that producer dropped |
 | `session` | string | absent       | one random id per process/app run; `seq` is meaningless without it |
 | `level`   | string | `"INFO"`     | `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` |
-| `origin`  | object | absent       | who is speaking: `runtime` (`cpp` `rust` `python` `go` `java` `swift` `fortran` `shell` `serial` `js` `node` `react` `react-native` `web`), `app`, `platform` (`ios` `android` `macos` `linux` `windows` `web`), `device` (human-readable) |
+| `origin`  | object | absent       | who is speaking: `runtime` (`cpp` `rust` `python` `go` `java` `swift` `fortran` `shell` `serial` `socket` `js` `node` `react` `react-native` `web`), `app`, `platform` (`ios` `android` `macos` `linux` `windows` `web`), `device` (human-readable) |
 | `tag`     | string | absent       | logical channel/logger name — spdlog logger name, tracing target, RN component |
 | `trace`   | string | absent       | correlation id: the same value on every event caused by one user action, across every stream. See below |
 | `msg`     | string | **required** | the line |
