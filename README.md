@@ -204,6 +204,8 @@ npm run dns -- example.com --once           # every DNS record + cert, then exit
 npm run dns -- example.com mail.example.com # ...or watch them for change
 npm run ports -- --once                     # what is listening, and which process
 npm run ports -- --ssh web1 --procs nginx   # ...on a server, watched
+npm run vitals -- --once                    # disk, memory, CPU, load
+npm run vitals -- --ssh web1                # ...on a server, watched
 npm run build -- --label cxx -- cmake --build build -j
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
@@ -217,7 +219,8 @@ everything it sees teaches you to ignore it.
 | Watch | Publishes | Notable levels |
 |-------|-----------|----------------|
 | `dns` | `dns.<domain>` — A, AAAA, NS, MX, TXT, CAA and the TLS certificate | **NS/CAA change is WARN** (you probably did not do it; it is how a domain gets taken), a record type vanishing is ERROR, certs go WARN at 3 weeks → ERROR at 1 → CRITICAL once expired. TXT changes are named by kind, so it says *"SPF/DMARC record changed"* rather than making you diff two long strings. |
-| `ports` | `net.<host>.listeners` — listening sockets, owning process, pid | A **new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR. |
+| `ports` | `net.<host>.listeners` — listening sockets, owning process, pid, **and firewall rules** | A **new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR. |
+| `vitals` | `host.<name>.vitals` — disk, memory, CPU and load, macOS/Linux/Windows | Readings are DEBUG `metric` events (always there for a chart, out of a default INFO view); threshold crossings are **edge-triggered** WARN/ERROR, so 85% says so once rather than every poll, and recovery says so too. Read-only filesystems are skipped: a macOS simulator runtime is 98% full by design, and alerting on it produced 25 false ERRORs before this rule existed. |
 | `build` | `build.<host>.<label>` — one event per diagnostic, one verdict | Compiler errors are ERROR with `file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships. |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the

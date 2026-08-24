@@ -14,9 +14,10 @@
 //    superlog-dns --domains example.com,mail.example.com
 //    superlog-dns --domains example.com --interval 300 --tls-warn 21
 //
-//  Publishes to dns.<domain>. It reports CHANGES, not readings: the first
-//  poll establishes a baseline silently, because a watcher that announces
-//  everything it sees teaches you to ignore it. Levels follow meaning -
+//  Publishes to dns.<domain>. The first poll publishes every record it
+//  found, so the stream says what is being watched; after that only
+//  CHANGES are reported, because a poll that re-lists the same records
+//  every five minutes teaches you to ignore it. Levels follow meaning -
 //  an NS or CAA change is WARN because you probably did not do it, an A
 //  record moving is INFO because you probably did, and a lookup that stops
 //  working at all is ERROR.
@@ -124,6 +125,13 @@ const RECORDS = [
   { type: 'MX',   level: 'WARN', get: (d) => resolver.resolveMx(d).then((r) => r.map((m) => `${m.priority} ${m.exchange}`)) },
   { type: 'TXT',  level: 'WARN', get: (d) => resolver.resolveTxt(d).then((r) => r.map((t) => t.join(''))) },
   { type: 'CAA',  level: 'WARN', get: (d) => resolver.resolveCaa(d).then((r) => r.map((c) => JSON.stringify(c))) },
+  // DMARC lives at _dmarc.<domain>, not in the domain's own TXT, so
+  // watching TXT alone silently misses the record that decides whether
+  // spoofed mail in your name gets delivered. DKIM is the same shape but
+  // its selector is arbitrary (`<selector>._domainkey`), so it cannot be
+  // enumerated - pass a selector as a domain if you need to watch one.
+  { type: 'DMARC', level: 'WARN',
+    get: (d) => resolver.resolveTxt(`_dmarc.${d}`).then((r) => r.map((t) => t.join(''))) },
 ];
 
 const previous = new Map();                    // "domain|TYPE" -> sorted values
@@ -162,17 +170,19 @@ async function checkRecords(domain, first) {
     const before = previous.get(key);
     previous.set(key, values);
 
-    // --once is the inventory question - "what does this domain look like
-    // right now" - rather than the watch question. Publish everything found
-    // and say nothing about change, because there is no before.
-    if (once) {
+    // The baseline is published once, not swallowed. "Watching example.com
+    // - 6 record types" tells you nothing about what is being watched, so
+    // you cannot tell it is pointed at the right thing and you have no
+    // reference when a change arrives later. The rule that keeps this
+    // quiet is "do not repeat every poll", not "never say anything".
+    if (once || first) {
       if (values.length)
         publish(domain, 'INFO', `${rec.type}: ${values.join(', ')}`,
                 { domain, record: rec.type, values: values.join(', '), count: String(values.length) });
       continue;
     }
 
-    if (first || before === undefined) continue;   // silent baseline
+    if (before === undefined) continue;
     if (before.join('|') === values.join('|')) continue;
 
     const added = values.filter((v) => !before.includes(v));

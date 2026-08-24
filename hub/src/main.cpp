@@ -267,6 +267,15 @@ private:
     std::unordered_map<std::string, std::deque<recent_event>> topics_;
     std::size_t cap_;
     std::uint64_t last_id_ = 0;
+
+public:
+    /** How many distinct streams have been seen - the cheapest answer to
+     *  "is everything still reporting". */
+    std::size_t topic_count() const
+    {
+        std::lock_guard<std::mutex> g(m_);
+        return topics_.size();
+    }
 };
 
 std::uint64_t u64_param(const snicholls::http::request& req, const char* name, std::uint64_t dflt)
@@ -344,12 +353,24 @@ int main()
                             req.query_param("trace")));
     });
 
-    srv.get("/healthz", [&hub](const http::request&, http::responder r) {
+    // uptime and version answer the question the counters cannot: "did this
+    // restart?" A hub that restarted has counters starting from zero, which
+    // reads identically to a quiet bench unless it can say how long it has
+    // been up. Convention borrowed from the health routes in the sibling
+    // projects, so anything already scraping those finds what it expects.
+    const auto started = std::chrono::steady_clock::now();
+    srv.get("/healthz", [&hub, started, &recent](const http::request&, http::responder r) {
         const auto s = hub.snapshot();
-        std::string j = "{\"ok\":true,\"published\":" + std::to_string(s.published) +
+        const auto up = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::steady_clock::now() - started).count();
+        std::string j = "{\"ok\":true,\"status\":\"ok\""
+                        ",\"version\":\"" SUPERLOG_VERSION "\""
+                        ",\"uptime_seconds\":" + std::to_string(up) +
+                        ",\"published\":" + std::to_string(s.published) +
                         ",\"delivered\":" + std::to_string(s.delivered) +
                         ",\"dropped\":" + std::to_string(s.dropped) +
                         ",\"subscribers\":" + std::to_string(s.subscribers) +
+                        ",\"topics\":" + std::to_string(recent.topic_count()) +
                         ",\"seq\":" + std::to_string(s.seq) + "}";
         r.send(200, "application/json", std::move(j));
     });

@@ -152,6 +152,37 @@ async function listeners() {
   return parseLsof(lsof.out);
 }
 
+// ------------------------------------------------------------- firewall
+//
+// Listening and reachable are different questions, and the gap between them
+// is where the surprises live: a service bound to 0.0.0.0 that the firewall
+// blocks is fine, and one you thought was firewalled but is not is an
+// exposure. So the rules are watched alongside the sockets, and a change to
+// them is WARN - nobody edits a firewall by accident, which is exactly why
+// an edit you did not make is worth seeing.
+
+/** ufw, firewalld, nftables, iptables or pf - whichever answers. Returns a
+ *  stable, sorted list of rule lines, or null when none can be read (no
+ *  firewall tool, or no permission - both of which are facts, not errors). */
+async function firewallRules() {
+  const probes = [
+    { name: 'ufw', cmd: 'ufw status 2>/dev/null | tail -n +2' },
+    { name: 'firewalld', cmd: 'firewall-cmd --list-all 2>/dev/null' },
+    { name: 'nftables', cmd: 'nft list ruleset 2>/dev/null' },
+    { name: 'iptables', cmd: 'iptables -S 2>/dev/null' },
+    // macOS: the application firewall is the one people actually set
+    { name: 'pf', cmd: 'pfctl -sr 2>/dev/null' },
+    { name: 'alf', cmd: '/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null' },
+  ];
+  for (const p of probes) {
+    const r = await run(p.cmd);
+    const lines = r.out.split('\n').map((s) => s.trim())
+      .filter((s) => s && !/^#/.test(s) && !/^Chain /.test(s));
+    if (lines.length) return { tool: p.name, rules: lines.sort() };
+  }
+  return null;
+}
+
 /** A watched process, whether or not it listens on anything. */
 async function processPids(names) {
   const found = new Map();
@@ -199,6 +230,8 @@ const isPublic = (a) =>
 
 let prev = null;
 let prevProcs = new Map();
+let prevFw = null;
+const checkFirewall = !args.includes('--no-firewall');
 
 async function tick(first) {
   const now = await listeners();
@@ -216,10 +249,11 @@ async function tick(first) {
       publish('INFO', `${l.proto} ${l.address}:${l.port} ${l.process}${l.pid ? ` (pid ${l.pid})` : ''}`,
               { host, proto: l.proto, address: l.address, port: l.port,
                 process: l.process, pid: l.pid, exposure: isPublic(l.address) ? 'public' : 'loopback' });
-    return;
+    // Deliberately falls through to the firewall block: an inventory of
+    // what is listening without what is reachable answers half a question.
   }
 
-  if (prev) {
+  if (!once && prev) {
     for (const [k, l] of byKey) {
       const before = prev.get(k);
       if (!before) {
@@ -243,6 +277,29 @@ async function tick(first) {
                   process: l.process, exposure: isPublic(l.address) ? 'public' : 'loopback' });
   }
   prev = byKey;
+
+  if (checkFirewall) {
+    const fw = await firewallRules();
+    if (!fw) {
+      if (first)
+        publish('WARN', 'no readable firewall rules (no tool found, or not permitted) - ' +
+                'listening ports below are as good as public unless something upstream filters them',
+                { host, firewall: 'unknown' });
+    } else if (once || first) {
+      publish('INFO', `firewall (${fw.tool}): ${fw.rules.length} rule(s)`,
+              { host, firewall: fw.tool, rules: fw.rules.slice(0, 40).join(' | '),
+                count: String(fw.rules.length) });
+    } else if (prevFw && prevFw.rules.join('\n') !== fw.rules.join('\n')) {
+      const added = fw.rules.filter((r) => !prevFw.rules.includes(r));
+      const removed = prevFw.rules.filter((r) => !fw.rules.includes(r));
+      publish('WARN', `firewall changed (${fw.tool}): ` +
+              `${added.length} added, ${removed.length} removed`,
+              { host, firewall: fw.tool, change: 'firewall',
+                added: added.join(' | ').slice(0, 500),
+                removed: removed.join(' | ').slice(0, 500) });
+    }
+    if (fw) prevFw = fw;
+  }
 
   if (procWatch.length) {
     const procs = await processPids(procWatch);
