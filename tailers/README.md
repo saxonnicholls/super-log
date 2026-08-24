@@ -17,7 +17,7 @@ node bin/superlog-tail.mjs android --serial R5CT30ABCDE
 node bin/superlog-tail.mjs ios-sim --process Expo
 
 # iOS hardware                              -> expo.ios.device
-#   Not wired yet (HANDOFF M4). Two candidate feeds:
+#   Not wired yet. Two candidate feeds:
 #   - pymobiledevice3 syslog live  (pip install pymobiledevice3) - works on iOS 17+
 #   - idevicesyslog (brew install libimobiledevice)
 #   Either pipes line-per-entry text; the adapter follows the logcat pattern.

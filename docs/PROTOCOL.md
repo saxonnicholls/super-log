@@ -22,7 +22,7 @@ HTTP POST rather than a streaming socket in v1 because every producer already
 has it — `fetch` in React Native and the browser, `fetch` in Node,
 `std::net::TcpStream` in Rust, a 60-line socket write in C++ — and a batch
 every ~250 ms is indistinguishable from live at human reading speed. A
-WebSocket ingest route is milestone M5 in HANDOFF.md, for producers that want
+A WebSocket ingest route is possible future work, for producers that want
 lower latency; the event format does not change when it lands.
 
 ### Hub → viewers: `GET /ws?topic=*` (WebSocket)

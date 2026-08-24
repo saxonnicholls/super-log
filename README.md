@@ -104,9 +104,30 @@ A 1 GB / 4.8M-event journal searches in ~2.3 s.
 
 **Readable by scripts and agents.** `GET /recent?since=<cursor>&level=ERROR`
 answers "what happened since I last looked", with a cursor that never misses
-or repeats an event. For coding agents there is an **MCP server**: check the
-hub, list streams, tail and search (live *and* history), follow a trace, and
-`wait_for` an event after triggering an action instead of sleeping.
+or repeats an event.
+
+**An MCP server, so a coding agent can read the bench.** Six tools, and the
+shape of them matters: an agent's context is small and a firehose is not, so
+every tool filters first, caps its output, and returns one compact line per
+event.
+
+| Tool | For |
+|---|---|
+| `hub_status` | Is the bench even up — "hub is down" vs "the app logged nothing" |
+| `list_streams` | Orientation: which topics are live, their level mix, which have errors |
+| `tail_logs` | Recent events by topic/level/text, with a cursor so repeat calls only return what is new |
+| `search_logs` | Find by text when you know the message but not the stream |
+| `search_history` | The on-disk journal — hours or days, for "what happened at 3am" |
+| `wait_for` | Block until a matching event arrives, instead of sleeping and hoping |
+
+```sh
+npm run demo:mcp        # drives all six over stdio and prints what an agent sees
+claude mcp add super-log --scope user -- node $PWD/sdk/js/packages/mcp/bin/superlog-mcp.mjs
+```
+
+Registered once per machine, not per project: one hub serves every project
+and agents narrow by topic prefix. Read-only by construction, and
+dependency-free — MCP over stdio is newline-delimited JSON-RPC 2.0.
 
 **Something reaches you when nobody is watching.** Rules over the live feed
 fire to a desktop notification, a webhook, a command, or back onto the bench
@@ -476,9 +497,7 @@ Still **written but not verified**: the Windows event-log path (no Windows
 machine here) and the iOS-hardware tailer. Not built yet: viewer "load
 session" and metric sparklines.
 
-[HANDOFF.md](HANDOFF.md) is the unvarnished ledger of which is which, plus
-the build-out plan and the decisions that were made on purpose. CI lives in
-`.github/workflows/ci.yml`; `scripts/smoke.sh` is the one smoke test that
-CI, the Docker image and your terminal all run identically.
+CI lives in `.github/workflows/ci.yml`; `scripts/smoke.sh` is the one smoke
+test that CI, the Docker image and your terminal all run identically.
 
 Copyright 2026 Saxon Herschel Nicholls.

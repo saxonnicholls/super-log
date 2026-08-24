@@ -35,6 +35,7 @@ the phones, `app.` for postgres and nginx.
 | `tail_logs` | Recent events, filtered by `topic` / `level` / `contains`, with a cursor (`since`) so repeat calls only return what is new. |
 | `search_logs` | Find events by text across the recent window when you know the message but not the stream. |
 | `wait_for` | Block until a matching event arrives. Use after triggering an action instead of sleeping and hoping; it starts from *now*, so it cannot be satisfied by something older. |
+| `search_history` | Search the on-disk journal - hours or days, not the few minutes the hub holds in memory. The tool for "what happened at 3am"; `tail_logs` and `search_logs` cannot see that far back. Needs `superlog-journal` to have been running at the time. |
 
 ## Why it is shaped this way
 
