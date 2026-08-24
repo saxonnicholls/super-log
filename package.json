@@ -20,6 +20,7 @@
     "tail:apps": "node tailers/bin/superlog-tail.mjs apps",
     "tail:app": "node tailers/bin/superlog-tail.mjs app",
     "journal": "node tailers/bin/superlog-journal.mjs",
+    "fleet": "node tailers/bin/superlog-fleet.mjs",
     "search": "node tailers/bin/superlog-search.mjs",
     "replay": "node tailers/bin/superlog-replay.mjs",
     "net": "node tailers/bin/superlog-net.mjs",
