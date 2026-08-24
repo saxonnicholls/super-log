@@ -68,6 +68,37 @@ std::size_t size_from_env(const char* name, std::size_t dflt)
 // frame it arrived in, so a reader can line /recent up with the WS feed.
 // One POSTed chunk is many events, so several ids share one seq.
 
+// Find `"key"` and return the value of the string that follows it, tolerating
+// the whitespace a pretty-printer leaves around the colon. The first version
+// scanned for the literal `"level":"` and so was blind to `{"level": "ERROR"}`
+// - which is exactly what Python's json.dumps produces by default. A whole
+// language's events silently lost their level and trace filtering, and
+// nothing looked broken: they arrived, they just could not be found.
+inline std::string string_field(const std::string& line, const char* key) noexcept
+{
+    const std::string needle = std::string("\"") + key + "\"";
+    std::size_t at = line.find(needle);
+    if (at == std::string::npos)
+        return {};
+    std::size_t i = at + needle.size();
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+        ++i;
+    if (i >= line.size() || line[i] != ':')
+        return {};
+    ++i;
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
+        ++i;
+    if (i >= line.size() || line[i] != '"')
+        return {};                              // not a string value
+    const std::size_t from = ++i;
+    // Respect escapes, or a value containing \" ends the scan early.
+    for (; i < line.size(); ++i) {
+        if (line[i] == '\\') { ++i; continue; }
+        if (line[i] == '"') return line.substr(from, i - from);
+    }
+    return {};
+}
+
 constexpr int level_rank(std::string_view l) noexcept
 {
     return l == "TRACE" ? 1 : l == "DEBUG" ? 2 : l == "INFO" ? 3
@@ -81,23 +112,14 @@ constexpr int level_rank(std::string_view l) noexcept
 // there or the event has no level and INFO is right.
 int level_of(const std::string& line) noexcept
 {
-    const auto at = line.find("\"level\":\"");
-    if (at == std::string::npos)
-        return 3;
-    const auto from = at + 9;
-    const auto to = line.find('"', from);
-    return to == std::string::npos ? 3 : level_rank(std::string_view(line).substr(from, to - from));
+    const std::string v = string_field(line, "level");
+    return v.empty() ? 3 : level_rank(v);       // tolerant-reader default: INFO
 }
 
 // Same targeted-scan reasoning as level_of: one field, no parser.
 inline std::string trace_of(const std::string& line)
 {
-    const auto at = line.find("\"trace\":\"");
-    if (at == std::string::npos)
-        return {};
-    const auto from = at + 9;
-    const auto to = line.find('"', from);
-    return to == std::string::npos ? std::string() : line.substr(from, to - from);
+    return string_field(line, "trace");
 }
 
 // Is this line safe to embed verbatim inside a JSON response? A structural

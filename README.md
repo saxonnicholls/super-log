@@ -38,8 +38,8 @@ JSON, CSV or plain text.
 
 **Your apps need almost nothing.** Dependency-free SDKs: header-only C++
 (both a **spdlog** sink and a native `snicholls::log` one), a Rust crate
-with an optional `tracing` layer, and one JS client for React Native, the
-browser and Node — `patchConsole: true` and every `console.log` is on the
+with an optional `tracing` layer, a Python package that plugs into stdlib
+`logging`, and one JS client for React Native, the browser and Node — `patchConsole: true` and every `console.log` is on the
 bench.
 
 **Follow one action across every tier.** A tap becomes a request, a database
@@ -184,6 +184,27 @@ spdlog::default_logger()->sinks().push_back(
 superlog::install_terminate_handler(bat, who);  // uncaught exceptions + stack
 ```
 
+**Python** (standard library only; `development=` / `production=`, exactly one):
+
+```python
+import logging, superlog
+
+log = superlog.SuperLog(topic="python.pricer", app="pricer", development=True)
+
+logging.getLogger().addHandler(log.handler())  # everything already logged
+log.install_excepthook(capture_locals=True)    # and every crash, with locals
+
+with log.traced():                 # ContextVars: async- and thread-safe,
+    log.info("order received")     # and inherited by everything called inside
+    stdlib_logger.debug("pricing") # ...including plain logging calls
+```
+
+Python gets two things the other SDKs cannot. `logging.Handler` means every
+line the program *already* logs reaches the bench with no call-site changes.
+And `capture_locals` attaches the local variables of the failing frames, so
+an exception says `symbol='DOGE', n=7` rather than only where it happened —
+secret-looking names are redacted and values truncated.
+
 **Rust** (build with `--features development` or `--features production`):
 
 ```rust
@@ -326,6 +347,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `hub/`          | `superlogd` - the one process everything meets at |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook |
+| `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture |
 | `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp` |
 | `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy |
 | `viewer/imgui/` | native viewer |

@@ -35,7 +35,8 @@
     "ports": "node tailers/bin/superlog-ports.mjs",
     "build": "node tailers/bin/superlog-build.mjs",
     "vitals": "node tailers/bin/superlog-vitals.mjs",
-    "alert": "node tailers/bin/superlog-alert.mjs"
+    "alert": "node tailers/bin/superlog-alert.mjs",
+    "demo:python": "python3 demo/python/clock.py"
   },
   "engines": {
     "node": ">=18"
