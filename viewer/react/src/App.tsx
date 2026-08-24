@@ -42,6 +42,9 @@ export default function App() {
   const [traceFilter, setTraceFilter] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const [copied, setCopied] = useState(false);
+  // One row expanded at a time: the point of expanding is to read that one
+  // stack, and several open at once is the wall of text again.
+  const [expanded, setExpanded] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
   // Pause freezes the DISPLAY, not the collection: the feed keeps filling
@@ -168,9 +171,32 @@ export default function App() {
               {r.msg}
               {r.metric && <span style={{ color: '#4fb6c9' }}> ={r.metric.value}</span>}
               {r.fields &&
-                Object.entries(r.fields).map(([k, v]) => (
-                  <span key={k} style={{ color: '#8a93a3' }}> {k}={v}</span>
-                ))}
+                Object.entries(r.fields).map(([k, v]) => {
+                  // A stack trace or a locals dump is many lines, and
+                  // rendering it inline turns one event into ten wrapped
+                  // rows - which destroys the scannability the whole view
+                  // exists for. Collapse to the first line and let the row
+                  // be expanded when it is the row you care about.
+                  const text = String(v);
+                  const multi = text.includes('\n') || text.length > 120;
+                  if (!multi) return <span key={k} style={{ color: '#8a93a3' }}> {k}={text}</span>;
+                  const open = expanded === r.hubSeq;
+                  return (
+                    <span key={k}>
+                      <button className="rowcopy" style={{ color: '#7aa2f7', opacity: 1 }}
+                              title={open ? 'collapse' : `expand ${k}`}
+                              onClick={() => setExpanded(open ? null : r.hubSeq)}>
+                        {' '}{open ? '▾' : '▸'}{k}
+                      </button>
+                      {open
+                        ? <span style={{ color: '#8a93a3', display: 'block',
+                                         whiteSpace: 'pre-wrap', marginLeft: 24 }}>{text}</span>
+                        : <span style={{ color: '#8a93a3' }}>
+                            ={text.split('\n')[0]!.slice(0, 60)}…
+                          </span>}
+                    </span>
+                  );
+                })}
               {r.src && <span style={{ color: '#5c6470' }}> ({r.src})</span>}
             </span>
           </div>

@@ -93,6 +93,7 @@ struct row {
     std::string raw;                            // the event line, verbatim
     std::uint64_t hub_seq = 0;
     int level = 2;
+    bool multiline = false;                     // a field was collapsed for display
 };
 
 struct feed {
@@ -129,8 +130,21 @@ row parse_row(std::string line, const std::string& topic, std::uint64_t hub_seq)
     if (j.contains("metric") && j["metric"].is_object() && j["metric"].contains("value"))
         r.extra += " =" + j["metric"]["value"].dump();
     if (j.contains("fields") && j["fields"].is_object())
-        for (const auto& [k, v] : j["fields"].items())
-            r.extra += ' ' + k + '=' + (v.is_string() ? v.get<std::string>() : v.dump());
+        for (const auto& [k, v] : j["fields"].items()) {
+            std::string val = v.is_string() ? v.get<std::string>() : v.dump();
+            // A stack or a locals dump is many lines; inline it and one
+            // event becomes ten rows, which is the wall of text this view
+            // exists to replace. Keep the first line, mark it truncated -
+            // the full value is still in the export and the journal.
+            const std::size_t nl = val.find('\n');
+            if (nl != std::string::npos) {
+                val = val.substr(0, nl) + " …";
+                r.multiline = true;
+            }
+            if (val.size() > 160)
+                val = val.substr(0, 160) + " …";
+            r.extra += ' ' + k + '=' + val;
+        }
     if (j.contains("src") && j["src"].is_string())
         r.extra += " (" + j["src"].get<std::string>() + ')';
     return r;
