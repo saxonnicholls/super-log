@@ -30,7 +30,8 @@
     "demo:android": "node demo/js/clock.mjs android",
     "demo:web": "node demo/web/serve.mjs",
     "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react",
-    "chain": "node tailers/bin/superlog-chain.mjs"
+    "chain": "node tailers/bin/superlog-chain.mjs",
+    "dns": "node tailers/bin/superlog-dns.mjs"
   },
   "engines": {
     "node": ">=18"
