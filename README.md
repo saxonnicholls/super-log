@@ -320,6 +320,12 @@ npm run vitals -- --ssh web1                # ...on a server, watched
 npm run alert                               # rules from alerts.json
 npm run alert -- --test                     # prove delivery without waiting
 npm run build -- --label cxx -- cmake --build build -j
+npm run build -- --label asan -- ./build/tests   # sanitizer findings, whole
+npm run git                                 # this repo: commits, branches, conflicts
+npm run git -- --ssh web1 --repo /srv/app   # ...a deployed checkout
+npm run github -- --repo owner/name         # CI runs, PRs, releases
+npm run watch -- --dir src                  # files created, modified, deleted
+make 2>&1 | npx superlog --topic build.local # anything that prints (tee)
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 

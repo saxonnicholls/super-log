@@ -69,7 +69,11 @@ host-side tailer scraping the same device:
 | `net.<host>.<target>` | HTTP/HTTPS calls through the logging proxy - one event per request/response pair |
 | `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
 | `net.<host>.listeners`| listening sockets and the processes that own them |
-| `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict |
+| `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each |
+| `git.<host>.<repo>`   | a checkout: commits, branch switches, rewritten history, tags, conflicts |
+| `github.<owner>.<repo>`| a GitHub repository: pushes, CI runs, pull requests, issues, releases |
+| `fs.<host>.<dir>`     | a directory tree: files created, modified and deleted |
+| `tee.<host>`          | anything piped through superlog-tee; `--topic` names it something better |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
 | `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 
