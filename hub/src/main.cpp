@@ -2,6 +2,7 @@
 //  superlogd - the super-log hub
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  One process on the dev machine. Producers POST NDJSON chunks to
 //  /ingest/:topic; viewers subscribe to ws://host:7333/ws?topic=* and get

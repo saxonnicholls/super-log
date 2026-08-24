@@ -2,6 +2,7 @@
 //  serve.mjs - static server for the browser demo
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Zero dependencies because the whole job is handing three files to a
 //  browser: the page, its module, and the built @super-log/client (which

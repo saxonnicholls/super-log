@@ -1,4 +1,5 @@
 ! Copyright 2026 Saxon Herschel Nicholls
+! SPDX-License-Identifier: MIT
 !
 ! superlog - a Fortran client for the super-log hub.
 !

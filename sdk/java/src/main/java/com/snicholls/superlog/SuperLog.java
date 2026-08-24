@@ -3,6 +3,7 @@
 //  super-log - the Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Same contract as the C++, Rust, Python and JS SDKs: events go into a
 //  bounded queue from any thread, one daemon worker drains them into NDJSON

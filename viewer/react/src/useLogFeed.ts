@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 //
 //  useLogFeed - one hook, the whole wire protocol.
 //

@@ -2,6 +2,7 @@
 //  App.tsx - the real Expo clock client (HANDOFF M2's first light)
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The same clock the Node stand-ins fake, running inside actual React
 //  Native on the actual simulators - which is the point: this exercises

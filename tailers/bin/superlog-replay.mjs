@@ -3,6 +3,7 @@
 //  superlog-replay - put a journal back on the wire.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Reads what superlog-journal wrote and re-POSTs it to a hub, in the
 //  original order, at the original pace. Records are values: nothing

@@ -2,6 +2,7 @@
 //  superlog_viewer - the native viewer.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Structured rows with level/topic colouring, min-level + stream +
 //  substring filters, follow, copy (whole filtered view or one row) and

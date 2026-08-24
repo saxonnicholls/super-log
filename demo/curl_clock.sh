@@ -3,6 +3,7 @@
 # curl_clock.sh - the clock demo as HTTP/HTTPS traffic
 #
 # Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
 #
 # Once a second, curl asks a server for the time - once over plain http to
 # a tiny local origin, once over https to a public one - through the

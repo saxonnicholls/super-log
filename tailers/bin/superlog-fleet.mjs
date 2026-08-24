@@ -3,6 +3,7 @@
 //  superlog-fleet - one config, every machine.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Eight servers with a handful of containers each is thirty tailers, and
 //  nobody runs thirty commands twice. This reads a fleet file, starts the

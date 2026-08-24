@@ -2,6 +2,7 @@
 //  clock.mjs - the browser demo client
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The same @super-log/client the React Native apps use, doing the browser
 //  half of the story: patchConsole mirrors console.* onto the bench, so a

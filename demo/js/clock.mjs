@@ -2,6 +2,7 @@
 //  clock.mjs - the iOS and Android demo clients
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Stand-ins for the two React Native apps: until M2 puts @super-log/client
 //  inside the real Expo builds, this runs the exact same client from Node -

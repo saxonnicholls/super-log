@@ -2,6 +2,7 @@
 //  main.swift - the Swift demo client
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The same clock the other demo clients run, once a second on topic
 //  swift.clock - and a tour of the one thing the Swift SDK does that its

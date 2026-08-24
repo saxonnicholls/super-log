@@ -2,6 +2,7 @@
 #  superlog - the Python SDK
 #
 #  Copyright 2026 Saxon Herschel Nicholls
+#  SPDX-License-Identifier: MIT
 #
 #  Same contract as the C++, Rust and JS SDKs: events go into a bounded
 #  queue from any thread, one worker drains them into NDJSON chunks and

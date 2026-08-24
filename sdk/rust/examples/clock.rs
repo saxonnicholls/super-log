@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 //! The Rust demo client: the wall clock once a second, topic `rust.clock`,
 //! via `SuperLog::log` with a structured field, plus an uptime metric every
 //! fifth tick so the metric path is on screen too.

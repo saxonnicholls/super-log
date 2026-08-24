@@ -3,6 +3,7 @@
 # clock.sh - the shell demo client
 #
 # Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
 #
 # The same clock the other demo clients run, once a second on topic
 # shell.clock, through tailers/bin/superlog-log. The point it makes that

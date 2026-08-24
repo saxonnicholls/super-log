@@ -3,6 +3,7 @@
 //  super-log Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The six levels of PROTOCOL.md, ranked 1-based so that an unknown or
 //  unmapped level cannot collapse to "ship everything" - the same trick the

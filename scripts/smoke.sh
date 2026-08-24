@@ -1,5 +1,8 @@
 #!/bin/sh
 #
+# Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
+#
 # The one smoke test - run identically by CI, the Ubuntu image build
 # (docker/ubuntu.Dockerfile RUNs this, so an image that exists is an image
 # that passed) and any terminal. Starts a scratch hub, pushes events through

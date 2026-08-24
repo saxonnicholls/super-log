@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 /// <reference types="vite/client" />
 
 /** Build stamp injected by vite.config.ts, shown in the header so a stale

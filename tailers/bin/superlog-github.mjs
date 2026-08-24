@@ -3,6 +3,7 @@
 //  superlog-github - a GitHub repository on the same screen as the bench.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The local git watcher answers "what changed here". This answers "what
 //  changed there" - pushes you have not pulled, a CI run that went red, a

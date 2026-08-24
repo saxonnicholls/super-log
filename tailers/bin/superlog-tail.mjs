@@ -3,6 +3,7 @@
 //  superlog-tail - host-side tailers for the four React Native streams.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Zero app changes: scrape what the device already says (adb logcat, the
 //  simulator's unified log), reshape each line into a PROTOCOL.md event, and

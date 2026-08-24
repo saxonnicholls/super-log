@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 //
 //  The web viewer. One firehose subscription, filtered client-side - the
 //  four device streams interleaved by hub sequence, colour-coded by topic.

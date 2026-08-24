@@ -3,6 +3,7 @@
 //  super-log Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Hand-rolled escaping, the same forty lines the Rust and C++ SDKs carry.
 //  Jackson or Gson would do it better in general, and neither is worth a

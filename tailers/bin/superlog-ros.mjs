@@ -3,6 +3,7 @@
 //  superlog-ros - a robot's nodes on the bench with everything else.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  A robot is a distributed system that happens to be in one room. A dozen
 //  nodes, each with its own logger, and the interesting failures are the

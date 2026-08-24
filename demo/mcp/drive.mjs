@@ -3,6 +3,7 @@
 //  demo/mcp/drive.mjs - the MCP server, driven the way an agent drives it.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Every other demo here is watched in a viewer. This one cannot be: the MCP
 //  server talks newline-delimited JSON-RPC over stdio to a coding agent, and

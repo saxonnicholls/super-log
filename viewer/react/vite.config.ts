@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 

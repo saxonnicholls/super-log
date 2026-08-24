@@ -1,3 +1,6 @@
+// Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
+//
 //
 //  compile_test.cpp - keeps the header-only SDK honest on every build.
 //

@@ -1,6 +1,7 @@
 // swift-tools-version: 6.2
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  No dependencies, and there never will be: a debugging tool that needs its
 //  own dependency graph resolved before it can tell you why the dependency

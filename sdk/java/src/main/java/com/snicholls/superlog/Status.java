@@ -3,6 +3,7 @@
 //  super-log Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  What a client resolved to - the first thing to print when events are not
 //  arriving. `enabled == false` means the declared mode's policy turned it

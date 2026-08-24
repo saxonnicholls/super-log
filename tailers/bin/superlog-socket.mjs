@@ -3,6 +3,7 @@
 //  superlog-socket - a plain socket inlet, and a syslog server.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Every SDK here speaks HTTP, which is fine for anything running code you
 //  wrote. It is no use at all for the other half of a bench: a router, a

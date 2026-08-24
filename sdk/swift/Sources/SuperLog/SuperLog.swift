@@ -3,6 +3,7 @@
 //  super-log - the Swift SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Same contract as the C++, Rust, JS and Python SDKs: events go into a
 //  bounded queue from any thread or any task, one worker drains them into

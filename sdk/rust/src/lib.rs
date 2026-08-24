@@ -1,6 +1,7 @@
 //! super-log Rust SDK
 //!
 //! Copyright 2026 Saxon Herschel Nicholls
+//SPDX-License-Identifier: MIT
 //!
 //! Events go into a bounded channel from any thread; one worker drains them
 //! into NDJSON chunks and POSTs each chunk to superlogd. Producers never

@@ -2,6 +2,7 @@
 //  exporting.ts - serialisers for copy and export.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  One module so the clipboard, the three file exports and (by column
 //  order) the ImGui viewer agree on what a row looks like outside the app.

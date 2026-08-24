@@ -3,6 +3,7 @@
 //  superlog-dns - watch DNS records and TLS certificates for change.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  DNS is the failure nobody sees coming. A record changes and half your
 //  users reach the old box; an NS or CAA change you did not make is a

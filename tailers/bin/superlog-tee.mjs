@@ -3,6 +3,7 @@
 //  superlog-tee - tee(1), with the bench as one of the outputs.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Anything that prints can be on the bench without being taught to log:
 //

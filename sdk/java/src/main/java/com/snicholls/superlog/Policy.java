@@ -3,6 +3,7 @@
 //  super-log Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  What a mode ships: everything, only `level` and up, or nothing at all.
 //  The declared mode picks developmentPolicy or productionPolicy; a

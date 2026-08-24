@@ -331,6 +331,7 @@ npm run tail:file -- /srv/app/production.log
 npm run tail:ssh -- my-server               # a remote box, OS auto-detected
 npm run tail:ssh -- db1 --app postgres      # ...or its postgres
 npm run net -- 9000 http://localhost:3000   # every HTTP call through :9000
+npm run grpc -- --listen 50052 --target localhost:50051  # every RPC, status from the trailer
 npm run chain                               # watched addresses (see .env)
 npm run dns -- example.com --once           # every DNS record + cert, then exit
 npm run dns -- example.com mail.example.com # ...or watch them for change
@@ -529,5 +530,12 @@ block the program you are observing.
 
 Issues describing a stream you wish it read are useful too, even without a
 patch.
+
+## Licence
+
+[MIT](LICENSE). Every source file carries the copyright line and an
+`SPDX-License-Identifier: MIT`, so the licence travels with the file when
+someone copies one out — which, for a repo made of self-contained
+single-file tools, is how most of it will actually be reused.
 
 Copyright 2026 Saxon Herschel Nicholls.

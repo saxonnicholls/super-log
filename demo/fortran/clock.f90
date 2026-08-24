@@ -1,4 +1,5 @@
 ! Copyright 2026 Saxon Herschel Nicholls
+! SPDX-License-Identifier: MIT
 !
 ! The Fortran demo client - the same clock the other demo clients run, one
 ! line a second on topic fortran.clock, plus the thing a solver actually

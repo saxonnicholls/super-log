@@ -3,6 +3,7 @@
 #  clock.py - the Python demo client
 #
 #  Copyright 2026 Saxon Herschel Nicholls
+#  SPDX-License-Identifier: MIT
 #
 #  The same clock the other demo clients run, once a second on topic
 #  python.clock - and a tour of what the Python SDK does that the others

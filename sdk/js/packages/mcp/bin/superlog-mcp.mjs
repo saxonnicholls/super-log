@@ -3,6 +3,7 @@
 //  superlog-mcp - the bench, as tools an agent can call.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  An agent debugging an app should be able to ask "what did the logs say
 //  just now" without a human copying lines into a chat. This is an MCP

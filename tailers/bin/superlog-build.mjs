@@ -3,6 +3,7 @@
 //  superlog-build - wrap a build, put it on the bench.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Builds are the thing you run twenty times a day and read once, badly:
 //  a wall of output where the one line that matters scrolled past. This

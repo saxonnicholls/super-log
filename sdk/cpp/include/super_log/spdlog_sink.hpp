@@ -3,6 +3,7 @@
 //  super-log C++ SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The same pipeline, entered from spdlog - for the codebases that already
 //  log through it and should not have to change to be on the dev-bench

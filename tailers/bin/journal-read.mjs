@@ -2,6 +2,7 @@
 //  journal-read - the other end of superlog-journal.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  superlog-journal appends hub envelope frames verbatim, one per line.
 //  This module reads them back, and superlog-search and superlog-replay

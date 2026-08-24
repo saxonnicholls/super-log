@@ -5,6 +5,7 @@ edition = "2021"
 description = "Forward log and tracing events to a super-log hub"
 authors = ["Saxon Herschel Nicholls"]
 publish = false
+license = "MIT"
 
 # The core is dependency-free on purpose: std::net::TcpStream is one connect()
 # from the hub, and hand-rolled JSON escaping is the same trade the C++ SDK

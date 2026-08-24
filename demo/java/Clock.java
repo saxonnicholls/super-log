@@ -2,6 +2,7 @@
 //  Clock.java - the Java demo client
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The same clock the other demo clients run, once a second on topic
 //  java.clock - and a tour of what the Java SDK does that the others cannot,

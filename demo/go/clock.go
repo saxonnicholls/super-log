@@ -1,6 +1,7 @@
 // clock.go - the Go demo client
 //
 // # Copyright 2026 Saxon Herschel Nicholls
+// SPDX-License-Identifier: MIT
 //
 // The same clock the other demo clients run, once a second on topic
 // go.clock, plus the two things a Go service actually wants: the standard

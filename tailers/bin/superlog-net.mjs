@@ -3,6 +3,7 @@
 //  superlog-net - a logging reverse proxy for debugging calls.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Point a client at this instead of the real service; it forwards every
 //  request to the target and logs both halves to the hub as net.<label> -

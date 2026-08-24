@@ -3,6 +3,7 @@
 //  superlog-watch - a directory tree, on the bench, as it changes.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  "It worked five minutes ago" is a question about files, and the answer is
 //  usually a file you did not remember touching - a generated header, a lock

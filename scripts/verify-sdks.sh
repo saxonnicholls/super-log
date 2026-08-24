@@ -3,6 +3,7 @@
 # verify-sdks.sh - every SDK, actually delivering to a real hub.
 #
 # Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
 #
 # CI built the Go, Java, Swift and Fortran clients and then never ran them,
 # which proves they compile and nothing else. A client that compiles, starts,

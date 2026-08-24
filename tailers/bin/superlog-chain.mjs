@@ -3,6 +3,7 @@
 //  superlog-chain - blockchain events for watched addresses.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  A wallet's transaction appears on the same screen as the app code that
 //  sent it and the server that signed it. That interleaving is the whole

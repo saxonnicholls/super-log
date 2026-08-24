@@ -3,6 +3,7 @@
 //  superlog-git - what the repositories on this bench are doing.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Half the questions that start "why did that break" are answered by "what
 //  changed", and the answer is usually in git - but only if you thought to

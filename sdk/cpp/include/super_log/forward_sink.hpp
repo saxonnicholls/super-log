@@ -3,6 +3,7 @@
 //  super-log C++ SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The bridge from snicholls::log to superlogd, and it is three lines because
 //  the logger was designed for sinks like this one. Attach it to its own lane

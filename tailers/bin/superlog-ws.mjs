@@ -3,6 +3,7 @@
 //  superlog-ws - what is actually flowing down a WebSocket.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  A WebSocket is the one part of a system with no log. HTTP leaves a trail
 //  in a proxy, a database leaves a slow-query log, but a socket that opened

@@ -3,6 +3,7 @@
 //  superlog-vitals - disk, memory, CPU and load, per host.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  A full disk is the classic outage: everything works until nothing does,
 //  and the log that would have told you stopped being writable at exactly

@@ -3,6 +3,7 @@
 //  superlog-journal - the headless writer.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Subscribes to the hub and appends every envelope frame verbatim, one
 //  per line - lossless by construction, and exactly the format

@@ -3,6 +3,7 @@
 //  superlog-alert - the part that reaches you when you are not looking.
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Everything else here assumes someone is watching a screen. This is the
 //  piece that is useful at 3am: it subscribes to the firehose, evaluates

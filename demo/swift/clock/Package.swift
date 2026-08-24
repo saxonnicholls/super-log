@@ -1,6 +1,7 @@
 // swift-tools-version: 6.2
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  A path dependency on the SDK next door, so the demo builds from a fresh
 //  clone with no registry, no lockfile and no network.

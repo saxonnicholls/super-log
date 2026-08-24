@@ -1,5 +1,8 @@
 #!/bin/sh
 #
+# Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
+#
 # The whole bench, one command:  ./demo/run.sh   (or: npm run demo)
 #
 # Every client this repo ships is attempted - C++ through both paths, Rust,

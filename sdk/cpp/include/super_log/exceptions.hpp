@@ -3,6 +3,7 @@
 //  super-log C++ SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  Catch what nobody caught. Two hooks, both chaining rather than
 //  replacing, so whatever diagnostics you already had still happen:

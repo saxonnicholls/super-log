@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
+#
 # Build and run the hub, then print how to point everything else at it.
 # The pieces are separate processes on purpose - kill any without the others.
 set -e

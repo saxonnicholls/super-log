@@ -149,6 +149,55 @@ fields, sessions, real levels). A tailer and the SDK publishing to the *same
 topic* at the same time will double-report the app's own console lines — run
 one or the other per device.
 
+## gRPC: superlog-grpc
+
+The same idea one protocol along ([bin/superlog-grpc.mjs](bin/superlog-grpc.mjs)),
+and it is a different tool for one reason: **a gRPC call's result is not in
+its HTTP status**. A failed RPC is `:status 200` with `grpc-status: 5` in
+the *trailers*, sent after the body, so an HTTP proxy in front of a gRPC
+service reports a bench full of successes while the client is seeing
+NOT_FOUND. Levels here come from `grpc-status` and nothing else:
+
+```sh
+npm run grpc -- --listen 50052 --target localhost:50051
+npm run grpc -- --listen 50052 --target api.internal:443 --tls
+npm run grpc -- --listen 50052 --target localhost:50051 --bodies
+```
+
+One event per RPC on `grpc.<host>.<target>`, carrying `method`, `service`,
+`grpc_status` and its name, `latency_ms`, `req_msgs`/`resp_msgs`, sizes,
+`peer` and `stream_id`. OK is INFO; NOT_FOUND, PERMISSION_DENIED,
+UNAUTHENTICATED and the other codes a caller can fix are WARN; UNKNOWN,
+DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED, INTERNAL, UNAVAILABLE and DATA_LOSS
+are ERROR. All seventeen canonical codes are named. `status_src` says where
+the status came from - `trailers`, `headers` (a trailers-only response),
+`http` (a peer that was not speaking gRPC at all, mapped the way the spec
+says) or `proxy` (this tool answering for an upstream it could not reach).
+
+**Streaming is the other half.** A bidi stream is a conversation, not a
+request and a response, so messages are counted in each direction by
+walking gRPC's 5-byte length prefix and the event is published when the
+stream *ends*. A stream still open after 30s gets a DEBUG progress event
+(`--progress`), because a subscription that has delivered nothing since
+breakfast is exactly the thing you are looking for and it would otherwise
+be invisible until it closed.
+
+`--bodies` decodes protobuf the way `protoc --decode_raw` does -
+`1: "alice"  2: 42  3 { 1: "x" }` - with no `.proto` and no dependency,
+because the wire format carries field numbers and wire types and only the
+names are missing. Anything that will not decode (a compressed payload, a
+message the `--max-body` cap cut in half, bytes that are not protobuf)
+falls back to hex rather than throwing, since a truncated frame is when you
+are most likely to be looking. Bodies stay **off by default** and
+`authorization`, `cookie`, `x-api-key` and credential-shaped `-bin`
+metadata are redacted whether they are on or not.
+
+`--tls` is about the *target's* TLS - the listener is always plaintext h2c
+on loopback, so a TLS gRPC service needs no certificate work here either.
+Unreachable targets are answered with UNAVAILABLE in milliseconds rather
+than left hanging, and the caller's own cancellation is reported as
+CANCELLED with the counts it managed before hanging up.
+
 ## Shell scripts: superlog-log
 
 Every other producer here needs something installed. [bin/superlog-log](bin/superlog-log)

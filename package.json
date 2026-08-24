@@ -24,6 +24,7 @@
     "search": "node tailers/bin/superlog-search.mjs",
     "replay": "node tailers/bin/superlog-replay.mjs",
     "net": "node tailers/bin/superlog-net.mjs",
+    "grpc": "node tailers/bin/superlog-grpc.mjs",
     "mcp": "node sdk/js/packages/mcp/bin/superlog-mcp.mjs",
     "demo": "./demo/run.sh",
     "demo:ios": "node demo/js/clock.mjs ios",
@@ -68,6 +69,8 @@
     "superlog-ws": "tailers/bin/superlog-ws.mjs",
     "superlog-serial": "tailers/bin/superlog-serial.mjs",
     "superlog-socket": "tailers/bin/superlog-socket.mjs",
-    "superlog-ros": "tailers/bin/superlog-ros.mjs"
-  }
+    "superlog-ros": "tailers/bin/superlog-ros.mjs",
+    "superlog-grpc": "tailers/bin/superlog-grpc.mjs"
+  },
+  "license": "MIT"
 }

@@ -3,6 +3,7 @@
 //  super-log Java SDK
 //
 //  Copyright 2026 Saxon Herschel Nicholls
+//  SPDX-License-Identifier: MIT
 //
 //  The java.util.logging bridge - the reason most Java code needs no changes
 //  at all. Attach it to the root logger and every line the program already
