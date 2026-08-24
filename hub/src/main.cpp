@@ -417,9 +417,26 @@ int main()
     // matter). See docs/ARCHITECTURE.md.
     const char* bind_env = std::getenv("SUPER_LOG_BIND");
     const std::string bind_host = bind_env && *bind_env ? bind_env : "0.0.0.0";
-    const std::uint16_t port = srv.listen(bind_host, want_port);
+    // listen() THROWS on a failed bind rather than returning 0, so the
+    // zero check below is not enough on its own: an already-used port -
+    // the single most common thing to go wrong on a first run, and on any
+    // restart that races the previous process shutting down - surfaced as
+    // "libc++abi: terminating due to uncaught exception". That is a crash
+    // report for a condition with an obvious remedy.
+    std::uint16_t port = 0;
+    try {
+        port = srv.listen(bind_host, want_port);
+    } catch (const std::exception& e) {
+        SN_LOG_ERROR() << "superlogd: cannot listen on " << bind_host << ':' << want_port
+                       << " - " << e.what();
+        SN_LOG_ERROR() << "  another superlogd is probably already running. "
+                          "Check with: lsof -i :" << want_port;
+        SN_LOG_ERROR() << "  or choose another port: SUPER_LOG_PORT=" << (want_port + 1)
+                       << " superlogd";
+        return 1;
+    }
     if (port == 0) {
-        SN_LOG_ERROR() << "superlogd: cannot listen on " << bind_host << ":" << want_port;
+        SN_LOG_ERROR() << "superlogd: cannot listen on " << bind_host << ':' << want_port;
         return 1;
     }
 
