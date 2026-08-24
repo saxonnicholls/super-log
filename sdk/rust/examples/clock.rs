@@ -25,6 +25,26 @@ fn main() {
         app: "clock".into(),
         ..Default::default()
     };
+    // SUPER_LOG_URL is what every other SDK here reads, so it has to work
+    // for this one too - otherwise pointing the bench at a new hub moves
+    // seven clients of nine and leaves two talking quietly to the old one.
+    if let Ok(u) = std::env::var("SUPER_LOG_URL") {
+        let rest = u.split("://").last().unwrap_or(&u);
+        let rest = rest.split('/').next().unwrap_or(rest);
+        match rest.rsplit_once(':') {
+            Some((h, p)) => {
+                if !h.is_empty() {
+                    cfg.host = h.to_string();
+                }
+                if let Ok(p) = p.parse() {
+                    cfg.port = p;
+                }
+            }
+            None if !rest.is_empty() => cfg.host = rest.to_string(),
+            None => {}
+        }
+    }
+    // The older pair still wins if set explicitly.
     if let Ok(h) = std::env::var("SUPER_LOG_HOST") {
         cfg.host = h;
     }

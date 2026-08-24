@@ -46,6 +46,24 @@ superlog::transport_config config_for(const char* suffix)
     superlog::transport_config cfg;
     const char* ns = std::getenv("SUPER_LOG_TOPIC_NS");
     cfg.topic = std::string(ns && *ns ? ns : "cpp") + suffix;
+    // SUPER_LOG_URL is what every other SDK here reads, so it has to work
+    // for this one too. Setting it and having seven of nine clients move to
+    // the new hub while two keep quietly talking to the old one is precisely
+    // the silent-failure this project exists to prevent.
+    if (const char* u = std::getenv("SUPER_LOG_URL"); u && *u) {
+        std::string rest = u;
+        if (const auto at = rest.find("://"); at != std::string::npos)
+            rest = rest.substr(at + 3);
+        rest = rest.substr(0, rest.find('/'));
+        if (const auto colon = rest.rfind(':'); colon != std::string::npos) {
+            cfg.host = rest.substr(0, colon);
+            cfg.port = static_cast<std::uint16_t>(std::strtol(rest.c_str() + colon + 1, nullptr, 10));
+        } else if (!rest.empty()) {
+            cfg.host = rest;
+        }
+    }
+    // The older pair still wins if set explicitly, so nothing that already
+    // works stops working.
     if (const char* h = std::getenv("SUPER_LOG_HOST"))
         cfg.host = h;
     if (const char* p = std::getenv("SUPER_LOG_PORT"))
