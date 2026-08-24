@@ -36,3 +36,7 @@ fleet.json
 
 # Alert rules: may carry a webhook URL, which is a credential
 alerts.json
+
+# Fortran build artefacts
+*.mod
+*.smod
