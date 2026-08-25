@@ -333,6 +333,9 @@ int main()
     // freshly-opened viewer needs to look non-blank, which is all this ring
     // is for. Real history lives in /recent (its own per-topic ring) and in
     // the journal, both of which are cheaper per event than a retained chunk.
+    // This goes back to 1024 the moment ts-moveables bounds the ring by BYTES
+    // as well as by count - the two bound different things and only together
+    // bound the right one. Until then the count carries the whole budget.
     hcfg.ring_capacity   = size_from_env("SUPER_LOG_REPLAY_CHUNKS", 128);
     hcfg.max_queue_msgs  = 4096;            // a viewer paused in a debugger
     http::ws_broadcast_hub hub{hcfg};

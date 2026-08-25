@@ -1,0 +1,24 @@
+running 3 tests
+=================================================================
+==12345==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010 at pc 0x000102b1c3a8 bp 0x00016d3f2a30 sp 0x00016d3f2a28
+READ of size 4 at 0x602000000010 thread T0
+    #0 0x102b1c3a4 in main main.cpp:10
+    #1 0x18f2c1b4c in start+0x2000 (dyld:arm64e+0x1b4c)
+
+0x602000000010 is located 0 bytes inside of 4-byte region [0x602000000010,0x602000000014)
+freed by thread T0 here:
+    #0 0x1030d4c0c in wrap__ZdlPv+0x74 (libclang_rt.asan_osx_dynamic.dylib)
+    #1 0x102b1c384 in main main.cpp:9
+
+previously allocated by thread T0 here:
+    #0 0x1030d4394 in wrap__Znwm+0x74 (libclang_rt.asan_osx_dynamic.dylib)
+    #1 0x102b1c364 in main main.cpp:8
+
+SUMMARY: AddressSanitizer: heap-use-after-free main.cpp:10 in main
+Shadow bytes around the buggy address:
+  0x0c047fff7fb0: fa fa 00 00 fa fa 00 00 fa fa fd fd fa fa 00 00
+=>0x0c047fff8000: fa fa[fd]fd fa fa fd fd fa fa fd fd fa fa 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Freed heap region:     fd
+==12345==ABORTING

@@ -1,0 +1,4 @@
+[ 25%] Building CXX object CMakeFiles/pricer.dir/src/main.cpp.o
+src/main.cpp:42:17: error: no member named 'quote' in 'pricer::Engine'
+src/util.cpp:7:9: warning: unused variable 'scratch' [-Wunused-variable]
+gmake[2]: *** [CMakeFiles/pricer.dir/build.make:76: CMakeFiles/pricer.dir/src/main.cpp.o] Error 1

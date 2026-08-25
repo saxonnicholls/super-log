@@ -52,7 +52,8 @@
     "socket": "node tailers/bin/superlog-socket.mjs",
     "demo:mcp": "node demo/mcp/drive.mjs",
     "ros": "node tailers/bin/superlog-ros.mjs",
-    "demo:inlets": "node demo/inlets/demo.mjs"
+    "demo:inlets": "node demo/inlets/demo.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\""
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,24 @@
+==4242== Memcheck, a memory error detector
+==4242== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==4242== Command: ./build/app
+==4242==
+==4242== Invalid read of size 4
+==4242==    at 0x109193: main (main.c:10)
+==4242==  Address 0x4a4d040 is 0 bytes inside a block of size 4 free'd
+==4242==    at 0x484988F: free (vg_replace_malloc.c:985)
+==4242==    by 0x109186: main (main.c:9)
+==4242==
+==4242== HEAP SUMMARY:
+==4242==     in use at exit: 4 bytes in 1 blocks
+==4242==   total heap usage: 2 allocs, 1 frees, 1,028 bytes allocated
+==4242==
+==4242== 4 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==4242==    at 0x4849013: malloc (vg_replace_malloc.c:442)
+==4242==    by 0x109179: main (main.c:8)
+==4242==
+==4242== LEAK SUMMARY:
+==4242==    definitely lost: 4 bytes in 1 blocks
+==4242==    indirectly lost: 0 bytes in 0 blocks
+==4242==      possibly lost: 0 bytes in 0 blocks
+==4242==
+==4242== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)

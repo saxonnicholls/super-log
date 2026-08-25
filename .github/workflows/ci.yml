@@ -135,12 +135,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run check
+      # The suite drives the real tools as subprocesses against a real hub,
+      # so the hub has to exist. It is the only build this job needs.
+      - name: build the hub
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DTS_MOVEABLES_GIT_TAG="$TS_MOVEABLES_TAG" -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF
+          cmake --build build --target superlogd -j
+      - run: npm test
 
   go:
     runs-on: ubuntu-latest

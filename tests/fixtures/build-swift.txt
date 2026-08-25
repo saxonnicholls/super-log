@@ -1,0 +1,6 @@
+/tmp/App/Sources/App/Model.swift:12:18: error: cannot convert value of type 'String' to specified type 'Int'
+10 | struct Model {
+11 |   func broken() {
+12 |     let s: Int = "nope"
+   |                  ^~~~~~
+13 |   }

@@ -1,0 +1,50 @@
+stamp:
+  sec: 1755831845
+  nanosec: 123456789
+level: 10
+name: talker
+msg: entering timer callback
+file: /opt/ros/jazzy/src/talker.cpp
+function: onTimer
+line: 42
+---
+stamp:
+  sec: 1755831845
+  nanosec: 223456789
+level: 20
+name: talker
+msg: Publishing 'Hello World: 1'
+file: /opt/ros/jazzy/src/talker.cpp
+function: onTimer
+line: 68
+---
+stamp:
+  sec: 1755831846
+  nanosec: 0
+level: 30
+name: planner
+msg: 'replan took 812ms, budget is 500ms'
+file: /opt/ros/jazzy/src/planner.cpp
+function: replan
+line: 311
+---
+stamp:
+  sec: 1755831847
+  nanosec: 0
+level: 40
+name: costmap_2d
+msg: 'costmap update failed: sensor ''lidar'' timed out'
+file: /opt/ros/jazzy/src/costmap.cpp
+function: updateMap
+line: 214
+---
+stamp:
+  sec: 1755831848
+  nanosec: 0
+level: 50
+name: motor_driver
+msg: "emergency stop asserted\nbrakes engaged"
+file: /opt/ros/jazzy/src/driver.cpp
+function: estop
+line: 90
+---

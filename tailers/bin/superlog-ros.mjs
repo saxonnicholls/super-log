@@ -40,9 +40,16 @@ import { join } from 'node:path';
 import { loadEnv } from './env.mjs';
 
 const args = process.argv.slice(2);
+// A flag's value is never another flag. --files is dual-purpose - bare, or
+// with a directory - so `--files --url http://…` took "--url" as the
+// directory, looked for ROS logs in a folder by that name, and reported that
+// the robot had never run. The failure was a plausible-looking WARN, which is
+// the worst kind.
 const opt = (name, dflt) => {
   const i = args.indexOf(`--${name}`);
-  return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : dflt;
+  if (i < 0) return dflt;
+  const v = args[i + 1];
+  return v !== undefined && !v.startsWith('--') ? v : dflt;
 };
 
 if (args.includes('--help') || args.includes('-h')) {
