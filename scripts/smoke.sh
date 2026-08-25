@@ -39,7 +39,14 @@ done
 
 want=0
 
-# 1. The SDK compile test doubles as the SN_LOG -> forward_sink live path
+# 1. The SDK compile test doubles as the SN_LOG -> forward_sink live path.
+#    Checked for existence first, like superlogd above: running a binary that
+#    was never built reports "exited non-zero", which blames the test for a
+#    partial build and sends the reader looking in the wrong place. A clean
+#    checkout built with a single --target is exactly how this happens.
+[ -x "$BUILD_DIR/super_log_compile_test" ] || \
+    fail "no super_log_compile_test in $BUILD_DIR - build it first:
+       cmake --build $BUILD_DIR --target super_log_compile_test -j"
 "$BUILD_DIR/super_log_compile_test" >/dev/null || fail "compile test exited non-zero"
 want=$((want + 1))
 

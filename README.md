@@ -188,7 +188,7 @@ three in the morning".
 ## Quick start
 
 ```sh
-git clone --recurse-submodules <this repo>
+git clone --recurse-submodules --shallow-submodules <this repo>
 cd super-log
 cp .env.example .env             # optional: chain endpoints, hub defaults
 
@@ -223,7 +223,8 @@ dependency on this repo clones all five submodules and 36 MB of C++ that the
 Rust crate never touches.
 
 ```sh
-git clone --recurse-submodules https://github.com/saxonnicholls/super-log ~/dev/super-log
+git clone --recurse-submodules --shallow-submodules \
+  https://github.com/saxonnicholls/super-log ~/dev/super-log
 cd ~/dev/super-log && npm install        # once, for the tailers and the web viewer
 ```
 
