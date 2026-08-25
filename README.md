@@ -145,6 +145,46 @@ observes is worse than no logger.
 DEVELOPMENT or PRODUCTION (neither or both refuses to build), and each mode
 ships only what its policy allows. Production defaults to **nothing**.
 
+## What this is, and what it is not
+
+**It is a development tool.** The bench you sit at: everything your machine
+and your devices are saying, on one screen, in the order it happened, while
+you are working. It is optimised for the ten seconds after something breaks
+— one hub, no schema to declare, no agent to install, a stream added by
+typing one command, and nothing to configure before the first line appears.
+
+**It is not an observability suite, and should not be used as one.** The
+distinction is not modesty, it is design: several things that make it good
+at the first job make it unfit for the second.
+
+| | super-log | Prometheus / Grafana / Loki / Datadog |
+|---|---|---|
+| Lives | on your machine, while you work | in production, permanently |
+| Retention | a ring in memory, plus a journal you turn on | months, indexed, queryable |
+| Auth | **none** — loopback by default | tenants, RBAC, audit |
+| Scale | one bench, a handful of servers | thousands of hosts |
+| Alerting | rules for "tell me while I am here" | on-call, escalation, SLOs |
+| Cost of adding a stream | one command | a pipeline change |
+
+Concretely, do **not** point this at production and walk away. The hub has
+no authentication: anyone who can reach the port can read every stream and
+publish to any topic. It keeps 2000 events per topic in memory and forgets
+the rest unless the journal is running. It has never been load-tested past
+one bench and a handful of servers.
+
+What it *is* fair to do in production is **pull**: the ssh tailer and the
+fleet runner read remote logs onto your bench over ssh, so production never
+needs to reach the hub and the hub never needs to be exposed. That is how
+the fleet support is meant to be used.
+
+**When you outgrow it**, you have not wasted anything — the wire format is
+NDJSON on plain HTTP (see [docs/PROTOCOL.md](docs/PROTOCOL.md)), so a
+forwarder into Loki, Elasticsearch or an OTLP collector is a small script
+that subscribes to the firehose and re-posts. The two tools answer different
+questions and it is reasonable to run both: this one for "what is happening
+right now while I am looking", that one for "what happened last Tuesday at
+three in the morning".
+
 ## Quick start
 
 ```sh
@@ -169,6 +209,74 @@ The demo binds to loopback. Real phones need the hub on the LAN:
 `SUPER_LOG_LAN=1 ./demo/run.sh` — read the security section first. The
 viewer finds the hub from the host that served the page, so opening it from
 another machine needs no configuration.
+
+## Installing it in a project
+
+**Clone it once, use it from every project.** super-log is not a dependency
+you add to a repo — it is a tool you install on a machine, like a debugger.
+The hub is machine-wide and shared: one per bench, every project on it. Two
+hubs would be two ports competing and two viewers each showing a third of
+the picture.
+
+That also keeps your repo clean, and it avoids a real cost — a Cargo git
+dependency on this repo clones all five submodules and 36 MB of C++ that the
+Rust crate never touches.
+
+```sh
+git clone --recurse-submodules https://github.com/saxonnicholls/super-log ~/dev/super-log
+cd ~/dev/super-log && npm install        # once, for the tailers and the web viewer
+```
+
+Then, per project:
+
+```sh
+~/dev/super-log/scripts/setup.sh ~/code/my-app
+```
+
+That writes exactly two files into your project and touches nothing else:
+
+| File | What |
+|---|---|
+| `superlog.conf` | what this project logs — the only file you edit |
+| `logging.sh` | a self-contained POSIX-sh launcher, ~250 lines |
+
+`.superlog/` (pids and logs) is added to your `.gitignore`. The project type
+is detected, so the config arrives pre-filled rather than blank — a
+`package.json` gets `npm run build`, a `CMakeLists.txt` gets
+`cmake --build build -j`, and so on.
+
+```sh
+cd ~/code/my-app
+$EDITOR superlog.conf     # topic prefix, dirs to watch, log files, services
+./logging.sh start        # hub + viewer + this project's streams
+./logging.sh status       # what is running, and where
+./logging.sh stop         # stops what THIS project started - not the shared hub
+```
+
+**Booting it with your build and run** is the point of the last two
+commands. They start the logging first if it is not already up, so wiring
+them into what you already type is all it takes:
+
+```sh
+./logging.sh build        # your build, with its compiler diagnostics as events
+./logging.sh run          # your program, output teed to the terminal AND the bench
+```
+
+`build` runs through the build wrapper, so warnings and errors arrive as
+`WARN`/`ERROR` with `file:line`, and sanitizer or valgrind findings arrive
+whole. `run` runs through `superlog-tee`, so stdout reaches your terminal
+byte for byte and the bench at the same time. Either is a drop-in for the
+command it wraps — `alias b='./logging.sh build'`, or `setup.sh --wire` to
+add `npm run log` / `log:stop` / `log:status` to a Node project.
+
+**Sharing one bench between projects works the way you would hope.** The
+second project's `start` finds the hub and viewer already up and only adds
+its own streams; each project's topics carry its own prefix, so they stay
+separable in the viewer; and stopping one project leaves the others running.
+
+If you would rather wire an SDK into your code directly instead of watching
+from outside, that is the next section — but you do not have to, and for
+most projects the launcher is enough to see everything.
 
 ## Putting your own apps on the bench
 
@@ -468,6 +576,8 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Path            | What |
 |-----------------|------|
 | `hub/`          | `superlogd` - the one process everything meets at |
+| `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh` |
+| `tests/`        | 65 tests: the tools driven as subprocesses against a real hub |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook |
 | `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture |
@@ -513,6 +623,30 @@ rate. Not built yet: viewer "load session" and metric sparklines.
 
 CI lives in `.github/workflows/ci.yml`; `scripts/smoke.sh` is the one smoke
 test that CI, the Docker image and your terminal all run identically.
+
+## Future directions
+
+Deliberately not built yet, and the reasoning matters as much as the list:
+
+- **A Grafana / Loki / OTLP forwarder.** The obvious ask is "integrate
+  Grafana", and the answer is a *forwarder*, not integration. Teaching the
+  hub to be a Prometheus target or a Grafana datasource would make it depend
+  on an ecosystem it does not need and would blur the line drawn above —
+  the hub's job is to be the thing you can point anything at in ten seconds.
+  A forwarder respects that line: one more subscriber on the firehose that
+  re-posts into Loki or an OTLP collector, in the same shape as every tailer
+  here, so the bench stays a bench and the long-term store stays separate.
+  It is a small script, and it is the right bridge for anyone who wants
+  yesterday's logs in Grafana and today's on the bench.
+- **Viewer "load session"** and metric sparklines — the journal can already
+  be searched and replayed, but neither viewer can open a saved session
+  directly.
+- **A byte budget on the hub's replay ring**, which belongs in ts-moveables
+  rather than here; until it lands, `SUPER_LOG_REPLAY_CHUNKS` bounds the
+  ring by count instead. See the comment in `hub/src/main.cpp`.
+- **Windows** as a first-class host for the hub and viewers. Windows
+  machines already work as producers, and the event-log tailer is written
+  but unverified.
 
 ## Contributing
 

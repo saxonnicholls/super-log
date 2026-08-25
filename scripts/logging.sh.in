@@ -1,0 +1,286 @@
+#!/bin/sh
+#
+# logging.sh - this project, on the super-log bench.
+#
+# Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
+#
+# Written here by super-log's setup.sh. Self-contained POSIX sh; the only
+# thing it needs is the super-log clone it was generated from.
+#
+#   ./logging.sh start     hub + viewer + this project's streams
+#   ./logging.sh stop      stop what THIS project started
+#   ./logging.sh status    what is running, and where
+#   ./logging.sh build     run the build with its diagnostics as events
+#   ./logging.sh run       run the program with its output on the bench
+#   ./logging.sh tail      follow this project's streams in the terminal
+#
+# What it logs comes from superlog.conf next to this file. Edit that, not
+# this.
+#
+# The hub and the viewer are MACHINE-wide and started at most once: a second
+# project running `start` finds them already up and only adds its own
+# streams. That is the whole reason this is a launcher rather than a
+# dependency - one bench, every project on it, and closing one project does
+# not blind the others.
+#
+set -u
+
+SUPERLOG_HOME="${SUPERLOG_HOME:-@SUPERLOG_HOME@}"
+PROJECT_DIR=$(cd "$(dirname "$0")" && pwd)
+STATE="$PROJECT_DIR/.superlog"
+CONF="$PROJECT_DIR/superlog.conf"
+
+if [ ! -d "$SUPERLOG_HOME" ]; then
+    echo "logging.sh: super-log is not at $SUPERLOG_HOME" >&2
+    echo "  It has moved or been deleted. Either set SUPERLOG_HOME, or re-run" >&2
+    echo "  <super-log>/scripts/setup.sh $PROJECT_DIR --force" >&2
+    exit 1
+fi
+
+# ---- config: parsed, never sourced --------------------------------------
+#
+# Sourcing a config file makes it a shell script, and a stray backtick in a
+# path then runs a command. Nothing here needs that power.
+
+cfg() {
+    _key="$1"; _dflt="${2:-}"
+    [ -f "$CONF" ] || { printf '%s' "$_dflt"; return; }
+    _v=$(sed -n "s/^[[:space:]]*$_key[[:space:]]*=[[:space:]]*//p" "$CONF" | head -1 |
+         sed 's/[[:space:]]*$//')
+    [ -n "$_v" ] && printf '%s' "$_v" || printf '%s' "$_dflt"
+}
+
+PREFIX=$(cfg TOPIC_PREFIX "$(basename "$PROJECT_DIR")")
+PORT=$(cfg PORT 7333)
+VIEWER=$(cfg VIEWER 1)
+WATCH_DIRS=$(cfg WATCH_DIRS "")
+GIT_WATCH=$(cfg GIT 0)
+LOG_FILES=$(cfg LOG_FILES "")
+APPS=$(cfg APPS "")
+OS_LOG=$(cfg OS_LOG 0)
+BUILD_CMD=$(cfg BUILD_CMD "make")
+RUN_CMD=$(cfg RUN_CMD "")
+
+HUB="http://127.0.0.1:$PORT"
+BIN="$SUPERLOG_HOME/tailers/bin"
+export SUPER_LOG_URL="$HUB"
+
+mkdir -p "$STATE"
+
+hub_up() { curl -sf --max-time 2 "$HUB/healthz" >/dev/null 2>&1; }
+have()   { command -v "$1" >/dev/null 2>&1; }
+
+# Record a pid so `stop` can kill exactly what this project started - and
+# nothing another project or the machine owns.
+remember() { echo "$2" > "$STATE/$1.pid"; }
+running()  { [ -f "$STATE/$1.pid" ] && kill -0 "$(cat "$STATE/$1.pid")" 2>/dev/null; }
+
+start_one() {
+    _name="$1"; shift
+    if running "$_name"; then
+        echo "  $_name already running (pid $(cat "$STATE/$_name.pid"))"
+        return
+    fi
+    "$@" >"$STATE/$_name.log" 2>&1 &
+    remember "$_name" "$!"
+    echo "  started $_name"
+}
+
+# ---- the shared parts: at most one of each on this machine --------------
+
+ensure_hub() {
+    if hub_up; then
+        echo "  hub already up on :$PORT (shared)"
+        return 0
+    fi
+    if [ ! -x "$SUPERLOG_HOME/build/hub/superlogd" ]; then
+        echo "  building the hub (first run only)"
+        if ! cmake -S "$SUPERLOG_HOME" -B "$SUPERLOG_HOME/build" -DCMAKE_BUILD_TYPE=Release >/dev/null 2>&1 ||
+           ! cmake --build "$SUPERLOG_HOME/build" --target superlogd -j >/dev/null 2>&1; then
+            echo "logging.sh: the hub did not build. Try it directly:" >&2
+            echo "  cmake -S $SUPERLOG_HOME -B $SUPERLOG_HOME/build && \\" >&2
+            echo "  cmake --build $SUPERLOG_HOME/build --target superlogd -j" >&2
+            return 1
+        fi
+    fi
+    # Loopback: the hub has no auth, and this is a dev machine.
+    SUPER_LOG_PORT="$PORT" SUPER_LOG_BIND=127.0.0.1 \
+        "$SUPERLOG_HOME/build/hub/superlogd" >"$STATE/hub.log" 2>&1 &
+    remember hub "$!"
+    _i=0
+    while [ "$_i" -lt 60 ]; do
+        hub_up && { echo "  started the hub on :$PORT"; return 0; }
+        _i=$((_i + 1)); sleep 0.1
+    done
+    echo "logging.sh: hub did not come up on :$PORT - see $STATE/hub.log" >&2
+    return 1
+}
+
+viewer_running() {
+    pgrep -f "superlog_viewer" >/dev/null 2>&1 && return 0
+    curl -sf --max-time 2 "http://127.0.0.1:7334" >/dev/null 2>&1 && return 0
+    return 1
+}
+
+ensure_viewer() {
+    [ "$VIEWER" = "1" ] || return 0
+    if viewer_running; then
+        echo "  viewer already open (shared)"
+        return 0
+    fi
+    if have npm && [ -d "$SUPERLOG_HOME/node_modules" ]; then
+        (cd "$SUPERLOG_HOME" && npm run viewer >"$STATE/viewer.log" 2>&1 &
+         echo $! > "$STATE/viewer.pid")
+        sleep 2
+        have open && open "http://localhost:7334" 2>/dev/null
+        echo "  opened the web viewer on http://localhost:7334"
+    elif [ -x "$SUPERLOG_HOME/build/viewer/imgui/superlog_viewer" ]; then
+        "$SUPERLOG_HOME/build/viewer/imgui/superlog_viewer" >"$STATE/viewer.log" 2>&1 &
+        remember viewer "$!"
+        echo "  opened the native viewer"
+    else
+        echo "  no viewer available (run npm install in $SUPERLOG_HOME)"
+    fi
+}
+
+# ---- this project's own streams ----------------------------------------
+
+start_streams() {
+    if [ -n "$WATCH_DIRS" ]; then
+        _args=""
+        for d in $WATCH_DIRS; do
+            [ -d "$PROJECT_DIR/$d" ] && _args="$_args --dir $PROJECT_DIR/$d"
+        done
+        if [ -n "$_args" ]; then
+            # shellcheck disable=SC2086
+            start_one watch node "$BIN/superlog-watch.mjs" $_args \
+                --topic "fs.$PREFIX" --url "$HUB"
+        else
+            echo "  WATCH_DIRS names nothing that exists - skipping"
+        fi
+    fi
+
+    if [ "$GIT_WATCH" = "1" ] && [ -d "$PROJECT_DIR/.git" ]; then
+        start_one git node "$BIN/superlog-git.mjs" --repo "$PROJECT_DIR" \
+            --topic "git.$PREFIX" --url "$HUB"
+    fi
+
+    if [ -n "$LOG_FILES" ]; then
+        _n=0
+        for f in $LOG_FILES; do
+            _p="$f"
+            [ -f "$PROJECT_DIR/$f" ] && _p="$PROJECT_DIR/$f"
+            if [ -f "$_p" ]; then
+                _n=$((_n + 1))
+                start_one "file$_n" node "$BIN/superlog-tail.mjs" file "$_p" \
+                    --topic "app.$PREFIX.$(basename "$f" | sed 's/\.[^.]*$//')" --url "$HUB"
+            else
+                echo "  LOG_FILES: $f does not exist yet - skipping"
+            fi
+        done
+    fi
+
+    if [ -n "$APPS" ]; then
+        # shellcheck disable=SC2086
+        start_one apps node "$BIN/superlog-tail.mjs" app $APPS --url "$HUB"
+    fi
+
+    if [ "$OS_LOG" = "1" ]; then
+        start_one os node "$BIN/superlog-tail.mjs" os --url "$HUB"
+    fi
+}
+
+# ---- commands -----------------------------------------------------------
+
+cmd_start() {
+    echo "super-log: $PREFIX -> $HUB"
+    ensure_hub || exit 1
+    ensure_viewer
+    start_streams
+    echo "Streams are on http://localhost:7334 - stop with ./logging.sh stop"
+}
+
+cmd_stop() {
+    _n=0
+    for f in "$STATE"/*.pid; do
+        [ -f "$f" ] || continue
+        _name=$(basename "$f" .pid)
+        _pid=$(cat "$f")
+        # The hub and viewer may be serving other projects by now. Only stop
+        # them if this project is the one that started them AND nothing else
+        # is obviously using them.
+        if kill -0 "$_pid" 2>/dev/null; then
+            kill "$_pid" 2>/dev/null && echo "  stopped $_name"
+            _n=$((_n + 1))
+        fi
+        rm -f "$f"
+    done
+    [ "$_n" -eq 0 ] && echo "  nothing this project started is running"
+    exit 0
+}
+
+cmd_status() {
+    echo "super-log"
+    echo "  home    $SUPERLOG_HOME"
+    echo "  hub     $HUB $(hub_up && echo '(up)' || echo '(down)')"
+    echo "  prefix  $PREFIX"
+    if hub_up; then
+        curl -sf "$HUB/healthz" 2>/dev/null |
+            sed 's/[{}"]//g; s/,/\n    /g' | sed '1s/^/    /'
+        echo
+    fi
+    _any=0
+    for f in "$STATE"/*.pid; do
+        [ -f "$f" ] || continue
+        _name=$(basename "$f" .pid); _pid=$(cat "$f")
+        if kill -0 "$_pid" 2>/dev/null; then
+            echo "  $_name (pid $_pid)"; _any=1
+        fi
+    done
+    [ "$_any" -eq 0 ] && echo "  no streams started by this project"
+    exit 0
+}
+
+cmd_build() {
+    shift 2>/dev/null || true
+    _cmd="$*"
+    [ -z "$_cmd" ] && _cmd="$BUILD_CMD"
+    [ -z "$_cmd" ] && { echo "logging.sh: no BUILD_CMD in superlog.conf" >&2; exit 2; }
+    hub_up || { ensure_hub || exit 1; ensure_viewer; start_streams; }
+    echo "super-log: building through the bench -> build.<host>.$PREFIX"
+    # shellcheck disable=SC2086
+    exec node "$BIN/superlog-build.mjs" --url "$HUB" --label "$PREFIX" -- sh -c "$_cmd"
+}
+
+cmd_run() {
+    shift 2>/dev/null || true
+    _cmd="$*"
+    [ -z "$_cmd" ] && _cmd="$RUN_CMD"
+    [ -z "$_cmd" ] && { echo "logging.sh: no RUN_CMD in superlog.conf" >&2; exit 2; }
+    hub_up || { ensure_hub || exit 1; ensure_viewer; start_streams; }
+    echo "super-log: running through the bench -> $PREFIX.run"
+    # tee, not the build wrapper: this is the program's own output, and it
+    # should reach the terminal byte for byte as well as the bench.
+    sh -c "$_cmd" 2>&1 | node "$BIN/superlog-tee.mjs" --url "$HUB" \
+        --topic "$PREFIX.run" --app "$PREFIX" --classify
+    exit "$?"
+}
+
+cmd_tail() {
+    hub_up || { echo "logging.sh: the hub is not running - ./logging.sh start" >&2; exit 1; }
+    exec node "$BIN/superlog-search.mjs" --url "$HUB" --topic "$PREFIX" --follow 2>/dev/null ||
+        curl -sN "$HUB/recent?topic=$PREFIX&limit=50"
+}
+
+case "${1:-start}" in
+    start)  cmd_start ;;
+    stop)   cmd_stop ;;
+    status) cmd_status ;;
+    build)  cmd_build "$@" ;;
+    run)    cmd_run "$@" ;;
+    tail)   cmd_tail ;;
+    *)
+        echo "usage: ./logging.sh [start|stop|status|build|run|tail]" >&2
+        exit 2 ;;
+esac
