@@ -1,7 +1,7 @@
 # super-log
 
 **One hub for every log stream you have — devices, servers, containers,
-browsers, chains.**
+browsers, chains and apps.**
 
 If you build across devices, you know the ritual: a Metro console for the
 iOS simulator, another for the Android emulator, `adb logcat` for the phone
@@ -111,14 +111,14 @@ shape of them matters: an agent's context is small and a firehose is not, so
 every tool filters first, caps its output, and returns one compact line per
 event.
 
-| Tool | For |
-|---|---|
-| `hub_status` | Is the bench even up — "hub is down" vs "the app logged nothing" |
-| `list_streams` | Orientation: which topics are live, their level mix, which have errors |
-| `tail_logs` | Recent events by topic/level/text, with a cursor so repeat calls only return what is new |
-| `search_logs` | Find by text when you know the message but not the stream |
-| `search_history` | The on-disk journal — hours or days, for "what happened at 3am" |
-| `wait_for` | Block until a matching event arrives, instead of sleeping and hoping |
+| Tool               | For                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `hub_status`     | Is the bench even up — "hub is down" vs "the app logged nothing"                        |
+| `list_streams`   | Orientation: which topics are live, their level mix, which have errors                   |
+| `tail_logs`      | Recent events by topic/level/text, with a cursor so repeat calls only return what is new |
+| `search_logs`    | Find by text when you know the message but not the stream                                |
+| `search_history` | The on-disk journal — hours or days, for "what happened at 3am"                         |
+| `wait_for`       | Block until a matching event arrives, instead of sleeping and hoping                     |
 
 ```sh
 npm run demo:mcp        # drives all six over stdio and prints what an agent sees
@@ -157,14 +157,14 @@ typing one command, and nothing to configure before the first line appears.
 distinction is not modesty, it is design: several things that make it good
 at the first job make it unfit for the second.
 
-| | super-log | Prometheus / Grafana / Loki / Datadog |
-|---|---|---|
-| Lives | on your machine, while you work | in production, permanently |
-| Retention | a ring in memory, plus a journal you turn on | months, indexed, queryable |
-| Auth | **none** — loopback by default | tenants, RBAC, audit |
-| Scale | one bench, a handful of servers | thousands of hosts |
-| Alerting | rules for "tell me while I am here" | on-call, escalation, SLOs |
-| Cost of adding a stream | one command | a pipeline change |
+|                         | super-log                                    | Prometheus / Grafana / Loki / Datadog |
+| ----------------------- | -------------------------------------------- | ------------------------------------- |
+| Lives                   | on your machine, while you work              | in production, permanently            |
+| Retention               | a ring in memory, plus a journal you turn on | months, indexed, queryable            |
+| Auth                    | **none** — loopback by default        | tenants, RBAC, audit                  |
+| Scale                   | one bench, a handful of servers              | thousands of hosts                    |
+| Alerting                | rules for "tell me while I am here"          | on-call, escalation, SLOs             |
+| Cost of adding a stream | one command                                  | a pipeline change                     |
 
 Concretely, do **not** point this at production and walk away. The hub has
 no authentication: anyone who can reach the port can read every stream and
@@ -235,10 +235,10 @@ Then, per project:
 
 That writes exactly two files into your project and touches nothing else:
 
-| File | What |
-|---|---|
+| File              | What                                             |
+| ----------------- | ------------------------------------------------ |
 | `superlog.conf` | what this project logs — the only file you edit |
-| `logging.sh` | a self-contained POSIX-sh launcher, ~250 lines |
+| `logging.sh`    | a self-contained POSIX-sh launcher, ~250 lines   |
 
 `.superlog/` (pids and logs) is added to your `.gitignore`. The project type
 is detected, so the config arrives pre-filled rather than blank — a
@@ -472,12 +472,12 @@ These three diff a snapshot rather than streaming, so the first poll is a
 silent baseline and only *changes* are reported — a watcher that announces
 everything it sees teaches you to ignore it.
 
-| Watch | Publishes | Notable levels |
-|-------|-----------|----------------|
-| `dns` | `dns.<domain>` — A, AAAA, NS, MX, TXT, CAA and the TLS certificate | **NS/CAA change is WARN** (you probably did not do it; it is how a domain gets taken), a record type vanishing is ERROR, certs go WARN at 3 weeks → ERROR at 1 → CRITICAL once expired. TXT changes are named by kind, so it says *"SPF/DMARC record changed"* rather than making you diff two long strings. |
-| `ports` | `net.<host>.listeners` — listening sockets, owning process, pid, **and firewall rules** | A **new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR. |
-| `vitals` | `host.<name>.vitals` — disk, memory, CPU and load, macOS/Linux/Windows | Readings are DEBUG `metric` events (always there for a chart, out of a default INFO view); threshold crossings are **edge-triggered** WARN/ERROR, so 85% says so once rather than every poll, and recovery says so too. Read-only filesystems are skipped: a macOS simulator runtime is 98% full by design, and alerting on it produced 25 false ERRORs before this rule existed. |
-| `build` | `build.<host>.<label>` — one event per diagnostic, one verdict | Compiler errors are ERROR with `file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships. |
+| Watch      | Publishes                                                                                        | Notable levels                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dns`    | `dns.<domain>` — A, AAAA, NS, MX, TXT, CAA and the TLS certificate                            | **NS/CAA change is WARN** (you probably did not do it; it is how a domain gets taken), a record type vanishing is ERROR, certs go WARN at 3 weeks → ERROR at 1 → CRITICAL once expired. TXT changes are named by kind, so it says *"SPF/DMARC record changed"* rather than making you diff two long strings.                                                                   |
+| `ports`  | `net.<host>.listeners` — listening sockets, owning process, pid, **and firewall rules** | A**new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR.                                                                                                                          |
+| `vitals` | `host.<name>.vitals` — disk, memory, CPU and load, macOS/Linux/Windows                        | Readings are DEBUG`metric` events (always there for a chart, out of a default INFO view); threshold crossings are **edge-triggered** WARN/ERROR, so 85% says so once rather than every poll, and recovery says so too. Read-only filesystems are skipped: a macOS simulator runtime is 98% full by design, and alerting on it produced 25 false ERRORs before this rule existed. |
+| `build`  | `build.<host>.<label>` — one event per diagnostic, one verdict                                | Compiler errors are ERROR with`file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships.                                                                                                              |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
 record changed, not that a laptop moved networks and hit a different cache.
@@ -573,26 +573,26 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Layout
 
-| Path            | What |
-|-----------------|------|
-| `hub/`          | `superlogd` - the one process everything meets at |
-| `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh` |
-| `tests/`        | 65 tests: the tools driven as subprocesses against a real hub |
-| `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler |
-| `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook |
-| `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture |
-| `sdk/go/`       | `superlog`: client, `log/slog` handler, panic recovery |
-| `sdk/java/`     | `SuperLog`: client, `java.util.logging` bridge, Kotlin notes |
-| `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace |
-| `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets |
-| `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp` |
+| Path              | What                                                                                                 |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| `hub/`          | `superlogd` - the one process everything meets at                                                  |
+| `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`              |
+| `tests/`        | 75 tests: the tools driven as subprocesses against a real hub                                        |
+| `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler                                            |
+| `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook                                             |
+| `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture                                |
+| `sdk/go/`       | `superlog`: client, `log/slog` handler, panic recovery                                           |
+| `sdk/java/`     | `SuperLog`: client, `java.util.logging` bridge, Kotlin notes                                     |
+| `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace                                                           |
+| `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets                                                      |
+| `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp`                                      |
 | `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy |
-| `viewer/imgui/` | native viewer |
-| `viewer/react/` | web viewer |
-| `demo/`         | the multi-client clock demo: one command, whole bench |
-| `docker/`       | Ubuntu build+smoke image and the Linux bench producer |
-| `third_party/`  | pinned submodules |
-| `docs/`         | PROTOCOL.md (the contract), ARCHITECTURE.md (the shape) |
+| `viewer/imgui/` | native viewer                                                                                        |
+| `viewer/react/` | web viewer                                                                                           |
+| `demo/`         | the multi-client clock demo: one command, whole bench                                                |
+| `docker/`       | Ubuntu build+smoke image and the Linux bench producer                                                |
+| `third_party/`  | pinned submodules                                                                                    |
+| `docs/`         | PROTOCOL.md (the contract), ARCHITECTURE.md (the shape)                                              |
 
 ## Status, honestly
 
