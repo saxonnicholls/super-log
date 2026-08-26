@@ -110,6 +110,21 @@ if(SUPER_LOG_HAS_VENDORED_SPDLOG)
     add_subdirectory(demo/cpp)
 endif()
 
+# The CUDA demo, only when a CUDA compiler exists. check_language is the
+# supported way to ask without failing configure on the overwhelming majority
+# of machines that have no nvcc - enable_language(CUDA) unconditionally would
+# make this repo unbuildable for everyone without an NVIDIA toolkit, which is
+# a poor trade for one optional demo.
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+    enable_language(CUDA)
+    message(STATUS "super-log: CUDA found (${CMAKE_CUDA_COMPILER}) - building demo/cuda")
+    add_subdirectory(demo/cuda)
+else()
+    message(STATUS "super-log: no CUDA compiler - skipping demo/cuda")
+endif()
+
 # Vendored imgui + glfw (submodules) when present; FetchContent otherwise.
 set(SUPER_LOG_HAS_VENDORED_IMGUI OFF)
 if(EXISTS "${SUPER_LOG_THIRD_PARTY}/imgui/imgui.cpp"

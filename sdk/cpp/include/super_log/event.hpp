@@ -138,6 +138,61 @@ inline std::string to_event_json(const snicholls::log::record& r,
     return j;
 }
 
+// A metric, built from parts. Until this existed the only way a C++ program
+// could emit one was through a snicholls::log::record with is_metric set,
+// which means anything not routed through SN_LOG - a CUDA host loop, a
+// benchmark, a callback from someone else's library - could log text but not
+// numbers. The name lives in `msg` as well as in `metric.name`, so a reader
+// that looks at only one of them is not blind to the other.
+inline std::string make_metric_json(const std::string& name, double value,
+                                    const origin& o, const std::string& session,
+                                    std::uint64_t seq,
+                                    const std::string& tag = std::string(),
+                                    const std::vector<std::pair<std::string, std::string>>& fields =
+                                        std::vector<std::pair<std::string, std::string>>())
+{
+    std::string j = "{\"v\":1,\"ts\":\"";
+    j += snicholls::log::detail::format_time(std::chrono::system_clock::now());
+    j += "\",\"seq\":";
+    j += std::to_string(seq);
+    detail::append_kv(j, "session", session);
+    j += ",\"level\":\"INFO\"";
+    detail::append_origin(j, o);
+    if (!tag.empty())
+        detail::append_kv(j, "tag", tag);
+    detail::append_kv(j, "msg", name);
+    {
+        // %.17g round-trips a double exactly. JSON has no NaN or Infinity,
+        // so a diverged computation would otherwise emit a line no reader
+        // can parse - which is the exact moment you need it most.
+        const bool finite = value == value && value < 1e308 && value > -1e308;
+        char v[48];
+        std::snprintf(v, sizeof v, "\",\"value\":%.17g}", finite ? value : 0.0);
+        j += ",\"metric\":{\"name\":\"";
+        detail::json_escape(name, j);
+        j += v;
+        if (!finite)
+            detail::append_kv(j, "note", value == value ? "infinite" : "NaN");
+    }
+    if (!fields.empty()) {
+        j += ",\"fields\":{";
+        bool first = true;
+        for (const auto& f : fields) {
+            if (!first)
+                j += ',';
+            first = false;
+            j += '"';
+            detail::json_escape(f.first, j);
+            j += "\":\"";
+            detail::json_escape(f.second, j);
+            j += '"';
+        }
+        j += '}';
+    }
+    j += '}';
+    return j;
+}
+
 // The same event, built from parts - for the spdlog sink and anything else
 // that is not holding a snicholls::log::record.
 inline std::string make_event_json(const char* level, const std::string& msg,

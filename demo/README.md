@@ -113,3 +113,31 @@ separate multi-gigabyte download.
 
 For the card itself rather than the work - utilisation, memory, temperature,
 and the same over ssh - see `npm run gpu`, which needs no code in your app.
+
+## CUDA
+
+```sh
+cmake --build build --target superlog_clock_cuda -j    # only if nvcc is present
+./build/demo/cuda/superlog_clock_cuda
+```
+
+The GPU half of the argument the Metal demo makes: super-log has no CUDA
+support and does not need any. Three things it puts on the bench that a
+host-side log cannot:
+
+- **Kernel time from CUDA events.** `cudaEventElapsedTime` measures the GPU's
+  own clock, so a kernel taking 0.4 ms reads as 0.4 ms even when the host
+  blocked 12 ms. Timing around the launch measures your thread instead.
+- **`printf` from inside the kernel**, guarded by thread index — unguarded it
+  is one line per thread, and a modest launch is a million lines, which is
+  how the feature got its reputation.
+- **Asynchronous faults.** A kernel that faults does not fail at its launch;
+  the error surfaces at the next synchronise, often blamed on whatever ran
+  after it. `SUPER_LOG_CUDA_FAULT=1` demonstrates exactly that asymmetry.
+
+The build is skipped entirely when no CUDA compiler is present, so this costs
+nothing on a machine without one.
+
+**Not verified.** Written against the CUDA runtime API but never compiled or
+run — there is no NVIDIA GPU on the bench it was written on. Treat the first
+build as a bring-up.
