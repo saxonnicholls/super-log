@@ -80,6 +80,7 @@ host-side tailer scraping the same device:
 | `syslog.<host>.<app>` | anything that speaks syslog over UDP or TCP - routers, switches, appliances, rsyslog |
 | `socket.<host>.<peer>`| plain lines on a raw TCP or UDP socket |
 | `ros.<host>.<node>`   | a ROS 1 / ROS 2 node's log, one topic per node, from `/rosout` or `~/.ros/log` |
+| `gpu.<host>.<index>`  | a GPU: utilisation, memory, temperature and power as `metric` events, plus threshold crossings |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
 | `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 

@@ -464,6 +464,8 @@ npm run socket -- --udp 5514                # syslog from routers, switches, NAS
 npm run socket -- --tcp 5515                # ...or plain lines on a raw socket
 npm run ros                                 # a robot's nodes, from /rosout
 npm run ros -- --files                      # ...including past runs in ~/.ros/log
+npm run gpu                                 # this machine's GPU, watched
+npm run gpu -- --ssh trainer1               # ...or the box with the card in it
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 

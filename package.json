@@ -53,7 +53,8 @@
     "demo:mcp": "node demo/mcp/drive.mjs",
     "ros": "node tailers/bin/superlog-ros.mjs",
     "demo:inlets": "node demo/inlets/demo.mjs",
-    "test": "node --test \"tests/**/*.test.mjs\""
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "gpu": "node tailers/bin/superlog-gpu.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -71,7 +72,8 @@
     "superlog-serial": "tailers/bin/superlog-serial.mjs",
     "superlog-socket": "tailers/bin/superlog-socket.mjs",
     "superlog-ros": "tailers/bin/superlog-ros.mjs",
-    "superlog-grpc": "tailers/bin/superlog-grpc.mjs"
+    "superlog-grpc": "tailers/bin/superlog-grpc.mjs",
+    "superlog-gpu": "tailers/bin/superlog-gpu.mjs"
   },
   "license": "MIT"
 }
