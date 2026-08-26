@@ -553,6 +553,118 @@ an accident:
 - CSV exports defuse spreadsheet formula injection; viewers render log
   content as text, never markup.
 
+### Why there is no login
+
+The bar this aims at is deliberately modest and deliberately explicit: **be
+no less safe than the logs a developer already has**, and never more
+dangerous than them.
+
+Normal logs are files under `/var/log` and `~/Library/Logs`, `adb logcat`,
+the Metro and Xcode consoles, `journalctl`. Every one of them is local-only,
+enforced by the operating system, and none can be written to from another
+machine. Bound to loopback, this is the same thing: the OS is the
+authentication, and it is the same OS doing the same job it already does for
+your log files. Adding a password on top of that protects nothing that was
+not already protected.
+
+So the honest answer to "shouldn't there be auth?" is that **for the case
+this tool is actually used in, auth would be theatre**. What matters is not
+adding a login; it is not quietly becoming reachable.
+
+Two things follow, and they are the whole policy:
+
+**The default is the safe one.** This was not always true. The hub used to
+bind `0.0.0.0` while this file claimed exposure was "a choice, not an
+accident" — true of the demo script, false of the binary these instructions
+tell you to run. A security claim the code did not honour is worse than
+either alone. It binds loopback now, and says so at startup, and says
+something louder when it is not.
+
+**A token would not fix the case people imagine it fixes.** Without TLS a
+shared secret crosses the network in plaintext on every request, so anyone
+who can sniff that network has it after one request and keeps it. It would
+stop accidental access, not an attacker — while adding a real new leak,
+because browsers cannot set headers on a WebSocket and the viewer's token
+would have to travel in the URL, into browser history and `Referer` and
+every pasted link. That is a poor trade for something the OS already does
+properly one layer down.
+
+### Devices, without opening anything
+
+The one genuine gap is a phone pushing logs, because a handset cannot reach
+loopback on your Mac. Use USB rather than the network:
+
+```sh
+adb reverse tcp:7333 tcp:7333          # Android - the phone's localhost is yours
+iproxy 7333 7333                       # iOS, via libimobiledevice
+```
+
+That is parity with normal logs everywhere, with no new code and no open
+port. It is also strictly better than a LAN bind with a token, and simpler.
+
+### Containers, and other machines
+
+**Docker on macOS needs nothing.** A container reaching
+`host.docker.internal` arrives on the host's loopback, so the repo's own
+Ubuntu producer keeps working against a loopback-bound hub — verified, not
+assumed. The counter-intuitive part is that **`--network host` does not
+work** on Docker Desktop: "host" there means the Linux VM, so the
+container's `127.0.0.1` is the VM's and not your Mac's. The permissive-
+sounding flag is the one that fails.
+
+```yaml
+extra_hosts: ["host.docker.internal:host-gateway"]   # what the compose file does
+```
+
+**Docker on Linux** is the other way round: `--network host` shares the
+host's network namespace, so `127.0.0.1` in the container really is the
+host's loopback and a loopback-bound hub is reachable directly.
+
+**A Raspberry Pi, or any other machine**, is the phone problem again — it
+cannot reach your loopback. Two answers, both already here and neither of
+which opens a port:
+
+```sh
+# 1. Pull. Nothing runs on the Pi, nothing is installed, no port is opened.
+npm run tail:ssh -- pi4                     # its OS logs
+npm run gpu -- --ssh pi4                    # its GPU, temperature and throttling
+npm run build -- --ssh pi4 -- make          # a build on it
+
+# 2. Push, through the ssh connection you already have, if an SDK runs there.
+ssh -R 7333:127.0.0.1:7333 pi4              # then SUPER_LOG_URL=http://127.0.0.1:7333
+```
+
+The pull model is the better default and the reason the fleet support exists:
+logs travel *to* the bench over ssh, so the machine being watched never needs
+to reach the hub and the hub never needs to be reachable. A reverse tunnel
+covers the case where code on that machine wants to use an SDK directly — it
+carries the traffic over the ssh session you already trust, and is verified
+working against a real server.
+
+### If you must expose it
+
+If devices really must reach it over the network, put the allowlist where
+allowlists belong — the firewall, not the application. An IP filter inside
+the process is reimplementing `pf` or `nftables` badly, and it is defeated by
+exactly the same attacker.
+
+```sh
+# macOS, /etc/pf.conf - only this handset may reach the bench
+block in proto tcp to any port 7333
+pass in proto tcp from 192.168.1.37 to any port 7333
+
+# Linux, and you are probably already running it
+ufw allow from 192.168.1.37 to any port 7333
+ufw deny 7333
+```
+
+Then treat the bench as what it is: a development tool holding whatever your
+machines are saying. If that includes production access logs, ssh
+authentication failures or anything with a customer in it, the write side
+matters as much as the read side — nobody can forge lines into `/var/log`
+from across a network, and an open hub is the one place that stops being
+true.
+
 See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Requirements
