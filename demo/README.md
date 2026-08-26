@@ -83,3 +83,33 @@ that matters - and feeds it genuine ESP-IDF and Zephyr console output,
 including a panic that arrives as CRITICAL; and serves a real RFC 6455
 WebSocket locally for the frame logger. Everything lands on the same hub as
 the clocks.
+
+## GPU work, with no GPU logger
+
+```sh
+npm run demo:metal        # macOS only, because Metal is
+```
+
+`demo/metal/gpuclock` is a Metal program doing real GPU work - blit copies
+from 4 MiB to 256 MiB - logging through the ordinary Swift SDK. The point is
+what is *not* in it: super-log has no Metal support, no GPU plugin and
+nothing graphics-shaped in the SDK, because a graphics API already hands you
+a severity and a message and forwarding it is the whole integration.
+
+The number worth having is `gpuEndTime - gpuStartTime`, the GPU's own clock:
+a copy that takes 0.7 ms on the card reads as 0.7 ms even when the CPU
+blocked for 12 ms waiting on it. Timing around `commit()` measures your
+thread instead. On an AMD Radeon Pro Vega II the copies run 212 GiB/s at 4
+MiB up to 351 GiB/s at 256 MiB - the curve you would expect as fixed
+overhead amortises.
+
+It also asks for four times the card's memory on purpose, so there is one
+ERROR row: a demo in which nothing goes wrong demonstrates nothing about a
+logger.
+
+Blit copies rather than a compute kernel, because they need no compiled
+shader - so this runs without the Metal shader toolchain, which is a
+separate multi-gigabyte download.
+
+For the card itself rather than the work - utilisation, memory, temperature,
+and the same over ssh - see `npm run gpu`, which needs no code in your app.
