@@ -219,6 +219,15 @@ if have node; then
         start "os.$h" node tailers/bin/superlog-tail.mjs ssh "$h"
     done
 
+    # This repository's own git activity, so a commit made while the demo is
+    # running appears on the bench next to the build it triggered. It is the
+    # cheapest demonstration of why a git stream belongs here at all: "what
+    # changed" and "what then broke" on one screen, in order.
+    if [ -d .git ]; then
+        start "git.super-log" node tailers/bin/superlog-git.mjs \
+            --repo "$PWD" --topic git.super-log
+    fi
+
     # Well-known app logs on THIS machine (postgres, nginx, redis, ...):
     # `superlog-tail apps` shows what exists here.
     if [ -n "${SUPER_LOG_APPS:-}" ]; then
