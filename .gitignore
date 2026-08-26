@@ -47,3 +47,7 @@ HANDOFF.md
 
 # Agent/editor session state - local to whoever is working, not the project
 .claude/
+
+# Python bytecode - importing the SDK once leaves this behind
+__pycache__/
+*.py[cod]
