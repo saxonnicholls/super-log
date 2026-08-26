@@ -619,10 +619,22 @@ holding 66 MB for one topic — `leaks(1)` confirmed no leak, the ring was
 bounded by chunk count rather than bytes, and it now peaks at 30 MB under
 the same load.
 
+**CI is green on every job**, first run, which is worth stating precisely
+because it verifies things this bench cannot. It builds from a clean
+checkout on Linux under both gcc and clang and on **macOS arm64** (the bench
+is x86_64), runs **ThreadSanitizer on Linux** where macOS's TSan is broken at
+the runtime level, builds the hub with **no submodules at all**, runs the
+POSIX shell producer inside **Alpine** with busybox ash, busybox awk and no
+GNU `date`, and runs `verify-sdks.sh` — so every SDK is proved to actually
+deliver events on a machine that is not the one they were written on.
+
 Still **written but not verified**: the Windows event-log path (no Windows
 machine here), the iOS-hardware tailer, Kotlin (no `kotlinc` here), Swift on
-iOS and Linux, and the serial tailer against real hardware at a real baud
-rate. Not built yet: viewer "load session" and metric sparklines.
+iOS, the serial tailer against real hardware at a real baud rate, the
+**CUDA demo** (no NVIDIA GPU and no `nvcc` here — treat its first build as a
+bring-up), gRPC against TLS and a real client library, and the OpenGL, D3D
+and WebGPU snippets. Not built yet: viewer "load session" and metric
+sparklines.
 
 CI lives in `.github/workflows/ci.yml`; `scripts/smoke.sh` is the one smoke
 test that CI, the Docker image and your terminal all run identically.
