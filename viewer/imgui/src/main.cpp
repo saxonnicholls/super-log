@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <deque>
 #include <mutex>
@@ -274,7 +275,22 @@ bool write_file(const std::string& path, const std::string& text)
 int main()
 {
     const char* env = std::getenv("SUPER_LOG_URL");
-    const std::string url = std::string(env ? env : "ws://127.0.0.1:7333") + "/ws?topic=*";
+    const std::string origin = env ? env : "ws://127.0.0.1:7333";
+    const std::string url = origin + "/ws?topic=*";
+    // Shown in the header. With several hubs on one machine - a bench on
+    // 7333, a screenshot rig on 7400, a test hub on a random port - "which
+    // one am I looking at" is otherwise unanswerable from the window itself,
+    // and a viewer pointed at the wrong hub looks exactly like a quiet one.
+    const std::string hub_label = [&] {
+        std::string h = origin;
+        for (const char* pre : {"ws://", "wss://", "http://", "https://"}) {
+            const std::size_t n = std::strlen(pre);
+            if (h.compare(0, n, pre) == 0) { h = h.substr(n); break; }
+        }
+        if (const std::size_t slash = h.find('/'); slash != std::string::npos)
+            h = h.substr(0, slash);
+        return h;
+    }();
 
     // ---- feed thread: all networking lives here
     feed fd;
@@ -406,6 +422,10 @@ int main()
             shown.push_back(&r);
         }
 
+        // The hub first, because it is the thing that makes every other
+        // number on this screen mean something.
+        ImGui::TextColored(ImVec4(0.48f, 0.64f, 0.97f, 1), "%s", hub_label.c_str());
+        ImGui::SameLine();
         ImGui::TextColored(connected ? ImVec4(0.4f, 0.8f, 0.4f, 1)
                                      : ImVec4(0.9f, 0.4f, 0.3f, 1),
                            connected ? "live" : "reconnecting...");

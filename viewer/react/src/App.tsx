@@ -81,6 +81,15 @@ export default function App() {
       <header style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 12px',
                        borderBottom: '1px solid #262b33', flexWrap: 'wrap' }}>
         <strong style={{ color: '#7aa2f7' }}>super-log</strong>
+        {/* The hub, next to the name rather than dimmed in the corner. With
+            several hubs on one machine - a bench on 7333, a screenshot rig
+            on another - "which one am I looking at" is the first question,
+            and a viewer pointed at the wrong hub looks exactly like a quiet
+            one. */}
+        <span style={{ color: '#7aa2f7', opacity: 0.85 }}
+              title={`hub ${HUB}\nviewer build ${__SUPERLOG_BUILD__}`}>
+          {HUB.replace(/^https?:\/\//, '')}
+        </span>
         <span style={{ color: connected ? '#68c964' : '#e05b4f' }}>
           {connected ? '● live' : '○ reconnecting…'}
         </span>
@@ -151,8 +160,8 @@ export default function App() {
         {/* Which viewer build, and which hub it decided to talk to - the two
             things you want when the screen is not showing what you expect. */}
         <span style={{ color: '#3d434d', marginLeft: 'auto' }}
-              title={`viewer build ${__SUPERLOG_BUILD__}\nhub ${HUB}`}>
-          {HUB.replace(/^https?:\/\//, '')} · build {__SUPERLOG_BUILD__.slice(5)}
+              title={`viewer build ${__SUPERLOG_BUILD__}`}>
+          build {__SUPERLOG_BUILD__.slice(5)}
         </span>
       </header>
 
