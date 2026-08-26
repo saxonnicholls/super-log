@@ -180,6 +180,13 @@ for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell}; do
         elif swift build --package-path demo/swift/clock -c release >/dev/null 2>&1; then
             start "swift.clock" ./demo/swift/clock/.build/release/clock
         else skip "swift.clock" "swift build failed"; fi ;;
+    metal)
+        # macOS only, because Metal is. Skipped elsewhere rather than failed.
+        if [ "$(uname -s)" != "Darwin" ]; then skip "gpu.metal.clock" "Metal is macOS only"
+        elif ! have swift; then skip "gpu.metal.clock" "no swift toolchain"
+        elif swift build --package-path demo/metal/gpuclock -c release >/dev/null 2>&1; then
+            start "gpu.metal.clock" ./demo/metal/gpuclock/.build/release/gpuclock
+        else skip "gpu.metal.clock" "swift build failed"; fi ;;
     fortran)
         if ! have gfortran; then skip "fortran.clock" "no gfortran"
         elif gfortran -cpp -DDEVELOPMENT -J"$SL_TMP" -o "$SL_TMP/sl_clock_f90" \

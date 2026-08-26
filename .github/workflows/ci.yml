@@ -196,6 +196,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift build --package-path sdk/swift
       - run: swift build --package-path demo/swift/clock
+      # A committed demo that nothing builds is a demo that rots. Metal is
+      # macOS-only, which is why this lives in the macOS job.
+      - run: swift build --package-path demo/metal/gpuclock
 
   # Building a client proves it compiles and nothing else. This runs each one
   # against a real hub and reads the events back out, which is the only way a
