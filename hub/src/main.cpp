@@ -418,8 +418,23 @@ int main()
     // and publish to any topic. SUPER_LOG_BIND=127.0.0.1 confines the hub
     // to this machine (the demo does exactly that; OS-log streams make it
     // matter). See docs/ARCHITECTURE.md.
+    // LOOPBACK by default. This used to be 0.0.0.0 "because phones on the LAN
+    // must be able to reach us", and the README claimed exposure was a choice
+    // rather than an accident - which was true of the demo script, which pins
+    // loopback, and false of this binary, which is what the README's own
+    // piece-by-piece instructions tell you to run.
+    //
+    // The hub has no authentication: anyone who can reach the port reads every
+    // stream and can publish to any topic. Once OS logs, ssh auth failures and
+    // service logs are on the bench, the convenient default and the dangerous
+    // one were the same default, and it failed silently - nothing breaks, it
+    // just quietly becomes readable. Opening it up is now something you type.
     const char* bind_env = std::getenv("SUPER_LOG_BIND");
-    const std::string bind_host = bind_env && *bind_env ? bind_env : "0.0.0.0";
+    const char* lan_env = std::getenv("SUPER_LOG_LAN");
+    const std::string bind_host =
+        bind_env && *bind_env      ? bind_env
+        : (lan_env && *lan_env)    ? "0.0.0.0"
+                                   : "127.0.0.1";
     // listen() THROWS on a failed bind rather than returning 0, so the
     // zero check below is not enough on its own: an already-used port -
     // the single most common thing to go wrong on a first run, and on any
@@ -446,7 +461,17 @@ int main()
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    SN_LOG_INFO() << "superlogd listening on 0.0.0.0:" << port;
+    SN_LOG_INFO() << "superlogd listening on " << bind_host << ':' << port;
+    // Say it plainly when it is reachable from elsewhere. A one-line notice
+    // at startup is the difference between an informed choice and a surprise.
+    if (bind_host != "127.0.0.1" && bind_host != "localhost" && bind_host != "::1") {
+        SN_LOG_WARN() << "  REACHABLE FROM THE NETWORK on " << bind_host << ':' << port
+                      << " - there is no authentication, so anyone who can reach";
+        SN_LOG_WARN() << "  this port can read every stream and publish to any topic.";
+    } else {
+        SN_LOG_INFO() << "  loopback only. Devices on the LAN need SUPER_LOG_LAN=1"
+                         " (or SUPER_LOG_BIND=0.0.0.0) - see docs/ARCHITECTURE.md.";
+    }
     SN_LOG_INFO() << "  ingest:  POST http://<host>:" << port << "/ingest/<topic>";
     SN_LOG_INFO() << "  feed:    ws://<host>:" << port << "/ws?topic=*";
     SN_LOG_INFO() << "  health:  GET  http://<host>:" << port << "/healthz";

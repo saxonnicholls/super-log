@@ -155,10 +155,20 @@ const WEBGL_CAPS = [
   'EXT_color_buffer_float',
   'EXT_color_buffer_half_float',
   'OES_texture_float_linear',
+  // Without 32-bit indices, geometry past 65,535 vertices silently truncates
+  // or draws wrong. A tree that renders 65k of its 80k edges looks PLAUSIBLE,
+  // which is the worst outcome - it is not obviously broken, so nobody checks.
+  'OES_element_index_uint',
+  // Shadow maps fail silently without it: lit scene, no shadows, no error.
+  'WEBGL_depth_texture',
   'OES_standard_derivatives',
   'ANGLE_instanced_arrays',
   'WEBGL_lose_context',
 ] as const;
+// Deliberately NOT here: EXT_texture_filter_anisotropic. Without it textures
+// look worse but they are not WRONG, and the criterion for this list is a
+// silent wrong picture, not a silently degraded one. Widening it past that
+// turns a signal into a checklist nobody reads.
 
 export const TRACE_HEADER = 'X-Superlog-Trace';
 

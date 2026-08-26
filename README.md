@@ -541,7 +541,7 @@ No auth, no TLS: anyone who can reach the port can read every stream and
 publish to any topic. The defaults are arranged so exposure is a choice, not
 an accident:
 
-- The demo binds **loopback only**; `SUPER_LOG_BIND` / `SUPER_LOG_LAN=1`
+- **The hub binds loopback only**, demo or not; `SUPER_LOG_LAN=1` or `SUPER_LOG_BIND=0.0.0.0`
   open it up when real devices need it, on a network you trust.
 - The ssh tailer and the fleet runner **pull**, so production logs reach the
   bench without production ever reaching the hub.
