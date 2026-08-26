@@ -1,0 +1,4 @@
+Info (12021): Found 1 design units in source file top.sv
+Warning (10230): Verilog HDL assignment warning at alu.sv(88): truncated value
+Error (10170): Verilog HDL syntax error at fsm.sv(31) near text ":"
+Critical Warning (332148): Timing requirements not met

@@ -172,6 +172,39 @@ describe('superlog-build', () => {
     assert.equal(verdict.fields.exit, '0');
   });
 
+  // FPGA toolchains put the severity first and the source last, so neither
+  // the clang pattern nor the rustc one saw them. Untreated, a run that
+  // failed synthesis AND missed timing closed with "build succeeded, 0
+  // errors" - the exact silent failure this wrapper exists to prevent.
+  it('reads Vivado severities, and its source in trailing brackets', async () => {
+    const { diags, verdict } = await build('vivado', cat('build-vivado.txt'));
+
+    const synth = diags.find((e) => e.msg.includes('Synth 8-1031'));
+    assert.equal(synth.level, 'ERROR');
+    assert.equal(synth.src, '/proj/rtl/mem_ctrl.v:42', 'Vivado puts the source last, in brackets');
+
+    // Xilinx calls a timing failure a CRITICAL WARNING. It is not a warning:
+    // the design does not work.
+    const timing = diags.find((e) => e.msg.includes('Timing 38-282'));
+    assert.equal(timing.level, 'ERROR', 'a design that misses timing is not a warning');
+
+    assert.equal(diags.find((e) => e.msg.includes('8-3331')).level, 'WARN');
+    assert.equal(diags.find((e) => e.msg.includes('8-7075')).level, 'INFO');
+    assert.equal(verdict.fields.errors, '2', 'both the synthesis error and the timing failure count');
+    assert.match(verdict.msg, /DESPITE/, 'errors with a zero exit must not read as success');
+  });
+
+  it('reads Quartus severities, and its source in parentheses', async () => {
+    const { diags } = await build('quartus', cat('build-quartus.txt'));
+
+    const syn = diags.find((e) => e.msg.includes('10170'));
+    assert.equal(syn.level, 'ERROR');
+    assert.equal(syn.src, 'fsm.sv:31', 'Quartus writes file(line), not file:line');
+
+    assert.equal(diags.find((e) => e.msg.includes('10230')).level, 'WARN');
+    assert.equal(diags.find((e) => e.msg.includes('332148')).level, 'ERROR');
+  });
+
   it('calls a clean build a success', async () => {
     const { verdict, diags } = await build('clean', cat('build-clean.txt'));
 

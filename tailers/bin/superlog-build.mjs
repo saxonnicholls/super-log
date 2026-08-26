@@ -97,6 +97,33 @@ const PATTERNS = [
   // lands as INFO.
   { rx: /^(.+?):(\d+):(?:(\d+):)?\s+runtime error:\s*(.*)$/,
     map: (m) => ({ src: `${m[1]}:${m[2]}`, sev: 'error', msg: m[4] }) },
+  // Vivado:     ERROR: [Synth 8-1031] mem_ctrl is not declared [/rtl/mem.v:42]
+  // Xilinx puts the severity first and the source last, in brackets, so
+  // neither the clang pattern nor the rustc one sees it. Untreated, a run
+  // that failed synthesis AND missed timing closed with "build succeeded,
+  // 0 errors" - which is the failure this whole wrapper exists to prevent.
+  // CRITICAL WARNING is Xilinx's name for "not fatal but your design is
+  // wrong", and timing failure arrives under it, so it is levelled as an
+  // error rather than a warning.
+  { rx: /^(INFO|WARNING|CRITICAL WARNING|ERROR):\s*\[([\w-]+ [\d-]+)\]\s*(.*?)\s*(?:\[([^\]\s]+):(\d+)\])?$/,
+    map: (m) => ({ src: m[4] ? `${m[4]}:${m[5]}` : undefined,
+                   sev: m[1] === 'CRITICAL WARNING' ? 'error'
+                      : m[1] === 'ERROR' ? 'error'
+                      : m[1] === 'WARNING' ? 'warning' : 'info',
+                   msg: `${m[2]} ${m[3]}` }) },
+  // Quartus:    Error (10170): Verilog HDL syntax error at fsm.sv(31)
+  { rx: /^(Info|Extra Info|Warning|Critical Warning|Error)\s*\((\d+)\):\s*(.*)$/,
+    map: (m) => {
+      const at = /\bat ([\w./-]+)\((\d+)\)/.exec(m[3]);
+      return { src: at ? `${at[1]}:${at[2]}` : undefined,
+               sev: /Error/.test(m[1]) ? 'error'
+                  : m[1] === 'Critical Warning' ? 'error'
+                  : m[1] === 'Warning' ? 'warning' : 'info',
+               msg: m[3] };
+    } },
+  // Yosys / nextpnr / GHDL keep it lowercase and unadorned.
+  { rx: /^(?:yosys|nextpnr[\w-]*|ghdl)?\s*(ERROR|Warning|WARNING):\s*(.*)$/,
+    map: (m) => ({ sev: /ERROR/i.test(m[1]) ? 'error' : 'warning', msg: m[2] }) },
   // rustc:                error[E0308]: mismatched types
   { rx: /^(error|warning)(\[[A-Z0-9]+\])?:\s+(.*)$/,
     map: (m) => ({ sev: m[1], msg: `${m[2] ?? ''}${m[2] ? ' ' : ''}${m[3]}` }) },

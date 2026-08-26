@@ -85,10 +85,25 @@ if (!LEVELS.includes(fixedLevel)) {
 // Deliberately narrow. These only run under --classify, and they anchor on
 // the shapes tools actually emit rather than on the word appearing anywhere
 // - "0 errors" and "error handling" must not become ERROR events.
-const ERROR_RX = /(^|\s)(error|fatal|panic|traceback|exception|failed|failure)\b(?!\s*[:=]?\s*0\b)/i;
+const ERROR_RX = /(^|\s)(error|traceback|exception|failed|failure)\b(?!\s*[:=]?\s*0\b)/i;
 const WARN_RX = /(^|\s)(warn|warning|deprecated)\b/i;
+// Fatal is not the same as error and should survive a filter that error does
+// not: a run that aborted is a different fact from a run that logged a
+// problem and carried on.
+const FATAL_RX = /(^|\s)(fatal|panic|abort(?:ed|ing)?)\b/i;
+// Verification frameworks glue the severity to their own prefix, so the word
+// boundary that finds "error" in prose does not find it in UVM_ERROR -
+// underscore is a word character. A testbench reporting a mismatch is the
+// most important line in the run, and it was landing as INFO.
+const TAGGED_RX = /\b(?:UVM|OVM|VMM)_(FATAL|ERROR|WARNING)\b/i;
 const levelFor = (line) => {
   if (!classify) return fixedLevel;
+  const tagged = TAGGED_RX.exec(line);
+  if (tagged) {
+    const k = tagged[1].toUpperCase();
+    return k === 'FATAL' ? 'CRITICAL' : k === 'ERROR' ? 'ERROR' : 'WARN';
+  }
+  if (FATAL_RX.test(line)) return 'CRITICAL';
   if (ERROR_RX.test(line)) return 'ERROR';
   if (WARN_RX.test(line)) return 'WARN';
   return fixedLevel;

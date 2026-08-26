@@ -151,6 +151,36 @@ describe('superlog-tee', () => {
                  'the negative lookahead exists for exactly this line');
   });
 
+  // A verification framework glues the severity to its own prefix, and
+  // underscore is a word character - so the boundary that finds "error" in
+  // prose does not find it in UVM_ERROR. A testbench reporting a mismatch is
+  // the most important line in the run and it was arriving as INFO.
+  it('reads a severity that is glued to a framework prefix', async () => {
+    const topic = 'tee.test.tagged';
+    await run('superlog-tee.mjs', ['--topic', topic, '--classify'], {
+      url: hub.url,
+      stdin: lines('UVM_ERROR @ 12400ns: [SCB] payload mismatch',
+                   'UVM_FATAL @ 12401ns: [SCB] giving up',
+                   'UVM_WARNING @ 12402ns: [SCB] late',
+                   '** Error: assertion failed',
+                   '** Fatal: aborted at 9000 ns',
+                   'the last line'),
+    });
+    const recs = await waitFor(hub.url, (rs) => rs.some((r) => r.event.msg === 'the last line'),
+                               { topic });
+    const by = new Map(recs.map((r) => [r.event.msg, r.event]));
+    recs.forEach((r, i) => assertValidEvent(r.event, `${topic}[${i}]`));
+    const lvl = (frag) => [...by.entries()].find(([k]) => k.includes(frag))?.[1]?.level;
+
+    assert.equal(lvl('payload mismatch'), 'ERROR');
+    assert.equal(lvl('giving up'), 'CRITICAL');
+    assert.equal(lvl('late'), 'WARN');
+    // Fatal is not the same fact as error and should survive a filter that
+    // error does not: the run stopped.
+    assert.equal(lvl('assertion failed'), 'ERROR');
+    assert.equal(lvl('aborted at 9000'), 'CRITICAL');
+  });
+
   it('honours --level for the whole stream', async () => {
     const topic = 'tee.test.level';
     await run('superlog-tee.mjs', ['--topic', topic, '--level', 'WARN'],
