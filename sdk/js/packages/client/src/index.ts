@@ -145,6 +145,21 @@ class RateLimiter {
 }
 
 /** The wire header carrying a correlation id between tiers (PROTOCOL.md). */
+// Extensions whose ABSENCE causes a silent wrong picture rather than an
+// error. Float colour buffers and linear filtering of them are what an
+// HDR/bloom pipeline quietly depends on; without them the composite is
+// black and nothing complains. Derivatives and instancing change what a
+// shader can do at all. This list is deliberately short - it is the ones
+// that fail silently, not every extension a browser might have.
+const WEBGL_CAPS = [
+  'EXT_color_buffer_float',
+  'EXT_color_buffer_half_float',
+  'OES_texture_float_linear',
+  'OES_standard_derivatives',
+  'ANGLE_instanced_arrays',
+  'WEBGL_lose_context',
+] as const;
+
 export const TRACE_HEADER = 'X-Superlog-Trace';
 
 /** A fresh correlation id: short, opaque, and enough entropy that two
@@ -505,6 +520,191 @@ export class SuperLog {
    *  double-logs every RN fetch. The fetch wrapper therefore marks the
    *  window in which it synchronously kicks off its request, and an XHR
    *  started inside that window stays quiet and lets fetch report it. */
+  /** WebGL, which is the awkward one. OpenGL has glDebugMessageCallback,
+   *  D3D has an info queue and WebGPU has onuncapturederror - all of them
+   *  PUSH you a severity and a message. WebGL has no callback at all, so the
+   *  only way to see anything is to wrap the context and listen on the
+   *  canvas.
+   *
+   *  The three things it catches, none of which throw and none of which
+   *  reach the console on their own:
+   *
+   *    - CONTEXT LOSS. The browser kills the context on a GPU reset, a driver
+   *      hiccup, too many live contexts, or a backgrounded tab. The canvas
+   *      goes black, nothing throws, and the user reports that it "stopped
+   *      working". This is the WebGL device-removed.
+   *    - SHADER COMPILE AND LINK FAILURES. getShaderInfoLog returns a string
+   *      you have to ASK for; miss the check and you get a silently black
+   *      object with no error anywhere.
+   *    - gl.getError(), which is sticky and pull-only, so errors pile up
+   *      unseen until something happens to ask.
+   *
+   *  getError is sampled at most once per animation frame and only when
+   *  `pollErrors` is set. Calling it after every GL call - the textbook
+   *  advice - forces a CPU/GPU sync each time and can halve a frame rate,
+   *  which is a cure worse than the disease.
+   *
+   *  Returns a detach function. Patching the same context twice is a no-op. */
+  patchWebGL(gl: WebGLRenderingContext | WebGL2RenderingContext,
+             opts: { pollErrors?: boolean } = {}): () => void {
+    if (!this.enabled || !gl) return () => {};
+    const anyGl = gl as unknown as Record<string, unknown>;
+    if (anyGl.__superlogPatched) return () => {};
+    anyGl.__superlogPatched = true;
+
+    const undo: Array<() => void> = [];
+    const canvas = (gl as { canvas?: unknown }).canvas as
+      (EventTarget & { addEventListener?: unknown }) | undefined;
+
+    // What the card actually is. WEBGL_debug_renderer_info is restricted in
+    // some browsers for fingerprinting reasons, so this is best-effort - a
+    // missing renderer is not worth an error.
+    try {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info') as
+        { UNMASKED_RENDERER_WEBGL: number; UNMASKED_VENDOR_WEBGL: number } | null;
+      const fields: EventFields = {
+        version: String(gl.getParameter(gl.VERSION) ?? ''),
+        glsl: String(gl.getParameter(gl.SHADING_LANGUAGE_VERSION) ?? ''),
+      };
+      if (dbg) {
+        fields.renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) ?? '');
+        fields.vendor = String(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) ?? '');
+      }
+      // The capability fingerprint, which is the difference between "it
+      // rendered" and "it rendered correctly". A real shipped bug: an
+      // HDR/bloom pipeline needs EXT_color_buffer_float and
+      // OES_texture_float_linear, Safari's WebGL2 lacks them on many GPUs,
+      // and the composite pass then yields a BLACK FRAME with a clean
+      // console - nothing thrown, nothing logged, and a developer on a Mac
+      // who cannot reproduce it. One event at startup saying what this
+      // machine can actually do turns "works on mine" into a comparison.
+      for (const ext of WEBGL_CAPS) {
+        try {
+          if (!gl.getExtension(ext)) fields[`no_${ext}`] = 'missing';
+        } catch { /* asking is best-effort */ }
+      }
+      const limit = (name: string, pname: number) => {
+        try {
+          const v = gl.getParameter(pname);
+          if (v !== undefined && v !== null) fields[name] = String(v);
+        } catch { /* as above */ }
+      };
+      limit('max_texture', gl.MAX_TEXTURE_SIZE);
+      limit('max_renderbuffer', gl.MAX_RENDERBUFFER_SIZE);
+      limit('max_texture_units', gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+
+      const missing = Object.keys(fields).filter((k) => k.startsWith('no_'));
+      this.log(missing.length ? 'WARN' : 'INFO',
+               `webgl context up${fields.renderer ? ` on ${fields.renderer}` : ''}` +
+               (missing.length ? ` - ${missing.length} extension(s) unavailable` : ''),
+               fields, 'webgl');
+    } catch {
+      /* a context that will not answer questions is still worth watching */
+    }
+
+    if (canvas && typeof (canvas as { addEventListener?: unknown }).addEventListener === 'function') {
+      const onLost = (e: Event) => {
+        // Deliberately NOT calling preventDefault: whether to allow a restore
+        // is the application's decision, and a logger that quietly changes it
+        // has altered the program it was only meant to observe.
+        this.log('CRITICAL', 'webgl context lost - the canvas will stop rendering',
+                 { restorable: String(e.cancelable) }, 'webgl');
+      };
+      const onRestored = () => {
+        this.log('INFO', 'webgl context restored - resources must be rebuilt', {}, 'webgl');
+      };
+      const onCreationError = (e: Event) => {
+        this.log('ERROR',
+                 `webgl context creation failed: ${(e as { statusMessage?: string }).statusMessage ?? 'no reason given'}`,
+                 {}, 'webgl');
+      };
+      canvas.addEventListener('webglcontextlost', onLost as EventListener);
+      canvas.addEventListener('webglcontextrestored', onRestored as EventListener);
+      canvas.addEventListener('webglcontextcreationerror', onCreationError as EventListener);
+      undo.push(() => {
+        canvas.removeEventListener('webglcontextlost', onLost as EventListener);
+        canvas.removeEventListener('webglcontextrestored', onRestored as EventListener);
+        canvas.removeEventListener('webglcontextcreationerror', onCreationError as EventListener);
+      });
+    }
+
+    // Shader and program failures. The info log carries "ERROR: 0:12: ..." so
+    // the offending source line is pulled out beside it - the same reasoning
+    // as folding a compiler's source gutter into its diagnostic.
+    // The UNBOUND original is what detach must put back. Storing
+    // `.bind(gl)` and restoring that leaves a bound copy in place of the
+    // method, so the context never really goes back to how it was found and
+    // an attach/detach cycle stacks wrappers.
+    const origCompile = gl.compileShader;
+    const callCompile = origCompile.bind(gl);
+    gl.compileShader = (shader: WebGLShader) => {
+      callCompile(shader);
+      try {
+        if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return;
+        const info = (gl.getShaderInfoLog(shader) ?? '').trim();
+        const src = gl.getShaderSource(shader) ?? '';
+        const line = Number(/ERROR:\s*\d+:(\d+)/.exec(info)?.[1] ?? 0);
+        const fields: EventFields = { log: info };
+        if (line > 0) {
+          const at = src.split('\n')[line - 1];
+          if (at !== undefined) fields.source = `${line}: ${at.trim()}`;
+        }
+        this.log('ERROR', `shader compile failed: ${info.split('\n')[0] || 'no info log'}`,
+                 fields, 'webgl');
+      } catch {
+        /* never let the logger break the draw */
+      }
+    };
+    undo.push(() => { gl.compileShader = origCompile; });
+
+    const origLink = gl.linkProgram;
+    const callLink = origLink.bind(gl);
+    gl.linkProgram = (program: WebGLProgram) => {
+      callLink(program);
+      try {
+        if (gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+        const info = (gl.getProgramInfoLog(program) ?? '').trim();
+        this.log('ERROR', `program link failed: ${info.split('\n')[0] || 'no info log'}`,
+                 { log: info }, 'webgl');
+      } catch {
+        /* as above */
+      }
+    };
+    undo.push(() => { gl.linkProgram = origLink; });
+
+    if (opts.pollErrors && typeof requestAnimationFrame === 'function') {
+      const NAMES: Record<number, string> = {
+        0x0500: 'INVALID_ENUM', 0x0501: 'INVALID_VALUE', 0x0502: 'INVALID_OPERATION',
+        0x0505: 'OUT_OF_MEMORY', 0x0506: 'INVALID_FRAMEBUFFER_OPERATION',
+        0x9242: 'CONTEXT_LOST_WEBGL',
+      };
+      let stop = false;
+      let lastCode = 0;
+      const tick = () => {
+        if (stop) return;
+        try {
+          const code = gl.getError();
+          // Only on a change: a persistent fault would otherwise be one event
+          // per frame, which is sixty a second of the same news.
+          if (code !== 0 && code !== lastCode)
+            this.log('ERROR', `gl error ${NAMES[code] ?? `0x${code.toString(16)}`}`,
+                     { code: String(code) }, 'webgl');
+          lastCode = code;
+        } catch {
+          /* the context may be gone; the lost handler already said so */
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      undo.push(() => { stop = true; });
+    }
+
+    return () => {
+      for (const f of undo) f();
+      delete anyGl.__superlogPatched;
+    };
+  }
+
   patchNetwork(): () => void {
     if (!this.enabled || this.netRestore) return this.netRestore ?? (() => {});
     const g = globalThis as Record<string, unknown>;

@@ -264,6 +264,10 @@ function classify(line) {
 // ------------------------------------------------------------- publishing
 
 const session = Math.random().toString(16).slice(2, 10);
+// Honours an inbound trace, so a build kicked off by something already
+// being traced joins that story instead of starting its own.
+const buildTrace = opt('trace', env.SUPER_LOG_TRACE) ||
+  (Date.now().toString(16) + Math.random().toString(16).slice(2, 10));
 let buf = [];
 let seq = 0;
 const counts = { CRITICAL: 0, ERROR: 0, WARN: 0, INFO: 0, DEBUG: 0 };
@@ -328,6 +332,11 @@ function publish(level, msg, fields) {
   pending = {
     v: 1, ts: new Date().toISOString(), seq: seq++, session, level,
     origin: { runtime: 'node', app: 'build', platform: 'build', device: host },
+    // One trace for the whole build, so /recent?trace= returns exactly this
+    // build and nothing else. A bench that builds twenty times a day is
+    // otherwise a stream of diagnostics with no way to say which run a given
+    // error belonged to.
+    trace: buildTrace,
     tag: label, msg, ...(fields?.src ? { src: fields.src } : {}),
     ...(fields && Object.keys(fields).some((k) => k !== 'src')
       ? { fields: Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'src')) }
@@ -356,7 +365,7 @@ timer.unref?.();
 const started = Date.now();
 const shown = dest ? `${command.join(' ')} (on ${dest})` : command.join(' ');
 publish('INFO', `build started: ${shown}`, { command: command.join(' '), where: dest ?? 'local' });
-console.error(`superlog-build: ${shown} -> ${topic}`);
+console.error(`superlog-build: ${shown} -> ${topic} (trace ${buildTrace})`);
 
 const child = dest
   ? spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-T',
@@ -417,6 +426,11 @@ child.on('close', async (code) => {
           `build ${verdict} in ${(ms / 1000).toFixed(1)}s` +
           ` - ${errors} error(s), ${counts.WARN} warning(s)`,
           { command: command.join(' '), where: dest ?? 'local', exit: String(code),
+            // The window, not just the length of it. "How long did it take"
+            // and "when did it run" are different questions, and the second
+            // is the one you ask when comparing today's build to Tuesday's.
+            started_at: new Date(started).toISOString(),
+            finished_at: new Date().toISOString(),
             ms: String(ms), errors: String(errors),
             warnings: String(counts.WARN),
             result: !ok ? 'failure' : suspect ? 'suspect' : 'success' });
