@@ -159,6 +159,52 @@ stack it is: Swift errors carry none of their own, so the frames are captured
 at the *log* site — where the error was handled, not where it was thrown.
 That is what `where:` is for.
 
+## Metal, and GPU work generally
+
+There is no Metal logger here and there does not need to be. Every graphics
+API already hands you severity and a message; the only thing missing is the
+number that matters, which is how long the work took **on the GPU** rather
+than how long the CPU waited for it:
+
+```swift
+cb.label = "shadow-pass"
+cb.addCompletedHandler { b in
+    if let e = b.error {
+        log.error("GPU command buffer failed: \(e.localizedDescription)",
+                  fields: ["label": b.label ?? "?"])
+    } else {
+        log.metric("gpu.commandbuffer_ms", (b.gpuEndTime - b.gpuStartTime) * 1000)
+    }
+}
+cb.commit()
+```
+
+That is the whole integration. `gpuStartTime`/`gpuEndTime` are the GPU's own
+clock, so a pass that takes 0.18 ms on the card reads as 0.18 ms even when
+the CPU blocked for 12 ms waiting on it — and `commandBuffer.error` is where
+a device removal, a timeout or an out-of-memory arrives, which are the three
+failures worth waking up for.
+
+**Verified** against an AMD Radeon Pro Vega II: real blit work, per-command-
+buffer timings of 0.183–0.185 ms, and VRAM allocation, all through this SDK
+with no Metal-specific code in the repo.
+
+Shader-side logging (`os_log` in MSL, macOS 15+) needs no integration at all
+— it goes to the unified log, which `superlog-tail os` already reads.
+
+The same shape works for the others, and none of them needs a new tool:
+
+| API | Hook | Status |
+|---|---|---|
+| Metal | `addCompletedHandler`, `commandBuffer.error` | **verified** here |
+| OpenGL | `glDebugMessageCallback` (KHR_debug) — severity maps straight onto the six levels | written, not verified; unavailable on macOS, which is stuck at GL 4.1 |
+| D3D11/12 | `ID3D12InfoQueue` drained per frame, plus DRED for device-removed | written, not verified — there is no Windows machine on this bench |
+| WebGPU | `device.onuncapturederror` and the `device.lost` promise, forwarded through `@super-log/client` | written, not verified |
+
+For card-level telemetry — utilisation, memory, temperature, power, and a
+Raspberry Pi browning out — see `superlog-gpu`, which needs no code in your
+app at all and works over ssh.
+
 ## No swift-log dependency
 
 Taking one would break the house rule, and a debugging tool that needs its own
