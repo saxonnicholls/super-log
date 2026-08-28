@@ -3,6 +3,15 @@
 **One hub for every log stream you have — devices, servers, containers,
 browsers, chains and apps.**
 
+![Twelve streams interleaved on one screen](assets/bench-overview.png)
+
+*Twelve producers on one screen, interleaved by arrival: C++ through both
+SN_LOG and spdlog, Rust, Go, Python, Swift, Fortran, a POSIX shell script,
+two React Native devices, Metal GPU work reporting real bandwidth, and a
+live Binance WebSocket. The last of those is running at hundreds of frames a
+second — so it is rate-capped, and says so rather than silently dropping
+them.*
+
 If you build across devices, you know the ritual: a Metro console for the
 iOS simulator, another for the Android emulator, `adb logcat` for the phone
 on your desk, a terminal for the C++ engine, another for the Rust service,
@@ -36,6 +45,15 @@ filtered by stream, minimum level or substring. Pause freezes the display
 while collection continues; copy a row or the whole filtered view; export
 JSON, CSV or plain text.
 
+![The same failure in five languages at once](assets/errors-across-languages.png)
+
+*The minimum level set to ERROR: 29 rows out of 1131. The same pricing
+failure surfaces from Swift, Python, Go and a shell script side by side —
+each in its own language's idiom, a `PricingError`, a `KeyError`, a returned
+error, a shell test — plus the GPU refusing an allocation four times the size
+of the card. Python's row carries the local variables from the failing frame,
+which is the part you would otherwise be adding a print statement to find.*
+
 **Your apps need almost nothing.** Nine dependency-free SDKs: header-only
 C++ (both a **spdlog** sink and a native `snicholls::log` one), a Rust
 crate with an optional `tracing` layer, Python plugging into stdlib
@@ -48,6 +66,14 @@ Five of them hook the logging framework the language already has — the
 spdlog sink, `logging.Handler`, `slog.Handler`, `java.util.logging.Handler`
 and `patchConsole` — so everything a program *already* logs reaches the
 bench without a single call site changing.
+
+![One tick unfolding across four events](assets/one-tick-unfolding.png)
+
+*Why the interleaving is the point. In the middle, one Swift tick unfolds in
+order — the tick at INFO, a DEBUG pricing pass, the ERROR its exception
+raised, and the WARN that followed — while eleven other producers keep
+writing around it. Reconstructing that sequence from separate terminals is
+the ritual this replaces.*
 
 **Follow one action across every tier.** A tap becomes a request, a database
 write and a chain call on four streams. `withTrace()` mints a correlation
