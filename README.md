@@ -651,10 +651,10 @@ exactly the same attacker.
 ```sh
 # macOS, /etc/pf.conf - only this handset may reach the bench
 block in proto tcp to any port 7333
-pass in proto tcp from 192.168.1.37 to any port 7333
+pass in proto tcp from 192.168.1.20 to any port 7333
 
 # Linux, and you are probably already running it
-ufw allow from 192.168.1.37 to any port 7333
+ufw allow from 192.168.1.20 to any port 7333
 ufw deny 7333
 ```
 

@@ -65,13 +65,15 @@ frames to the UI thread through a mutex-guarded deque drained once per frame.
 
 ## What is deliberately NOT here (yet)
 
-- **Persistence** — the hub's replay ring (1024 chunks/topic) is the only
-  history. File/SQLite journalling is milestone M6.
-- **Auth/TLS** — dev-LAN tool: anyone who can connect can read every stream
-  and publish to any topic. Defaults are arranged so exposure is a choice,
-  not an accident: the hub binds all interfaces only so real devices can
-  reach it, and `SUPER_LOG_BIND=127.0.0.1` confines it to one machine —
-  which is what `demo/run.sh` does unless `SUPER_LOG_LAN=1` is set. This
+- **Persistence** — the hub's replay ring (128 chunks/topic, see
+  `SUPER_LOG_REPLAY_CHUNKS`) is live history only; the journal writes
+  everything to disk and `/recent` keeps 2000 events per topic.
+- **Auth/TLS** — none, deliberately, and the reasoning is in
+  [DECISIONS.md](DECISIONS.md). The hub binds **loopback** by default, so the
+  OS is the authentication — the same OS already guarding your log files.
+  `SUPER_LOG_LAN=1` or an explicit `SUPER_LOG_BIND` opens it, and a
+  non-loopback bind warns at startup. Anyone who can reach the port can read
+  every stream and publish to any topic, so that opening is a decision. This
   matters doubly once OS logs (`os.<host>` topics) are on the pipeline:
   they carry hostnames, IPs and process behaviour. In the same spirit the
   SDKs' PRODUCTION policies default to forwarding **nothing**, so a release
