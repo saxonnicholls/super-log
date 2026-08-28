@@ -829,6 +829,17 @@ block the program you are observing.
 Issues describing a stream you wish it read are useful too, even without a
 patch.
 
+## Releases
+
+Tagged releases carry notes saying what is verified and what is not —
+[CHANGELOG.md](CHANGELOG.md). There is no package registry: the clone is the
+distribution, so pin a tag if you want a stable base.
+
+```sh
+git clone --recurse-submodules --shallow-submodules --branch v0.1.0 \
+  https://github.com/saxonnicholls/super-log ~/dev/super-log
+```
+
 ## Licence
 
 [MIT](LICENSE). Every source file carries the copyright line and an
