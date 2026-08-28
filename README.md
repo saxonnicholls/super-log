@@ -22,15 +22,26 @@ always in the interleaving.
 super-log converges all of it on one process and one screen:
 
 ```
- RN/Expo devices ─────┐
- C++  (spdlog/SN_LOG) │                                     ┌─▶ native viewer (ImGui)
- Rust (tracing)       │                                     ├─▶ web viewer (React)
- Node / browser JS    ├── POST NDJSON ──▶  superlogd :7333 ─┼─▶ journal → search / replay
- OS logs (mac/linux)  │                    (fan-out+replay)  ├─▶ GET /recent  (scripts)
- services, containers │                                     └─▶ MCP tools    (agents)
- remote hosts via ssh │
- blockchain addresses ┘
+ apps, 9 languages   ┐
+ GPU and graphics    │
+ devices and boards  │                                     ┌─▶ native viewer (ImGui)
+ machines, services  ├── POST NDJSON ──▶  superlogd :7333 ─┼─▶ web viewer (React)
+ network and DNS     │                    (fan-out+replay) ├─▶ journal → search / replay
+ builds and repos    │                                     ├─▶ GET /recent  (scripts)
+ blockchain          │                                     ├─▶ MCP tools    (agents)
+ anything that prints┘                                     └─▶ alerts → webhook
 ```
+
+| Group | What is in it |
+|---|---|
+| **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java and Kotlin (`java.util.logging`), Swift, Fortran, POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
+| **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
+| **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Docker containers; any remote host over ssh |
+| **network and DNS** | an HTTP/S logging proxy, WebSocket frames, a syslog and raw TCP/UDP inlet, DNS records with TLS expiry, and listening ports with their processes |
+| **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
+| **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract |
+| **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee` |
 
 Every producer speaks one small wire protocol
 ([docs/PROTOCOL.md](docs/PROTOCOL.md): one JSON event per line, batched over
