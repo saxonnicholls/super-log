@@ -1,5 +1,9 @@
 # super-log
 
+[![ci](https://github.com/saxonnicholls/super-log/actions/workflows/ci.yml/badge.svg)](https://github.com/saxonnicholls/super-log/actions/workflows/ci.yml)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/tag/saxonnicholls/super-log?label=release&sort=semver)](https://github.com/saxonnicholls/super-log/releases)
+
 **One hub for every log stream you have — devices, servers, containers,
 browsers, chains and apps.**
 
