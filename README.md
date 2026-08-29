@@ -783,8 +783,10 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - On macOS, Go 1.21's internal linker omits `LC_UUID`, which current dyld
   rejects; build with `-ldflags=-linkmode=external` or use Go ≥ 1.22.
 - [ts-moveables](https://github.com/saxonnicholls/ts-moveables) provides the
-  transport/fan-out/logging fabric — a sibling checkout if present, GitHub
-  otherwise.
+  transport/fan-out/logging fabric. It is **not** a submodule: CMake uses a
+  sibling `../TSMoveables` checkout when one exists, and otherwise fetches a
+  pinned SHA. Configure prints which of the two it chose, because a build
+  quietly using someone's working copy is how "works on my machine" is made.
 - spdlog + fmt, imgui + glfw, and nlohmann/json are pinned submodules in
   `third_party/` (`git submodule update --init`) — versions chosen to work
   together, so system-installed ones are never trusted.

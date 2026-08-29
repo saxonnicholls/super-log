@@ -16,13 +16,23 @@ project(super_log
 # deliberately - green should never depend on another repo's HEAD moving.
 set(TS_MOVEABLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TSMoveables"
     CACHE PATH "Local ts-moveables checkout")
-set(TS_MOVEABLES_GIT_TAG "main"
+# PINNED, not "main". This used to default to main, which meant CI built
+# against a pinned SHA while everyone else built against whatever ts-moveables
+# happened to be that day - so a break upstream would land on a stranger's
+# first clone and look like a fault in super-log. Keep this in step with
+# TS_MOVEABLES_TAG in .github/workflows/ci.yml; bump both deliberately.
+set(TS_MOVEABLES_GIT_TAG "f9f25875b5508bdf660fe51d852d0d7e973a782f"
     CACHE STRING "ts-moveables tag/SHA for the FetchContent fallback")
 
 set(TS_MOVEABLES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 if(EXISTS "${TS_MOVEABLES_DIR}/CMakeLists.txt")
+    # A sibling checkout wins, so the two can be developed together. Say so:
+    # this is a working copy, uncommitted changes and all, and a build that
+    # silently uses one is how "works on my machine" gets made.
+    message(STATUS "super-log: ts-moveables from ${TS_MOVEABLES_DIR} (local checkout)")
     add_subdirectory("${TS_MOVEABLES_DIR}" ts_moveables)
 else()
+    message(STATUS "super-log: ts-moveables ${TS_MOVEABLES_GIT_TAG} (fetched)")
     include(FetchContent)
     FetchContent_Declare(ts_moveables
         GIT_REPOSITORY https://github.com/saxonnicholls/ts-moveables.git
