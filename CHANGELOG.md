@@ -36,6 +36,12 @@ captured whole; git and GitHub Actions; filesystem changes; serial consoles;
 ROS 2; blockchain addresses; GPU telemetry; and `tee` for anything else that
 prints.
 
+**Hosted services.** Cloudflare Workers through `wrangler tail` — one trace
+per invocation, its console lines, its exceptions, and the failures that log
+nothing at all, like an isolate killed for exceeding CPU. Stripe events
+across several accounts, **redacted to an allowlist** because a failed
+payment carries a customer record rather than log data.
+
 **Two viewers**, a journal with search and replay, `GET /recent` for scripts,
 six MCP tools for agents, and edge-triggered alerts.
 
