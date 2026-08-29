@@ -17,9 +17,9 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p ../client/tsconfig.json && tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "prepare": "tsc -p tsconfig.json"
+    "prepare": "tsc -p ../client/tsconfig.json && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@super-log/client": "*"
