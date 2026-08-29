@@ -596,6 +596,67 @@ an accident:
 - CSV exports defuse spreadsheet formula injection; viewers render log
   content as text, never markup.
 
+### SaaS and hosted services
+
+The same idea, for the parts of a system you cannot attach a debugger to at
+all. Both drive the vendor's own CLI, so there is nothing to install in your
+service and no webhook to host.
+
+**Cloudflare Workers**
+
+```sh
+npm run cf -- --worker my-api            # live, from now on
+npm run cf -- --worker my-api --status error
+```
+
+Publishes to `cf.<worker>`. One invocation becomes several events sharing a
+trace — the request, every `console` line the handler wrote, and any
+exception — so `/recent?trace=…` returns one invocation end to end. Levels
+come from the Worker rather than from guesswork: `console.error` is ERROR, a
+500 is an error whether or not the handler said so, and an outcome that is
+not `ok` is an error **even when nothing was logged** — `exceededCpu` kills
+the isolate silently, which is exactly the failure you cannot see from
+inside. CPU and wall time arrive as DEBUG metrics.
+
+It uses `wrangler`'s own login, so no API token is needed. It is **live
+only**: `wrangler tail` cannot reach backwards, and `--since` refuses with an
+explanation rather than quietly tailing from now and letting you believe you
+are looking at an hour ago.
+
+**Stripe**
+
+```sh
+npm run stripe                                   # test mode, default account
+npm run stripe -- --live                         # real money
+npm run stripe -- --live --account acme --account beta
+```
+
+Publishes to `stripe.<account>.<mode>`, one process and one topic per
+account, so a busy account cannot delay a quiet one. Levels follow what an
+event *means*: a dispute is CRITICAL because it is money already gone plus a
+deadline, a failed payment is ERROR, a refund or cancelled subscription is
+WARN. Amounts arrive as a `stripe.amount` metric.
+
+**Redacted by allowlist, and this is the point.** A
+`payment_intent.payment_failed` carries the customer's email, name, phone,
+full billing address, card brand, last four and fingerprint. That is a
+customer record, not log data, and this hub has no authentication. Only
+named fields ever leave the process — a blocklist would start leaking the
+day Stripe adds a field. What survives is what you would actually debug
+with: the decline code, the failure message, the amount, and the customer
+*id*. `--unsafe-full` turns it off and warns you first.
+
+Setup is the Stripe CLI's own:
+
+```sh
+stripe login                        # the default account
+stripe login --project-name acme    # a second account, then --account acme
+```
+
+`stripe login` grants **test-mode** keys; `--live` needs an account
+authorised for it. CLI keys also expire — if a stream goes quiet after a few
+months, re-run `stripe login` before suspecting the tailer.
+
 ### Why there is no login
 
 The bar this aims at is deliberately modest and deliberately explicit: **be
