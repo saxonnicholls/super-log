@@ -9,7 +9,7 @@
 //  machine you cannot attach a debugger to, and they scroll away. Which is
 //  the same problem as everything else here, so it gets the same answer.
 //
-//    superlog-cf --worker token-pooler-api
+//    superlog-cf --worker my-api
 //    superlog-cf --worker api --status error        # only failed invocations
 //    superlog-cf --worker api --search E_SENDER     # only matching logs
 //
@@ -54,7 +54,7 @@ if (args.includes('--help') || args.includes('-h') || !opt('worker')) {
               [--method GET,POST] [--search TEXT] [--sampling-rate N]
               [--topic NAME] [--url HUB] [--config PATH]
 
-  superlog-cf --worker token-pooler-api
+  superlog-cf --worker my-api
   superlog-cf --worker api --status error
 
 Publishes to cf.<worker>. Drives \`wrangler tail --format json\`, so it needs
