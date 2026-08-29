@@ -56,7 +56,8 @@
     "test": "node --test \"tests/**/*.test.mjs\"",
     "gpu": "node tailers/bin/superlog-gpu.mjs",
     "demo:metal": "swift run --package-path demo/metal/gpuclock gpuclock",
-    "cf": "node tailers/bin/superlog-cf.mjs"
+    "cf": "node tailers/bin/superlog-cf.mjs",
+    "stripe": "node tailers/bin/superlog-stripe.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -76,7 +77,8 @@
     "superlog-ros": "tailers/bin/superlog-ros.mjs",
     "superlog-grpc": "tailers/bin/superlog-grpc.mjs",
     "superlog-gpu": "tailers/bin/superlog-gpu.mjs",
-    "superlog-cf": "tailers/bin/superlog-cf.mjs"
+    "superlog-cf": "tailers/bin/superlog-cf.mjs",
+    "superlog-stripe": "tailers/bin/superlog-stripe.mjs"
   },
   "license": "MIT"
 }

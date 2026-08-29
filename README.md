@@ -502,6 +502,7 @@ npm run ws -- wss://stream.binance.com:9443/ws/btcusdt@trade
 npm run serial -- --list                    # boards plugged in
 npm run serial -- --port /dev/ttyUSB0       # the serial console, as events
 npm run cf -- --worker my-api               # a Cloudflare Worker, live
+npm run stripe -- --live --account acme     # payments, redacted by default
 npm run socket -- --udp 5514                # syslog from routers, switches, NAS
 npm run socket -- --tcp 5515                # ...or plain lines on a raw socket
 npm run ros                                 # a robot's nodes, from /rosout
@@ -833,6 +834,45 @@ block the program you are observing.
 
 Issues describing a stream you wish it read are useful too, even without a
 patch.
+
+### If you run a service that produces logs
+
+**An open invitation.** If you build a SaaS product that emits logs, events
+or metrics that developers debug against, a reader for it belongs here and
+you are the person best placed to write it — you know the event shapes, the
+severities that actually matter, and which fields are the ones people need
+at three in the morning.
+
+There are readers here for Cloudflare Workers, Stripe, GitHub Actions,
+Postgres, nginx, Redis, Kafka, Docker, ROS and a couple of dozen others.
+Every one of them is a single file of a few hundred lines that spawns your
+CLI or calls your API and turns the output into events. There is no plugin
+API to learn and no interface to implement — read one of them and you have
+seen the whole pattern.
+
+Three things a good one does, and they are the whole review:
+
+**Levels mean what your product means.** Not what the event is called. A
+Stripe dispute is CRITICAL because it is money already gone plus a deadline;
+a Cloudflare Worker that exceeded CPU is an error even though it logged
+nothing at all. You know which of your events are the three-in-the-morning
+ones. Encode that, and a developer's level filter starts doing real work.
+
+**Redact by allowlist, not blocklist.** This hub has no authentication and
+is read by anyone who can reach it. A `payment_intent.payment_failed`
+carries an email, a name, a phone number, a billing address and a card
+fingerprint — that is a customer record, not log data. The Stripe reader
+names the fields that may leave and drops everything else, because a
+blocklist starts leaking silently the day you add a field. If yours carries
+personal data, do the same.
+
+**Keep the producer contract.** Bounded queue, drop oldest, count the drops,
+and never block or kill the program being observed. A logger that can take
+down the thing it is watching has no business being installed.
+
+If that sounds like your product, open an issue or a PR — or just tell us
+what the API is and we will have a go. Streams nobody has thought of yet are
+the most interesting kind.
 
 ## Releases
 
