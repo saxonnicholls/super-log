@@ -58,6 +58,17 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Plain C.** One stb-style header (`sdk/c/superlog.h`), C99 plus POSIX
+sockets, zero allocation — the caller owns the `superlog_t` and the batch
+buffer lives inside it. The same compile-time discipline as the C++
+header: `SUPERLOG_DEVELOPMENT` xor `SUPERLOG_PRODUCTION`, neither or both
+refuses with `#error`, and a production build contains NO wire code at
+all — `strings` the binary for `/ingest/` and find nothing, which turns
+"logging is off in production" from a belief into a provable property of
+the artefact. Verified live (`demo/c/clock.c` under `-Wall -Wextra`),
+plus the proof itself: the dev binary carries the ingest string, the
+production binary does not, and both misdeclared modes refuse to compile.
+
 **Four more languages: Ruby (and Rails), OCaml, Haskell, Scala.** Ruby
 joins the dependency-free SDKs — stdlib only, with a drop-in `::Logger`
 adapter that makes the Rails story one `config.logger` assignment. OCaml

@@ -42,6 +42,7 @@
     "demo:swift": "swift run --package-path demo/swift/clock clock",
     "demo:go": "cd demo/go && go run -ldflags=-linkmode=external .",
     "demo:java": "javac -d /tmp/superlog-java $(find sdk/java -name \"*.java\") demo/java/Clock.java && java -cp /tmp/superlog-java Clock",
+    "demo:c": "cc -std=c99 -DSUPERLOG_DEVELOPMENT -I sdk/c -o /tmp/superlog-c-clock demo/c/clock.c && /tmp/superlog-c-clock",
     "demo:ruby": "SUPERLOG_MODE=development ruby demo/ruby/clock.rb",
     "demo:ocaml": "mkdir -p /tmp/superlog-ml && cp sdk/ocaml/superlog.ml demo/ocaml/clock.ml /tmp/superlog-ml && cd /tmp/superlog-ml && ocamlc -I +unix unix.cma superlog.ml clock.ml -o clock && SUPERLOG_MODE=development ./clock",
     "demo:haskell": "ghc -DDEVELOPMENT -isdk/haskell -outputdir /tmp/superlog-hs -o /tmp/superlog-hs-clock demo/haskell/clock.hs && /tmp/superlog-hs-clock",

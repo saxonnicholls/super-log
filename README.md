@@ -26,7 +26,7 @@ always in the interleaving.
 super-log converges all of it on one process and one screen:
 
 ```
- apps, 12+ languages ┐
+ apps, 13+ languages ┐
  GPU and graphics    │
  devices and boards  │                                     ┌─▶ native viewer (ImGui)
  machines, services  ├── POST NDJSON ──▶  superlogd :7333 ─┼─▶ web viewer (React)
@@ -38,7 +38,7 @@ super-log converges all of it on one process and one screen:
 
 | Group | What is in it |
 |---|---|
-| **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
@@ -69,8 +69,10 @@ error, a shell test — plus the GPU refusing an allocation four times the size
 of the card. Python's row carries the local variables from the failing frame,
 which is the part you would otherwise be adding a print statement to find.*
 
-**Your apps need almost nothing.** Twelve dependency-free SDKs: header-only
-C++ (both a **spdlog** sink and a native `snicholls::log` one), a Rust
+**Your apps need almost nothing.** Thirteen dependency-free SDKs: header-only
+C++ (both a **spdlog** sink and a native `snicholls::log` one), plain C in
+one stb-style header — zero-alloc, and a production build provably contains
+no logging at all — a Rust
 crate with an optional `tracing` layer, Python plugging into stdlib
 `logging`, Go with a `log/slog` handler, Java with a `java.util.logging`
 bridge (Kotlin and Scala ride it, one import, zero glue), Swift, Fortran
@@ -427,6 +429,21 @@ spdlog::default_logger()->sinks().push_back(
     std::make_shared<superlog::spdlog_sink_mt>(bat, who));
 
 superlog::install_terminate_handler(bat, who);  // uncaught exceptions + stack
+```
+
+**Plain C** (one header, stb-style; the same two macros, and PRODUCTION
+compiles every call to nothing — `strings` the binary for `/ingest/` to
+*prove* the logger absent, rather than trusting a flag):
+
+```c
+#include "superlog.h"                    /* sdk/c, zero-alloc, POSIX sockets */
+
+superlog_t lg;
+superlog_init(&lg, "c.engine", "engine");
+superlog_info(&lg, "engine up, port %d", 9000);
+superlog_kv(&lg, "ERROR", "no rate", "symbol", "DOGE", NULL);
+superlog_metric(&lg, "queue.depth", 17);
+superlog_flush(&lg);
 ```
 
 **Python** (standard library only; `development=` / `production=`, exactly one):
@@ -942,6 +959,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - **Hub + viewers:** macOS or Linux (POSIX phase 1), a C++17 compiler,
   CMake ≥ 3.16. Windows machines join as producers (SDKs, ssh tailer).
+  **Plain C SDK:** any C99 compiler with POSIX sockets.
 - **Displays, on Linux:** the native viewer draws through GLFW, built here
   for X11 — which a Wayland desktop also runs via XWayland, so it should
   work there unchanged. Native Wayland output is a GLFW build switch
@@ -977,6 +995,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`              |
 | `tests/`        | 106 tests: the tools driven as subprocesses against a real hub                                       |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler                                            |
+| `sdk/c/`        | `superlog.h`: one stb-style header, zero-alloc, POSIX sockets; production compiles to nothing        |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook                                             |
 | `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture                                |
 | `sdk/go/`       | `superlog`: client, `log/slog` handler, panic recovery                                           |

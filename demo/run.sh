@@ -158,8 +158,13 @@ fi
 # shell and leave the clock it started running.
 
 SL_TMP="${TMPDIR:-/tmp}"
-for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell ruby scala haskell ocaml}; do
+for lang in ${SUPER_LOG_LANGS:-c go python java swift fortran shell ruby scala haskell ocaml}; do
     case "$lang" in
+    c)
+        if ! have cc; then skip "c.clock" "no C compiler"
+        elif cc -std=c99 -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$SL_TMP/sl_clock_c" demo/c/clock.c >/dev/null 2>&1; then
+            start "c.clock" "$SL_TMP/sl_clock_c"
+        else skip "c.clock" "cc build failed"; fi ;;
     go)
         if ! have go; then skip "go.clock" "no go toolchain"
         # -linkmode=external: Go 1.21's internal linker omits LC_UUID and

@@ -105,7 +105,7 @@ until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
 done
 export SUPER_LOG_URL="$HUB"
 
-WANT="${*:-cpp rust go python java swift fortran shell node ruby ocaml haskell scala}"
+WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala}"
 echo "verify-sdks: hub on :$PORT, checking:$(printf ' %s' $WANT)"
 
 for lang in $WANT; do
@@ -164,6 +164,12 @@ fortran)
 shell)
     if ! have curl; then skipping shell "no curl"
     else check shell shell.clock sh demo/shell/clock.sh; fi ;;
+
+c)
+    if ! have cc; then skipping c "no C compiler"
+    elif cc -std=c99 -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$TMP/clock_c" demo/c/clock.c >/dev/null 2>&1; then
+        check c c.clock "$TMP/clock_c"
+    else skipping c "cc build failed"; fi ;;
 
 ruby)
     if ! have ruby; then skipping ruby "no ruby"

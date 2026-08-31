@@ -55,6 +55,7 @@ host-side tailer scraping the same device:
 | `expo.android.emu`    | Android emulator                |
 | `expo.android.device` | Android hardware                |
 | `cpp.<app>`           | a C++ process                   |
+| `c.<app>`             | a plain C program                |
 | `rust.<app>`          | a Rust process                  |
 | `node.<app>`          | a Node process                  |
 | `python.<app>`        | a Python process                |

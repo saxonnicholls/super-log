@@ -44,7 +44,7 @@
       "gotchas": "A missing reading is absent, never zero - macOS cards without sensors report no temperature at all."
     },
     "apps-sdk": {
-      "topics": "cpp.<app>, rust.<app>, python.<app>, go.<app>, java.<app>, swift.<app>, fortran.<app>, ocaml.<app>, haskell.<app>, ruby.<app>, scala.<app>, shell.<app>, node.<app>, web.<app>",
+      "topics": "cpp.<app>, c.<app>, rust.<app>, python.<app>, go.<app>, java.<app>, swift.<app>, fortran.<app>, ocaml.<app>, haskell.<app>, ruby.<app>, scala.<app>, shell.<app>, node.<app>, web.<app>",
       "what": "Programs instrumented with the SDKs, one topic per app per language. Kotlin and Scala ride the Java SDK; Rails rides Ruby's ::Logger adapter; six SDKs hook the language's own logging framework so existing log lines arrive with no call sites changed.",
       "read": "Levels are the producer's own. Uncaught exceptions arrive with stacks even when nobody logged them. Events may carry a trace - the same id crosses HTTP to other tiers, so /recent?trace= stitches one action across languages.",
       "gotchas": "Every SDK is DEVELOPMENT xor PRODUCTION with no default, and production ships NOTHING by default - an app that publishes nothing may simply be built in production mode, which is the design, not a bug."
