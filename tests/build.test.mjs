@@ -234,6 +234,31 @@ describe('superlog-build', () => {
     assert.equal(started.fields.where, 'local');
     assert.equal(started.origin.app, 'build');
   });
+
+  it('a failed GNU link is errors, not INFO - ld says no severity word', async () => {
+    const { diags, verdict } = await build('linkgnu', cat('build-link-gnu.txt'));
+
+    const undef = diags.find((e) => e.msg.includes('undefined reference to `pricing::quote'));
+    assert.ok(undef, 'the undefined reference was not published');
+    assert.equal(undef.level, 'ERROR');
+    assert.equal(undef.src, 'main.cpp:7');
+    assert.ok(diags.find((e) => e.level === 'ERROR' && /collect2/.test(e.msg)),
+              'collect2 stayed INFO');
+    assert.ok(diags.find((e) => e.level === 'ERROR' && /in function `main'/.test(e.msg)),
+              'the /usr/bin/ld: context line stayed INFO');
+    assert.match(verdict.msg, /FAILED|error/i);
+  });
+
+  it("Apple links: duplicate symbols and the driver's own verdict carry their level", async () => {
+    const { diags } = await build('linkapple', cat('build-link-apple.txt'));
+
+    assert.ok(diags.find((e) => e.level === 'ERROR' && /duplicate symbol '_price_table'/.test(e.msg)),
+              'duplicate symbol stayed INFO');
+    assert.ok(diags.find((e) => e.level === 'ERROR' && /Undefined symbols for architecture/.test(e.msg)),
+              'undefined symbols header stayed INFO');
+    assert.ok(diags.find((e) => e.level === 'ERROR' && /linker command failed/.test(e.msg)),
+              "clang's own error line stayed INFO");
+  });
 });
 
 it('publishes nothing to a topic no build used', async () => {

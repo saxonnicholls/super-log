@@ -137,9 +137,24 @@ const PATTERNS = [
   // npm/node:             npm ERR! code ELIFECYCLE
   { rx: /^npm (ERR!|WARN)\s+(.*)$/,
     map: (m) => ({ sev: m[1] === 'ERR!' ? 'error' : 'warning', msg: `npm: ${m[2]}` }) },
-  // ld:                   ld: symbol(s) not found for architecture arm64
-  { rx: /^(?:ld|lld|link\.exe): (?:(error|warning): )?(.*)$/,
+  // Linkers. Apple:       ld: symbol(s) not found for architecture arm64
+  // GNU spells its path:  /usr/bin/ld: obj.o: in function \`main':
+  // lld renames itself:   ld.lld: error: undefined symbol: foo()
+  { rx: /^(?:.*[/\\])?(?:ld|ld\.lld|lld|link\.exe): (?:(error|warning): )?(.*)$/,
     map: (m) => ({ sev: m[1] ?? 'error', msg: `ld: ${m[2]}` }) },
+  // GNU ld's actual verdicts carry no severity word at all -
+  //                       main.cpp:7: undefined reference to \`missing()'
+  // and untreated they land as INFO, which is a failed link nobody sees.
+  { rx: /^(?:(.+?):(\d+):\s*)?(undefined reference to .*|multiple definition of .*)$/,
+    map: (m) => ({ src: m[1] ? `${m[1]}:${m[2]}` : undefined, sev: 'error', msg: `ld: ${m[3]}` }) },
+  // Apple's duplicate symbols and gcc's collect2 wrapper, same story.
+  { rx: /^(?:duplicate symbol\b|collect2: (?:fatal )?error:)/,
+    map: () => ({ sev: 'error', msg: '' }) },
+  // The driver's own voice - "clang: error: linker command failed",
+  // "gcc: error: unrecognized command-line option" - is often the ONLY
+  // error line a failed link prints on macOS.
+  { rx: /^(?:clang|clang\+\+|gcc|g\+\+|cc|c\+\+)(?:-[\d.]+)?: (fatal error|error|warning): (.*)$/,
+    map: (m) => ({ sev: m[1], msg: m[2] }) },
   // xcodebuild/swiftpm:   ** BUILD FAILED **        (the verdict, not a
   // diagnostic - xcodebuild can print it after a wall of INFO progress)
   { rx: /^\*\* (?:BUILD|TEST|ARCHIVE|CLEAN)[A-Z ]* (FAILED|SUCCEEDED) \*\*/,

@@ -1,0 +1,7 @@
+cc obj/main.o obj/util.o -o app
+/usr/bin/ld: obj/main.o: in function `main':
+main.cpp:7: undefined reference to `pricing::quote(int)'
+/usr/bin/ld: obj/util.o: in function `helper()':
+util.cpp:12: undefined reference to `missing_symbol'
+collect2: error: ld returned 1 exit status
+make: *** [Makefile:8: app] Error 1

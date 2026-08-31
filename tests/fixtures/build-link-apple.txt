@@ -1,0 +1,8 @@
+Undefined symbols for architecture x86_64:
+  "_shared_config", referenced from:
+      _main in main.o
+duplicate symbol '_price_table' in:
+    obj/a.o
+    obj/b.o
+ld: 1 duplicate symbols for architecture x86_64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
