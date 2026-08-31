@@ -114,20 +114,24 @@ exit 0`);
     assert.ok(evs.find((e) => /^done:/.test(e.msg)), 'no done verdict');
   });
 
-  it('a stall is one WARN and one recovery, and failure keeps the exit status', async () => {
+  it('a stall is one WARN, then one ERROR, then one recovery - and failure keeps the exit status', async () => {
     const t = tool(`printf ' 10%%\\r' >&2
-sleep 4
+sleep 8
 printf ' 20%%\\r' >&2
 sleep 1
 exit 7`);
     const { res, evs } = await dl('dl.t-stall',
-      ['--label', 'stall', '--stall', '2', '--', t], { timeoutMs: 30000 });
+      ['--label', 'stall', '--stall', '2', '--', t], { timeoutMs: 35000 });
 
     // Transparent failure: the wrapper's exit status is the command's own.
     assert.equal(res.code, 7);
 
-    const stallEvs = evs.filter((e) => e.level === 'WARN' && /stalled/.test(e.msg));
-    assert.equal(stallEvs.length, 1, 'stall must be said once, not every poll');
+    const stallWarns = evs.filter((e) => e.level === 'WARN' && /stalled/.test(e.msg));
+    assert.equal(stallWarns.length, 1, 'stall must be said once, not every poll');
+    // 0.0MB/s for three stall windows is not slow, it is dead - and dead is
+    // an ERROR, said once too.
+    const dead = evs.filter((e) => e.level === 'ERROR' && /treating as dead/.test(e.msg));
+    assert.equal(dead.length, 1, 'a dead transfer must escalate to exactly one ERROR');
     assert.ok(evs.find((e) => /recovered: moving again/.test(e.msg)), 'recovery not announced');
     const fail = evs.find((e) => e.level === 'ERROR' && /^failed:/.test(e.msg));
     assert.ok(fail, 'no failure verdict');

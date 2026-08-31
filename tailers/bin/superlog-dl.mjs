@@ -74,7 +74,8 @@ comes from the tool's own bar (tqdm/hf, curl, wget, bare NN%) and, with
 number when a tool downloads many files or goes quiet in a pipe.
 
 Publishes to dl.<host>.<label>. A stall (no movement for --stall seconds,
-default 30) is an edge-triggered WARN; recovery says so too.`);
+default 30) is an edge-triggered WARN, an ERROR at three times that - a
+download at 0.0MB/s that long is dead, not slow - and recovery says so.`);
   process.exit(command.length || opt('watch') ? 0 : 2);
 }
 
@@ -234,7 +235,7 @@ let parsedTotal;
 let rate;                   // B/s, parsed; watch delta when there is none
 let lastWatch;              // { at, bytes } for the measured rate
 let lastMoveAt = Date.now();
-let stalled = false;
+let stalled = 0;            // 0 moving, 1 warned, 2 declared dead
 
 function absorb(p) {
   let moved = false;
@@ -278,15 +279,21 @@ function tick() {
 
   // The stall is the event this tool exists for: a fetch that dies at hour
   // three fails silently until the tool's own (often infinite) patience
-  // runs out. Edge-triggered both ways, like every watcher here.
+  // runs out. Edge-triggered both ways, and it ESCALATES: quiet for --stall
+  // is a WARN (shard gaps and slow mirrors happen), quiet for three times
+  // that is an ERROR - a download at 0.0MB/s that long is not slow, it is
+  // dead, and a dead transfer must not sit at WARN all night.
   if (stallMs > 0) {
     const quiet = Date.now() - lastMoveAt;
-    if (!stalled && quiet >= stallMs) {
-      stalled = true;
-      publish('WARN', `stalled: no progress in ${Math.round(quiet / 1000)}s` +
+    const stage = quiet >= stallMs * 3 ? 2 : quiet >= stallMs ? 1 : 0;
+    if (stage > stalled) {
+      publish(stage === 2 ? 'ERROR' : 'WARN',
+              `stalled: no progress in ${Math.round(quiet / 1000)}s` +
+              (stage === 2 ? ' - treating as dead' : '') +
               (bits.length ? ` (at ${bits.join(' ')})` : ''), { ...f, change: 'stall' });
-    } else if (stalled && quiet < stallMs) {
-      stalled = false;
+      stalled = stage;
+    } else if (stalled && stage === 0) {
+      stalled = 0;
       publish('INFO', `recovered: moving again at ${bits.join(' ')}`, { ...f, change: 'recovered' });
     }
   }

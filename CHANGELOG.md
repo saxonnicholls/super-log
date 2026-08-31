@@ -36,8 +36,27 @@ status untouched — that reads tqdm/hf, curl's meter, wget, or a bare NN%;
 `--watch` sums the destination file or directory instead, which is the
 honest aggregate for a many-shard Hugging Face pull and works even when a
 piped tool mutes its bar (superlog-tee cannot do this job: bars are
-\r-rewritten, not line-oriented). Verified against stand-in bars
-(`tests/dl.test.mjs`) and live against a real 25MB curl transfer.
+\r-rewritten, not line-oriented). A stall escalates: no movement for
+`--stall` seconds is one WARN, three times that is one ERROR — a download
+at 0.0MB/s that long is dead, not slow. Verified against stand-in bars
+(`tests/dl.test.mjs`) and live against a real 25MB curl transfer and a
+100GB fetch on a second machine, where the escalation's first catch was
+real: a watcher pointed at a path the fetch had moved away from.
+
+**Engine and content-tool logs.** The app catalog now knows **Unity**
+(`Editor.log`, with a format that levels the C# compiler's diagnostics and
+thrown exceptions while a folder named "Exceptions" stays INFO) and
+**Unreal Engine** (per-project editor logs, levelled by Unreal's own
+verbosity words with the `LogCategory` kept in the message; rotated
+`-backup-` copies excluded so they do not each hold a dormant tail).
+Catalog patterns may now live under `{home}` and carry directory-level
+globs — Unreal keeps one log directory per project, so the only honest
+default path has a star in the middle. Blender and AutoCAD get one-line
+recipes rather than false promises: Blender logs to stdout (pipe it
+through `superlog`), AutoCAD writes a file only when `LOGFILEMODE` says
+so. Verified against the real Unity and Unreal logs on this machine
+(`superlog-tail apps` finds 13 of them); parsing under
+`tests/engines.test.mjs`.
 
 **superlog-bridge** — relay another hub's whole feed into this one,
 verbatim: same topics, same events, so nothing downstream can tell a

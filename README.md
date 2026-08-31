@@ -112,6 +112,12 @@ second), the iOS simulator's log stream, the macOS unified log, journald,
 Docker containers, and any log file. A catalog knows where ~20 common
 services log on macOS and Linux — postgres, mysql, mongodb, redis, nginx,
 apache, kafka, elasticsearch, rocksdb — including both Homebrew prefixes.
+The catalog also knows the engines and content tools: **Unity**'s
+`Editor.log` (the C# compiler's `error CS1234` becomes ERROR, a thrown
+exception too, while a folder named "Exceptions" stays INFO) and **Unreal
+Engine**'s per-project editor logs (`LogNet: Warning:` maps by Unreal's own
+verbosity words, category kept). Blender logs to stdout — that is what the
+`tee` is for — and AutoCAD's `LOGFILEMODE` file tails like any other.
 
 **Whole fleets, pulled over ssh.** One config file brings up every stream on
 every server: OS logs, service logs, container logs. Nothing is installed
@@ -494,6 +500,7 @@ log.metric("fps", 58.9);
 npm run tail:os -- --process MyApp          # this Mac's unified log
 npm run tail:apps                           # what services log here
 npm run tail:app -- postgres nginx redis    # ...then turn them on
+npm run tail:app -- unity unreal            # engine editor logs, level-parsed
 npm run tail:file -- /srv/app/production.log
 npm run tail:ssh -- my-server               # a remote box, OS auto-detected
 npm run tail:ssh -- db1 --app postgres      # ...or its postgres
