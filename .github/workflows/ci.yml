@@ -179,6 +179,21 @@ jobs:
       # tool in CI would prove something the consuming project never runs.
       - run: javac -Xlint:all -Werror -d /tmp/sl $(find sdk/java -name '*.java') demo/java/Clock.java
 
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cc -Wall -Wextra -DSUPERLOG_DEVELOPMENT -I sdk/c -o /tmp/clock_c demo/c/clock.c
+      - run: cc -Wall -Wextra -DSUPERLOG_PRODUCTION -I sdk/c -o /tmp/clock_c_prod demo/c/clock.c
+      - name: production binary provably contains no wire code
+        run: |
+          strings /tmp/clock_c_prod | grep -q ingest && exit 1
+          strings /tmp/clock_c | grep -q ingest
+      - name: mode guard refuses neither and both
+        run: |
+          ! cc -fsyntax-only -I sdk/c demo/c/clock.c 2>/dev/null
+          ! cc -DSUPERLOG_DEVELOPMENT -DSUPERLOG_PRODUCTION -fsyntax-only -I sdk/c demo/c/clock.c 2>/dev/null
+
   fortran:
     runs-on: ubuntu-latest
     steps:
@@ -220,8 +235,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: gfortran
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gfortran
+      - name: gfortran + ocaml (ruby and cc are already on the runner; ghc and
+              scala are not and are not worth their install time - the script
+              reports them as skipped rather than hiding them)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gfortran ocaml
       - name: build the hub
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -231,7 +248,7 @@ jobs:
       # swift is absent on this runner and is skipped, which the script
       # reports rather than hides; the macOS job below covers it.
       - name: every SDK actually delivers
-        run: ./scripts/verify-sdks.sh cpp rust go python java fortran shell node
+        run: ./scripts/verify-sdks.sh cpp c rust go python java fortran shell node ruby ocaml haskell scala
 
   sdk-runtime-macos:
     runs-on: macos-latest

@@ -162,7 +162,7 @@ for lang in ${SUPER_LOG_LANGS:-c go python java swift fortran shell ruby scala h
     case "$lang" in
     c)
         if ! have cc; then skip "c.clock" "no C compiler"
-        elif cc -std=c99 -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$SL_TMP/sl_clock_c" demo/c/clock.c >/dev/null 2>&1; then
+        elif cc -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$SL_TMP/sl_clock_c" demo/c/clock.c >/dev/null 2>&1; then
             start "c.clock" "$SL_TMP/sl_clock_c"
         else skip "c.clock" "cc build failed"; fi ;;
     go)

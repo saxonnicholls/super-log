@@ -167,7 +167,7 @@ shell)
 
 c)
     if ! have cc; then skipping c "no C compiler"
-    elif cc -std=c99 -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$TMP/clock_c" demo/c/clock.c >/dev/null 2>&1; then
+    elif cc -DSUPERLOG_DEVELOPMENT -I sdk/c -o "$TMP/clock_c" demo/c/clock.c >/dev/null 2>&1; then
         check c c.clock "$TMP/clock_c"
     else skipping c "cc build failed"; fi ;;
 

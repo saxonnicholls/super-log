@@ -76,6 +76,15 @@ static inline void superlog_flush(superlog_t *lg) { (void)lg; }
 
 #else /* SUPERLOG_DEVELOPMENT */
 
+/* glibc hides gmtime_r and getaddrinfo under strict -std=c99; macOS's lax
+ * headers would have let that ship. Best effort here - feature macros only
+ * work if no libc header came first, so include this header early (or
+ * compile without a strict -std, which is what the repo's scripts do). */
+#if !defined(_POSIX_C_SOURCE) || _POSIX_C_SOURCE < 200112L
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200112L
+#endif
+
 #include <netdb.h>
 #include <stdarg.h>
 #include <stdio.h>
