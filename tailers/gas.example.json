@@ -1,0 +1,26 @@
+{
+  "//": "Copy to gas.json (GITIGNORED - a labelled list of operational keys is a map for an attacker even when every address is public on chain) and edit. Per key: below `crit` is CRITICAL said once, below `warn` is WARN said once, recovery is INFO; no thresholds means readings only. A `token` entry switches the key from the native gas coin to an ERC-20 balance.",
+  "url": "http://127.0.0.1:7333",
+  "interval": 300,
+  "chains": {
+    "arbitrum": {
+      "rpc": "https://arbitrum-one-rpc.publicnode.com",
+      "coin": "ETH",
+      "keys": [
+        { "label": "oracle-pusher", "address": "0x0000000000000000000000000000000000000001",
+          "crit": 0.002, "warn": 0.01 },
+        { "label": "settlement-usdc", "address": "0x0000000000000000000000000000000000000002",
+          "token": { "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "decimals": 6, "symbol": "USDC" },
+          "crit": 100, "warn": 1000 }
+      ]
+    },
+    "base": {
+      "rpc": "https://base-rpc.publicnode.com",
+      "coin": "ETH",
+      "keys": [
+        { "label": "keeper", "address": "0x0000000000000000000000000000000000000003",
+          "crit": 0.002, "warn": 0.01 }
+      ]
+    }
+  }
+}

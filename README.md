@@ -44,7 +44,7 @@ super-log converges all of it on one process and one screen:
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
 | **network and DNS** | an HTTP/S logging proxy, WebSocket frames, a syslog and raw TCP/UDP inlet, DNS records with TLS expiry, and listening ports with their processes |
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
-| **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract |
+| **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract; operational key balances (gas or ERC-20) with edge-triggered fund-now alarms |
 | **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee` |
 
 Every producer speaks one small wire protocol
@@ -132,6 +132,16 @@ no certificate work. Bodies are opt-in; credentials are always redacted.
 **Blockchain addresses, beside the code that touched them.** Watch any EVM
 address and its transfers, contract events and native balance moves land on
 the same screen, in hub order, next to the app code that sent them.
+
+**Operational keys that never silently run dry.** A keeper or oracle out of
+gas stops a production system as surely as a crashed server, and it fails
+politely — it just stops, and nothing says why. `superlog-gas` polls the
+balances you name (native coin or ERC-20, per chain, per key, from a
+gitignored config — a labelled key list is a map for an attacker) and
+applies the bench's discipline: readings are `metric` events for the chart,
+crossing your fund-now line is **CRITICAL said once**, your low line WARN
+once, and refunding is announced. One JSON-RPC batch per chain per poll,
+because a public RPC's rate limit is part of the design surface.
 
 **Infrastructure that only speaks when something changes.** DNS records and
 TLS expiry, listening ports and the processes that own them — all watched by
@@ -534,6 +544,8 @@ npm run tail:ssh -- db1 --app postgres      # ...or its postgres
 npm run net -- 9000 http://localhost:3000   # every HTTP call through :9000
 npm run grpc -- --listen 50052 --target localhost:50051  # every RPC, status from the trailer
 npm run chain                               # watched addresses (see .env)
+npm run gas                                 # operational key balances, alarmed (gas.json)
+npm run gas -- --once                       # every key, one reading, right now
 npm run dns -- example.com --once           # every DNS record + cert, then exit
 npm run dns -- example.com mail.example.com # ...or watch them for change
 npm run ports -- --once                     # what is listening, and which process

@@ -58,6 +58,17 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**superlog-gas** — operational key balances with the alarm built in
+(topic `gas.<chain>`): the keeper or oracle that runs out of gas stops a
+production system as surely as a crashed server, and fails politely.
+Per-chain, per-key config (gitignored — a labelled key list is a map for
+an attacker even when every address is public); native coin via
+eth_getBalance or ERC-20 via a bare balanceOf call, one JSON-RPC batch
+per chain per poll. Below `crit` is CRITICAL said once, below `warn` WARN
+once, refunding announced. Verified against a stand-in RPC
+(`tests/gas.test.mjs`) and live against arbitrum, where the first real
+poll correctly fired CRITICAL on a drained oracle key.
+
 **superlog-sys** — the machine's own life events, macOS (topic
 `sys.<host>`, started unconditionally by the demo beside `power`): crash
 reports and kernel panics parsed out of DiagnosticReports the moment they

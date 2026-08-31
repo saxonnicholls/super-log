@@ -55,6 +55,12 @@
       "read": "Indistinguishable from local streams by design; origin.device names the real machine.",
       "gotchas": "One direction only - never bridge two hubs at each other (feedback loop)."
     },
+    "gas": {
+      "topics": "gas.<chain>",
+      "what": "Operational key balances on chain - native gas coin or ERC-20 - polled per key from a gitignored config with per-key thresholds. Readings are DEBUG metric events (gas.<label>).",
+      "read": "CRITICAL means a key is below its fund-now line - a production keeper/oracle is about to stop; it is said ONCE per crossing. WARN is below the low line. 'recovered: ... funded' INFO closes the incident. 'rpc-down' WARN means the chain endpoint is unreachable, not that keys are empty.",
+      "gotchas": "Absence of CRITICAL does not mean healthy-right-now - check the DEBUG readings' timestamps and values. Balances are telemetry precision, not accounting. Token keys read balanceOf with the config's decimals; a wrong decimals value is off by orders of magnitude."
+    },
     "net": {
       "topics": "net.<host>.<target>, grpc.<host>.<target>, net.<host>.listeners, dns.<domain>",
       "what": "HTTP/S calls through the logging proxy (one event per request/response with status and latency), gRPC with status from trailers, listening-port changes, DNS records and TLS expiry watched for change.",

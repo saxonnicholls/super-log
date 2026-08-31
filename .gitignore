@@ -32,6 +32,10 @@ logs/
 # Fleet config: real hostnames and keys, never committed
 fleet.json
 
+# Gas monitor config: a labelled list of operational keys is a map for an
+# attacker even when every address is public on chain
+gas.json
+
 # Real credentials: RPC URLs carry provider keys. .env.example is the template.
 .env
 
