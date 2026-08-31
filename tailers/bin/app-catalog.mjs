@@ -18,6 +18,7 @@
 //
 
 import { accessSync, constants, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 export const APP_CATALOG = {
   postgres: {
@@ -120,43 +121,78 @@ export const APP_CATALOG = {
     format: 'generic',
     darwin: [], linux: ['/var/log/celery/*.log'],
   },
+  // ---- engines and content tools: their logs live under $HOME, not /var.
+  // A stuck light bake or a shader that will not compile is the same
+  // debugging problem as a failing service, in a tool with worse logs.
+  unity: {
+    format: 'unity',
+    darwin: ['{home}/Library/Logs/Unity/Editor.log'],
+    linux: ['{home}/.config/unity3d/Editor.log'],
+    note: 'the Editor log. A built game writes Player.log per company/product: superlog-tail file <path> --format unity',
+  },
+  unreal: {
+    format: 'unreal',
+    darwin: ['{home}/Library/Logs/Unreal Engine/*/*.log'],
+    linux: ['{home}/.config/Epic/UnrealEngine/*/Saved/Logs/*.log'],
+    // Rotated copies and the launcher's embedded Chromium: dormant files
+    // that would each hold a tail open for logs that can never move again.
+    exclude: /-backup-|cef3/,
+    note: 'editor logs, one dir per project. A packaged game logs to <Project>/Saved/Logs: superlog-tail file <path> --format unreal',
+  },
+  blender: {
+    format: 'generic',
+    darwin: [], linux: [],
+    note: 'logs to stdout, not a file: blender -b scene.blend -a 2>&1 | superlog --topic app.<host>.blender',
+  },
+  autocad: {
+    format: 'generic',
+    darwin: [], linux: [],
+    note: 'Windows-first: LOGFILEMODE 1 makes it write the .log that LOGFILENAME names - tail that (over ssh if remote)',
+  },
 };
 
 const BREW_PREFIXES = ['/opt/homebrew', '/usr/local'];
 const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// One glob star per basename is all the catalog needs - no dependency, no
-// recursion, and dir-level stars stay out of the data on purpose.
-function expand(pattern) {
-  const pats = pattern.includes('{brew}')
-    ? BREW_PREFIXES.map((p) => pattern.replace('{brew}', p))
-    : [pattern];
+// Segment-wise globbing, no dependency: a star never crosses a slash, and
+// each starred segment is one readdir. Directory-level stars used to stay
+// out of the data on purpose, until Unreal - which keeps one log directory
+// PER PROJECT, so the only honest default path has a star in the middle.
+function glob(p) {
+  if (!p.includes('*')) return [p];
+  const parts = p.split('/');
+  const i = parts.findIndex((s) => s.includes('*'));
+  const dir = parts.slice(0, i).join('/') || '/';
+  const rx = new RegExp('^' + parts[i].split('*').map(escapeRx).join('.*') + '$');
+  const rest = parts.slice(i + 1).join('/');
   const out = [];
-  for (const p of pats) {
-    if (!p.includes('*')) {
-      out.push(p);
-      continue;
-    }
-    const cut = p.lastIndexOf('/');
-    const dir = p.slice(0, cut);
-    const rx = new RegExp('^' + p.slice(cut + 1).split('*').map(escapeRx).join('.*') + '$');
-    try {
-      for (const f of readdirSync(dir)) if (rx.test(f)) out.push(dir + '/' + f);
-    } catch {
-      /* no such dir here */
-    }
+  try {
+    for (const f of readdirSync(dir))
+      if (rx.test(f)) out.push(...(rest ? glob(`${dir}/${f}/${rest}`) : [`${dir}/${f}`]));
+  } catch {
+    /* no such dir here */
   }
   return out;
 }
 
-/** Candidate patterns for a platform - what the ssh mode expands remotely. */
+function expand(pattern) {
+  const withHome = pattern.replace('{home}', homedir());
+  const pats = withHome.includes('{brew}')
+    ? BREW_PREFIXES.map((p) => withHome.replace('{brew}', p))
+    : [withHome];
+  return pats.flatMap(glob);
+}
+
+/** Candidate patterns for a platform - what the ssh mode expands remotely.
+ *  {home} becomes ~ so the REMOTE shell resolves it to the remote home,
+ *  not this machine's. */
 export function patternsFor(name, platform) {
   const e = APP_CATALOG[name];
   if (!e) return null;
   const pats = e[platform === 'darwin' ? 'darwin' : 'linux'] ?? [];
   return pats.flatMap((p) =>
     p.includes('{brew}') ? BREW_PREFIXES.map((b) => p.replace('{brew}', b)) : [p],
-  );
+  ).map((p) => p.replace('{home}', '~'));
 }
 
 /** Readable files for an app on THIS machine. */
@@ -166,6 +202,7 @@ export function resolveApp(name, platform) {
   const files = [];
   for (const p of e[platform === 'darwin' ? 'darwin' : 'linux'] ?? [])
     for (const f of expand(p)) {
+      if (e.exclude?.test(f)) continue;
       try {
         accessSync(f, constants.R_OK);
         files.push(f);

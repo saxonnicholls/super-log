@@ -201,6 +201,10 @@ const NGINX_LEVEL = {
   debug: 'DEBUG', info: 'INFO', notice: 'INFO', warn: 'WARN',
   error: 'ERROR', crit: 'CRITICAL', alert: 'CRITICAL', emerg: 'CRITICAL',
 };
+const UNREAL_LEVEL = {
+  Fatal: 'CRITICAL', Error: 'ERROR', Warning: 'WARN',
+  Display: 'INFO', Log: 'INFO', Verbose: 'DEBUG', VeryVerbose: 'TRACE',
+};
 const PG_LEVEL = {
   LOG: 'INFO', INFO: 'INFO', NOTICE: 'INFO', WARNING: 'WARN',
   ERROR: 'ERROR', FATAL: 'CRITICAL', PANIC: 'CRITICAL',
@@ -263,6 +267,29 @@ const FILE_FORMATS = {
     const map = { WARN: 'WARN', ERROR: 'ERROR', FATAL: 'CRITICAL', DEBUG: 'DEBUG' };
     return { level: map[w] ?? 'INFO', msg: m[2] };
   },
+  // Unreal Engine: "LogCategory: Verbosity: message", verbosity omitted
+  // meaning Log, with an optional [date][frame] prefix when -LogTimes is
+  // on. The category is kept in the message - LogAI and LogNet at the same
+  // level are different facts.
+  //   LogInit: Display: Running engine for game: Arch1
+  //   LogPlatformFile: Not using cached read wrapper
+  unreal: (line) => {
+    const m = line.match(/^(?:\[[^\]]*\]\[\s*\d+\])?(Log[A-Za-z0-9_]+): (?:(Fatal|Error|Warning|Display|Verbose|VeryVerbose|Log): )?(.*)$/);
+    if (!m) return null;
+    return { level: UNREAL_LEVEL[m[2] ?? 'Log'], msg: `[${m[1]}] ${m[3]}` };
+  },
+  // Unity's Editor.log has no per-line level, so the shapes that matter are
+  // picked out - the C# compiler's diagnostics and thrown exceptions - and
+  // the import chatter around them stays INFO via the generic fallback.
+  // Narrow on purpose: half the paths in a Unity project contain the word
+  // "Exceptions", and a folder name must never become an ERROR.
+  unity: (line) => {
+    if (/\berror CS\d{4}\b/.test(line)) return { level: 'ERROR', msg: line };
+    if (/\bwarning CS\d{4}\b/.test(line)) return { level: 'WARN', msg: line };
+    if (/^\s*[\w.]*(Exception|Error): /.test(line) || /^Assertion failed/i.test(line))
+      return { level: 'ERROR', msg: line.trim() };
+    return null;
+  },
   generic: (line) => ({
     level: /fatal|crit|panic|emerg/i.test(line) ? 'CRITICAL'
       : /\berror\b|\berr\b/i.test(line) ? 'ERROR'
@@ -281,6 +308,8 @@ const guessFormat = (p) =>
     : /redis/i.test(p) ? 'redis'
     : /mongo/i.test(p) ? 'mongodb'
     : /kafka|zookeeper|elasticsearch/i.test(p) ? 'log4j'
+    : /unreal|\bue[45]\b/i.test(p) ? 'unreal'
+    : /\bunity\b|unity3d/i.test(p) ? 'unity'
     : 'generic';
 
 // The path usually knows best; the catalog entry is the fallback
