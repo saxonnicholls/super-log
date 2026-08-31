@@ -85,6 +85,7 @@ host-side tailer scraping the same device:
 | `gpu.<host>.<index>`  | a GPU: utilisation, memory, temperature and power as `metric` events, plus threshold crossings |
 | `cuda.<app>`          | a CUDA program: kernel time from CUDA events, device printf, and faults caught at the synchronise |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
+| `power.<host>`        | CPU package watts, thermal pressure, fan RPM, die temperatures, aggregate CPU and the top energy consumers, as `metric` events plus edge-triggered crossings; macOS |
 | `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.

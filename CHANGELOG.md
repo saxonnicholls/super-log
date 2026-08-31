@@ -3,6 +3,31 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
+## Unreleased
+
+**superlog-power** — CPU package watts, thermal pressure, SMC fan RPM and
+CPU/GPU die temperatures, aggregate CPU as a single number, and the top
+energy consumers attached to every sample (topic `power.<host>`, macOS,
+Intel and Apple Silicon plist dialects both handled). Written after this
+machine sat at 1258% aggregate CPU — eleven saturated cores, one VS Code
+extension — until the fans said so, and crashed repeatedly under runaway
+draw. `powermetrics` needs root and the tailer never prompts:
+`scripts/install-power-tailer.sh` installs a sudoers entry pinned to one
+root-owned wrapper rather than to powermetrics itself, whose `-o` flag
+would turn a wildcarded rule into a root file write. Without root it
+degrades honestly — thermals, aggregate CPU and top processes still flow,
+each reading marked `power_unavailable: not root`. `--out` writes a local
+sidecar with superlog-journal's rotation and retention, for the samples a
+crash would otherwise take with it. The demo starts it **unconditionally on
+macOS**.
+
+Verified: degraded mode live against a real hub; both plist dialects, the
+explicit-degradation contract and the no-orphan SIGTERM shutdown against
+stand-ins (`tests/power.test.mjs`). The sudoers path needs a root prompt
+this bench could not answer unattended — run the installer once, then
+`npm run power -- --once` and compare against a hand-run
+`sudo powermetrics --samplers cpu_power -n 1`.
+
 ## v0.1.0 — first public release
 
 **2026-08-29**

@@ -509,6 +509,8 @@ npm run ros                                 # a robot's nodes, from /rosout
 npm run ros -- --files                      # ...including past runs in ~/.ros/log
 npm run gpu                                 # this machine's GPU, watched
 npm run gpu -- --ssh trainer1               # ...or the box with the card in it
+npm run power                               # watts, thermals, top energy hogs (macOS)
+npm run power -- --once                     # one power reading, then exit
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 
@@ -524,6 +526,7 @@ everything it sees teaches you to ignore it.
 | `ports`  | `net.<host>.listeners` — listening sockets, owning process, pid, **and firewall rules** | A**new listener on a public address is WARN**, the same on loopback is INFO; a listener disappearing is WARN; a pid change is reported as a restart rather than as one service vanishing and another appearing; a watched process going missing is ERROR.                                                                                                                          |
 | `vitals` | `host.<name>.vitals` — disk, memory, CPU and load, macOS/Linux/Windows                        | Readings are DEBUG`metric` events (always there for a chart, out of a default INFO view); threshold crossings are **edge-triggered** WARN/ERROR, so 85% says so once rather than every poll, and recovery says so too. Read-only filesystems are skipped: a macOS simulator runtime is 98% full by design, and alerting on it produced 25 false ERRORs before this rule existed. |
 | `build`  | `build.<host>.<label>` — one event per diagnostic, one verdict                                | Compiler errors are ERROR with`file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships.                                                                                                              |
+| `power`  | `power.<host>` — CPU package watts, thermal pressure, fan RPM, CPU/GPU die temperatures, aggregate CPU as one number, and the top energy consumers attached to every sample; macOS | Exists because this machine sat at **1258% aggregate CPU** — eleven saturated cores, one VS Code extension — unnoticed until the fans got loud and kernel_task began throttling, and has crashed under runaway draw. "Too much" is machine-relative, so three detectors: absolute watt caps if you set them, sustained draw above the machine's own learned baseline, and the machine's own verdict (thermal pressure / CPU speed limit), which needs no tuning at all. Watts require root — `sudo scripts/install-power-tailer.sh` grants exactly one pinned powermetrics invocation, nothing else — and without root it still publishes thermals, aggregate CPU and top processes, each reading marked `power_unavailable: not root`. **The demo starts it unconditionally on macOS.** |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
 record changed, not that a laptop moved networks and hit a different cache.

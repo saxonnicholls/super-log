@@ -228,6 +228,18 @@ if have node; then
             --repo "$PWD" --topic git.super-log
     fi
 
+    # Power and thermals (topic power.<host>). macOS only, and on macOS it is
+    # NOT optional: this machine sat at 1258% aggregate CPU - eleven saturated
+    # cores, one VS Code extension - until the fans said so, and it has
+    # crashed under runaway draw. Watts need root (see
+    # scripts/install-power-tailer.sh); without that the tailer still
+    # publishes thermal pressure, aggregate CPU and the top consumers, so it
+    # starts regardless and says in-band what is missing.
+    if [ "$(uname -s)" = "Darwin" ]; then
+        start "power.$(hostname -s 2>/dev/null || echo local)" \
+            node tailers/bin/superlog-power.mjs
+    fi
+
     # Well-known app logs on THIS machine (postgres, nginx, redis, ...):
     # `superlog-tail apps` shows what exists here.
     if [ -n "${SUPER_LOG_APPS:-}" ]; then
