@@ -1,0 +1,72 @@
+{
+  "//": "The bench, explained to agents. One entry per logging capability, queryable through the stream_guide tool and served as MCP prompts. House rule: every logging capability ships with a detailed README entry AND a detailed entry here - an agent should never have to guess what a topic means.",
+  "streams": {
+    "power": {
+      "topics": "power.<host>",
+      "what": "CPU package watts, thermal pressure, fan RPM, CPU/GPU die temperatures, aggregate CPU as one scalar, and the top energy consumers attached to every sample. macOS, sampled every 10s by default.",
+      "read": "Readings are DEBUG metric events (power.package_w, power.cpu_pct, power.cpu_die_c, power.gpu_die_c, power.fan_rpm, power.speed_limit_pct). Threshold crossings are edge-triggered WARN/ERROR and announce recovery. The 'top by energy' events name the processes responsible, with pid and %cpu.",
+      "gotchas": "power_unavailable: not root in fields means powermetrics has no privilege - thermals and CPU still flow, watts do not; run scripts/install-power-tailer.sh once. A speed_limit_pct under 100 is the machine itself throttling: that IS the too-much-power signal, no tuning needed. Aggregate cpu_pct is a sum over cores (1258 means ~12.6 cores busy)."
+    },
+    "dl": {
+      "topics": "dl.<host>.<label>",
+      "what": "A download in flight: percent, bytes and rate as metric events (dl.pct, dl.mb, dl.rate_mbs), one verdict when it ends. Wraps curl/wget/hf transparently or watches the destination path directly (--watch), which is the honest aggregate for multi-shard Hugging Face pulls.",
+      "read": "A stall is edge-triggered: one WARN after --stall seconds of no movement, one ERROR at three times that ('treating as dead'), one INFO on recovery. 'done:' INFO is success; 'failed: (exit N)' ERROR carries the wrapped command's exit status.",
+      "gotchas": "Watch-mode percent can DROP after a relaunch when the producer restarts its output file by design - a drop then racing is a re-stream, not data loss. Short 0.0MB/s windows are normal (retry backoff, shard gaps); trust the stall events, not a single zero sample."
+    },
+    "build": {
+      "topics": "build.<host>.<label>",
+      "what": "A build or test run wrapped: one event per compiler diagnostic with src file:line, one verdict with exit status, duration and counts. Knows clang/gcc (and their drivers' own 'clang: error:'), cmake, make, rustc, npm, xcodebuild, Vivado/Quartus, and LINKERS: Apple ld/lld, GNU 'undefined reference'/'multiple definition' (which carry no severity word), duplicate symbols, collect2.",
+      "read": "Filter level>=WARN for diagnostics. The verdict fields carry errors/warnings counts; 'exited 0 DESPITE N errors' means the build lied about success. Sanitizer (ASan/TSan/UBSan) and valgrind findings arrive WHOLE as single events with the full report in fields.report.",
+      "gotchas": "Every event of one build shares a trace - query by trace to see one build end to end. Compiler snippet/caret lines are folded into fields.snippet, not separate events."
+    },
+    "fs": {
+      "topics": "fs.<host>.<dir>",
+      "what": "A directory tree as it changes: created/modified INFO, deleted WARN, bursts collapsed into one summary. With --diff, the changed LINES: one event per hunk with removed (-) and added (+) lines together in the message.",
+      "read": "Hunks of one save share a trace with their 'modified' anchor - query by trace for the whole edit. fields.change is created|modified|deleted|diff|burst.",
+      "gotchas": "Idempotent by content hash: a rewrite with identical bytes publishes NOTHING, so silence after a save can mean no real change. fields.undiffable = binary|big|budget explains a modified event with no hunks."
+    },
+    "vitals": {
+      "topics": "host.<name>.vitals",
+      "what": "Disk, memory, CPU load per host, local or over ssh. Readings are DEBUG metric events (disk.used_pct, mem.used_pct, load.per_core); threshold crossings are edge-triggered WARN/ERROR with recovery announced.",
+      "read": "load.per_core over 1 is busy, over 2 is drowning. Read-only filesystems are deliberately excluded from disk alerts.",
+      "gotchas": "A threshold event appears ONCE per crossing - absence of WARN does not mean recent, check the DEBUG readings' timestamps."
+    },
+    "gpu": {
+      "topics": "gpu.<host>.<index>",
+      "what": "GPU utilisation, memory, temperature, power via whichever vendor tool exists (nvidia-smi, rocm-smi, ioreg, vcgencmd). Metrics gpu.utilization_pct, gpu.memory_used_mb, gpu.temperature_c, gpu.power_w.",
+      "read": "Edge-triggered temperature/memory crossings; Raspberry Pi under-voltage and throttle flags are ERROR/WARN.",
+      "gotchas": "A missing reading is absent, never zero - macOS cards without sensors report no temperature at all."
+    },
+    "os-app": {
+      "topics": "os.<host>, app.<host>.<name>",
+      "what": "OS logs (macOS unified log, journald, Windows event log) and known app/service logs (postgres, nginx, redis, kafka...; Unity's Editor.log and Unreal's per-project editor logs, level-parsed by their own conventions). Local, docker, or pulled over ssh.",
+      "read": "Levels come from the source's own format where one exists (postgres LOG->INFO, Unreal 'Warning:'->WARN, Unity 'error CS...'->ERROR).",
+      "gotchas": "os.<host> is scoped (kernel by default on macOS) - an app you expect may need its own tailer, see 'superlog-tail apps'."
+    },
+    "dl-power-bridge-note": {
+      "topics": "any topic from another machine",
+      "what": "superlog-bridge relays a remote hub's WHOLE feed here verbatim over an ssh tunnel - same topics, same events. A topic like build.<otherhost> or power.<otherhost> arriving on this bench may originate on another machine's hub.",
+      "read": "Indistinguishable from local streams by design; origin.device names the real machine.",
+      "gotchas": "One direction only - never bridge two hubs at each other (feedback loop)."
+    },
+    "net": {
+      "topics": "net.<host>.<target>, grpc.<host>.<target>, net.<host>.listeners, dns.<domain>",
+      "what": "HTTP/S calls through the logging proxy (one event per request/response with status and latency), gRPC with status from trailers, listening-port changes, DNS records and TLS expiry watched for change.",
+      "read": "5xx is ERROR, 4xx WARN. New PUBLIC listener is WARN; NS/CAA changes are WARN (that is how domains get taken); certs WARN at 3 weeks out.",
+      "gotchas": "dns and ports diff snapshots - the first poll is a silent baseline, only changes are events."
+    },
+    "history": {
+      "topics": "(the journal on disk)",
+      "what": "The live ring at /recent is only minutes deep. search_history reads the on-disk journal (superlog-journal/) for hours or days back, with the same filters incl. trace.",
+      "read": "Prefer search_history for 'what happened at 3am'; tail_logs/search_logs for now.",
+      "gotchas": "The journal only holds what reached the hub while the journal writer ran."
+    }
+  },
+  "playbooks": {
+    "triage": "Something is wrong on the bench. 1) hub_status - is the hub even up, did it drop frames. 2) list_streams - which topics are live and which carry errors. 3) tail_logs level=ERROR on the suspicious topic, narrow by contains. 4) If the event has a trace field, search_logs by that trace to see the whole story across streams. 5) Older than a few minutes? search_history. Never pull a full stream - filter first, always.",
+    "follow-a-trace": "One action, every tier: take the trace id from any event (request line, build start, file save) and query /recent?trace= via search_logs. Producers propagate traces across HTTP and builds join inbound traces, so one id returns the request, the queries it caused, the errors it raised and the file edits around it, in hub order.",
+    "silent-stream": "A stream that STOPPED is the failure most tools miss - a quiet server and a dead server look identical. list_streams shows what was recently live; compare against what should be. wait_for with a matching filter after you trigger an action; if it times out, the producer is down or never logged. superlog-alert silence rules cover this permanently.",
+    "power-incident": "The machine is hot/loud/slow: tail_logs topic=power. level=WARN shows threshold crossings (thermal speed limit, single-process hogs, watts over baseline). The DEBUG 'top by energy' events name the culprits with pid - correlate the pid against app streams. power.cpu_pct is aggregate (1258 = ~12.6 cores). speed_limit_pct < 100 means macOS itself is throttling.",
+    "watch-a-download": "A big fetch (Hugging Face model, dataset): dl.<host>.<label> carries dl.pct/dl.mb/dl.rate_mbs. One WARN = stalled --stall seconds, one ERROR = dead (3x that), INFO recovered = moving again. 'done:' is the success verdict. Percent dropping then racing after a producer restart is a re-stream, not loss."
+  }
+}

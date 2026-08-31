@@ -58,6 +58,24 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Link failures are errors now.** GNU ld's `undefined reference` and
+`multiple definition` verdicts carry no severity word, so they landed as
+INFO — a failed link nobody sees, on the tool whose whole job is
+preventing exactly that. They, `/usr/bin/ld:`-prefixed lines, `ld.lld`,
+`collect2`, Apple's `duplicate symbol`, and the driver's own
+`clang:/gcc: error:` (often the only error line a failed macOS link
+prints) are all ERROR, with `file:line` where the linker gives one.
+Fixture-tested for both GNU and Apple shapes.
+
+**The bench documents itself to agents.** A seventh MCP tool,
+`stream_guide`, serves detailed per-capability documentation — what each
+topic's metrics and levels mean and the gotchas — from
+`sdk/js/packages/mcp/guide.json`, whose playbooks (triage,
+follow-a-trace, silent-stream, power-incident, watch-a-download) are also
+served as native MCP prompts. House rule, now in CLAUDE.md: every logging
+capability ships a detailed README entry AND a detailed guide entry.
+Verified over real stdio JSON-RPC.
+
 **Real-time file diffs.** `superlog-watch --diff` answers "which LINES"
 rather than "which file": one event per hunk with the removed and added
 lines together, every hunk of one save sharing a `trace` with its

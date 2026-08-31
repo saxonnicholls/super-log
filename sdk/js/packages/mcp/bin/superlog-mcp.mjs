@@ -26,13 +26,30 @@
 //  Wire contract: ../../../../docs/PROTOCOL.md
 //
 
-import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { createGunzip } from 'node:zlib';
 
 const HUB = process.env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333';
 const JOURNAL = process.env.SUPER_LOG_JOURNAL ?? './superlog-journal';
+
+// The bench explained to agents: one detailed entry per logging capability
+// plus step-by-step playbooks, maintained as data (guide.json) so the
+// documentation is queryable rather than baked into tool descriptions -
+// an agent's context is small, and the guide is fetched only when needed.
+// House rule: every logging capability ships a detailed README entry AND a
+// detailed entry there.
+let GUIDE = { streams: {}, playbooks: {} };
+try {
+  GUIDE = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'guide.json'), 'utf8'));
+} catch {
+  /* a missing or broken guide degrades to empty, never to a dead server */
+}
+const guideEntry = ([name, e]) =>
+  `## ${name} (${e.topics})\n${e.what}\nReading it: ${e.read}\nGotchas: ${e.gotchas}`;
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];
 
@@ -537,6 +554,40 @@ const TOOLS = [
   },
 ];
 
+// The guide as a tool, because tools are the one surface every MCP client
+// can call. The same content backs prompts/list for clients that speak that
+// half of the protocol.
+TOOLS.push({
+  name: 'stream_guide',
+  description:
+    'Detailed documentation for a bench capability, before working with an ' +
+    'unfamiliar topic: what its events and metrics mean, how to read them, and ' +
+    'the gotchas (what a stall escalation is, why power says not root, why a ' +
+    'diff can be silent). No arguments lists everything; name one entry or a ' +
+    'playbook for the detail.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: 'A stream entry (power, dl, build, fs, vitals, gpu, os-app, net, history) or a playbook (triage, follow-a-trace, silent-stream, power-incident, watch-a-download)',
+      },
+    },
+    additionalProperties: false,
+  },
+  run: async ({ name }) => {
+    if (!name) {
+      const s = Object.entries(GUIDE.streams).map(([n, e]) => `  ${n.padEnd(10)} ${e.topics}`);
+      const p = Object.keys(GUIDE.playbooks).map((n) => `  ${n}`);
+      return `stream entries (stream_guide name=<entry>):\n${s.join('\n')}\n` +
+             `playbooks:\n${p.join('\n')}`;
+    }
+    if (GUIDE.streams[name]) return guideEntry([name, GUIDE.streams[name]]);
+    if (GUIDE.playbooks[name]) return `## ${name}\n${GUIDE.playbooks[name]}`;
+    return `no guide entry '${name}'. Known: ${[...Object.keys(GUIDE.streams), ...Object.keys(GUIDE.playbooks)].join(', ')}`;
+  },
+});
+
 // ------------------------------------------------------- MCP over stdio
 //
 // Newline-delimited JSON-RPC 2.0. Only the tools half of the protocol is
@@ -556,7 +607,7 @@ async function handle(msg) {
     const asked = params?.protocolVersion;
     return reply(id, {
       protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, prompts: {} },
       serverInfo: { name: 'super-log', version: '0.1.0' },
       instructions:
         `Log streams from the super-log bench at ${HUB}. Start with hub_status or ` +
@@ -564,7 +615,28 @@ async function handle(msg) {
         `topic and level. Use wait_for after triggering an action instead of sleeping. ` +
         `Those four read the hub's live ring, which is only minutes deep - for anything ` +
         `older, search_history reads the journal on disk (${JOURNAL}). ` +
+        `Before working with an unfamiliar topic (power.*, dl.*, fs.*, build.*...), ` +
+        `call stream_guide with its name - it explains the metrics, levels and gotchas. ` +
         `Never try to read every event: streams can produce thousands per second.`,
+    });
+  }
+  // The playbooks, served natively for clients that speak the prompts half
+  // of the protocol; stream_guide serves the same content as a tool for the
+  // clients that do not.
+  if (method === 'prompts/list') {
+    return reply(id, {
+      prompts: Object.keys(GUIDE.playbooks).map((name) => ({
+        name,
+        description: GUIDE.playbooks[name].split('.')[0],
+      })),
+    });
+  }
+  if (method === 'prompts/get') {
+    const text = GUIDE.playbooks[params?.name];
+    if (!text) return fail(id, -32602, `unknown prompt: ${params?.name}`);
+    return reply(id, {
+      description: text.split('.')[0],
+      messages: [{ role: 'user', content: { type: 'text', text } }],
     });
   }
   if (method === 'tools/list') {

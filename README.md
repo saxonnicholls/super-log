@@ -142,7 +142,14 @@ production box, a service that restarted without saying so.
 **Builds as events, not walls of text.** Wrap any build — cmake, clang, gcc,
 cargo, npm, xcodebuild, local or over ssh — and compiler diagnostics become
 WARN/ERROR rows with `file:line`, with one summary event carrying exit
-status, duration and counts.
+status, duration and counts. **Linking included**: GNU ld's `undefined
+reference` and `multiple definition` carry no severity word and would
+otherwise scroll past as INFO; they, Apple's `Undefined symbols` and
+`duplicate symbol`, lld, `collect2`, and the driver's own
+`clang: error: linker command failed` all land as ERROR. Debuggers ride the
+same rails: pipe a batch session through the tee —
+`gdb --batch -ex run -ex bt ./app 2>&1 | superlog --topic dbg.app --classify`
+(lldb likewise) — or tail gdb's `set logging` file like any other.
 
 **Massive downloads, watched.** A 70B model from Hugging Face is fifteen
 shards and half a day of `\r`-rewritten progress bars that exist only on the
@@ -170,10 +177,16 @@ A 1 GB / 4.8M-event journal searches in ~2.3 s.
 answers "what happened since I last looked", with a cursor that never misses
 or repeats an event.
 
-**An MCP server, so a coding agent can read the bench.** Six tools, and the
-shape of them matters: an agent's context is small and a firehose is not, so
-every tool filters first, caps its output, and returns one compact line per
-event.
+**An MCP server, so a coding agent can read the bench.** Seven tools, and
+the shape of them matters: an agent's context is small and a firehose is
+not, so every tool filters first, caps its output, and returns one compact
+line per event. The documentation is queryable too: `stream_guide` explains
+any capability in detail — what `power.*`'s metrics mean, why a `dl.*`
+stall escalates, why a diff can be silent — from
+[guide.json](sdk/js/packages/mcp/guide.json), and the same file's playbooks
+(triage, follow-a-trace, silent-stream…) are served as native MCP prompts.
+Every logging capability ships with an entry there, so an agent never has
+to guess what a topic means.
 
 | Tool               | For                                                                                      |
 | ------------------ | ---------------------------------------------------------------------------------------- |
@@ -183,6 +196,7 @@ event.
 | `search_logs`    | Find by text when you know the message but not the stream                                |
 | `search_history` | The on-disk journal — hours or days, for "what happened at 3am"                         |
 | `wait_for`       | Block until a matching event arrives, instead of sleeping and hoping                     |
+| `stream_guide`   | The bench's own manual: detailed per-capability docs and playbooks, fetched on demand    |
 
 ```sh
 npm run demo:mcp        # drives all six over stdio and prints what an agent sees
@@ -880,7 +894,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | ----------------- | ---------------------------------------------------------------------------------------------------- |
 | `hub/`          | `superlogd` - the one process everything meets at                                                  |
 | `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`              |
-| `tests/`        | 100 tests: the tools driven as subprocesses against a real hub                                       |
+| `tests/`        | 106 tests: the tools driven as subprocesses against a real hub                                       |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler                                            |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook                                             |
 | `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture                                |
