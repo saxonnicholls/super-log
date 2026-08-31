@@ -28,6 +28,17 @@ this bench could not answer unattended — run the installer once, then
 `npm run power -- --once` and compare against a hand-run
 `sudo powermetrics --samplers cpu_power -n 1`.
 
+**superlog-dl** — a download in flight as `metric` events: percent, bytes
+and rate (topic `dl.<host>.<label>`), a stall as an edge-triggered WARN
+hours before the tool's own patience runs out, and one verdict at the end.
+A transparent wrapper in superlog-build's mould — output, stdin and exit
+status untouched — that reads tqdm/hf, curl's meter, wget, or a bare NN%;
+`--watch` sums the destination file or directory instead, which is the
+honest aggregate for a many-shard Hugging Face pull and works even when a
+piped tool mutes its bar (superlog-tee cannot do this job: bars are
+\r-rewritten, not line-oriented). Verified against stand-in bars
+(`tests/dl.test.mjs`) and live against a real 25MB curl transfer.
+
 **superlog-bridge** — relay another hub's whole feed into this one,
 verbatim: same topics, same events, so nothing downstream can tell a
 bridged stream from a local one. `--ssh` tunnels to the remote hub's

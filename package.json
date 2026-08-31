@@ -59,7 +59,8 @@
     "cf": "node tailers/bin/superlog-cf.mjs",
     "stripe": "node tailers/bin/superlog-stripe.mjs",
     "power": "node tailers/bin/superlog-power.mjs",
-    "bridge": "node tailers/bin/superlog-bridge.mjs"
+    "bridge": "node tailers/bin/superlog-bridge.mjs",
+    "dl": "node tailers/bin/superlog-dl.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -82,7 +83,8 @@
     "superlog-cf": "tailers/bin/superlog-cf.mjs",
     "superlog-stripe": "tailers/bin/superlog-stripe.mjs",
     "superlog-power": "tailers/bin/superlog-power.mjs",
-    "superlog-bridge": "tailers/bin/superlog-bridge.mjs"
+    "superlog-bridge": "tailers/bin/superlog-bridge.mjs",
+    "superlog-dl": "tailers/bin/superlog-dl.mjs"
   },
   "license": "MIT"
 }
