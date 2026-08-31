@@ -511,6 +511,7 @@ npm run gpu                                 # this machine's GPU, watched
 npm run gpu -- --ssh trainer1               # ...or the box with the card in it
 npm run power                               # watts, thermals, top energy hogs (macOS)
 npm run power -- --once                     # one power reading, then exit
+npm run bridge -- --ssh otherbench          # another hub's whole feed, into this one
 npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 ```
 

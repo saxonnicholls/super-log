@@ -28,6 +28,14 @@ this bench could not answer unattended — run the installer once, then
 `npm run power -- --once` and compare against a hand-run
 `sudo powermetrics --samplers cpu_power -n 1`.
 
+**superlog-bridge** — relay another hub's whole feed into this one,
+verbatim: same topics, same events, so nothing downstream can tell a
+bridged stream from a local one. `--ssh` tunnels to the remote hub's
+loopback port, so neither hub ever listens on the network — the same
+posture as superlog-fleet. One direction only; bridging two hubs at each
+other is a feedback loop. Verified live: an event published into a second
+Mac's loopback hub arrived on this bench over the tunnel, byte for byte.
+
 ## v0.1.0 — first public release
 
 **2026-08-29**
