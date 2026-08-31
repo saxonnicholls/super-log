@@ -784,6 +784,13 @@ extra_hosts: ["host.docker.internal:host-gateway"]   # what the compose file doe
 host's network namespace, so `127.0.0.1` in the container really is the
 host's loopback and a loopback-bound hub is reachable directly.
 
+Either way, **no GUI ever runs in the container** — so there is no X11
+socket to mount and no Wayland or waypipe forwarding to configure. Only
+HTTP crosses the container boundary; the viewer runs natively where your
+eyes are. A Linux workload in Docker on a Mac is visualised by the native
+macOS viewer, which is the hub/viewer split doing exactly the job it was
+designed for.
+
 **A Raspberry Pi, or any other machine**, is the phone problem again — it
 cannot reach your loopback. Two answers, both already here and neither of
 which opens a port:
@@ -835,6 +842,13 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - **Hub + viewers:** macOS or Linux (POSIX phase 1), a C++17 compiler,
   CMake ≥ 3.16. Windows machines join as producers (SDKs, ssh tailer).
+- **Displays, on Linux:** the native viewer draws through GLFW, built here
+  for X11 — which a Wayland desktop also runs via XWayland, so it should
+  work there unchanged. Native Wayland output is a GLFW build switch
+  (`-DGLFW_BUILD_WAYLAND=ON` plus the wayland/xkbcommon dev packages), not
+  a code change. No Linux desktop has been on this bench, so treat the
+  first run of either as bring-up; the **web viewer** needs only a browser
+  and does not care what your compositor is.
 - **JS:** Node ≥ 18 (≥ 22 for journal, chain watcher and MCP).
   **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
   **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
