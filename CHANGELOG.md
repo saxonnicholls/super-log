@@ -58,6 +58,20 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**superlog-sys** — the machine's own life events, macOS (topic
+`sys.<host>`, started unconditionally by the demo beside `power`): crash
+reports and kernel panics parsed out of DiagnosticReports the moment they
+land — and from the recent past at startup, because a crash writes its
+report *before* the reboot that restarts the watcher; the previous
+shutdown cause once per boot, translated and ERROR when unclean; volume
+mounts, unmounts and renames via one long-lived `diskutil activity` child
+(a rename moves every path on the volume, which is how a 100GB write died
+on this bench recorded by nothing); and sleep/wake. First live run on the
+machine it was written on surfaced an unclean shutdown (cause -108) and 38
+crashes from the preceding 72 hours that nobody had read. Verified live
+and against synthetic reports (`tests/sys.test.mjs`); the Linux
+counterpart is listed under Future directions.
+
 **Link failures are errors now.** GNU ld's `undefined reference` and
 `multiple definition` verdicts carry no severity word, so they landed as
 INFO — a failed link nobody sees, on the tool whose whole job is

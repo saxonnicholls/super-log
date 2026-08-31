@@ -25,6 +25,12 @@
       "read": "Hunks of one save share a trace with their 'modified' anchor - query by trace for the whole edit. fields.change is created|modified|deleted|diff|burst.",
       "gotchas": "Idempotent by content hash: a rewrite with identical bytes publishes NOTHING, so silence after a save can mean no real change. fields.undiffable = binary|big|budget explains a modified event with no hunks."
     },
+    "sys": {
+      "topics": "sys.<host>",
+      "what": "The machine's own life events, macOS: crash reports and kernel panics parsed from DiagnosticReports (process, exception, signal), resource diagnostics, the previous shutdown cause once per boot, volume mount/unmount/RENAME, and sleep/wake.",
+      "read": "A crash is ERROR, a panic CRITICAL, a resource diagnostic WARN. 'previous shutdown' at ERROR means the machine did not shut down cleanly - the cause code is translated in the message. A volume 'renamed' WARN means every path on that volume just moved: correlate it against writes that died at the same moment. Wake events explain gaps in every other stream.",
+      "gotchas": "Reports newer than --backfill (default 1h) are published at startup because a crash lands its report BEFORE the reboot; do not treat a startup burst as fresh crashes - check fields.at for when each actually happened. 'unreadable' WARN means system reports exist that this user cannot open (needs _analyticsusers membership)."
+    },
     "vitals": {
       "topics": "host.<name>.vitals",
       "what": "Disk, memory, CPU load per host, local or over ssh. Readings are DEBUG metric events (disk.used_pct, mem.used_pct, load.per_core); threshold crossings are edge-triggered WARN/ERROR with recovery announced.",

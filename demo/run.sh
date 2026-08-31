@@ -238,6 +238,12 @@ if have node; then
     if [ "$(uname -s)" = "Darwin" ]; then
         start "power.$(hostname -s 2>/dev/null || echo local)" \
             node tailers/bin/superlog-power.mjs
+        # The machine's own life events - crashes, panics, shutdown causes,
+        # volume renames, sleep/wake. Also NOT optional on macOS: this bench
+        # crashed four times with the evidence sitting unread in
+        # DiagnosticReports, and its last shutdown cause was -108.
+        start "sys.$(hostname -s 2>/dev/null || echo local)" \
+            node tailers/bin/superlog-sys.mjs
     fi
 
     # Well-known app logs on THIS machine (postgres, nginx, redis, ...):

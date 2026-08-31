@@ -108,11 +108,27 @@ await call('search_history', { since: '15m', limit: 3 },
            'the on-disk journal - needs superlog-journal to have been running');
 await call('wait_for', { contains: 'tick', timeout_ms: 5000 },
            'block until it happens, instead of sleeping and hoping');
+await call('stream_guide', {},
+           'the bench documents itself - what can an agent ask about?');
+await call('stream_guide', { name: 'power' },
+           'one capability in detail: metrics, levels and gotchas, on demand');
+
+// The prompts half of the protocol: the same playbooks, served natively.
+{
+  const pl = await rpc('prompts/list', {});
+  const prompts = pl.result?.prompts ?? [];
+  console.log(`\n\x1b[1mprompts/list\x1b[0m  ${prompts.length} playbook(s): ` +
+              prompts.map((p) => p.name).join(', '));
+  const pg = await rpc('prompts/get', { name: prompts[0]?.name ?? 'triage' });
+  const ptext = pg.result?.messages?.[0]?.content?.text ?? '';
+  console.log(`\x1b[1mprompts/get ${prompts[0]?.name}\x1b[0m  ${ptext.slice(0, 120)}…`);
+  if (!ptext) failures += 1;
+}
 
 // Every tool this server exposes should appear above; if one is added and
-// not demonstrated, say so rather than quietly covering five of six.
+// not demonstrated, say so rather than quietly covering six of seven.
 const shown = new Set(['hub_status', 'list_streams', 'tail_logs', 'search_logs',
-                       'search_history', 'wait_for']);
+                       'search_history', 'wait_for', 'stream_guide']);
 const missed = tools.map((t) => t.name).filter((n) => !shown.has(n));
 if (missed.length) {
   console.log(`\n\x1b[33mnot demonstrated: ${missed.join(', ')}\x1b[0m`);

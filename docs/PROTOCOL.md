@@ -87,6 +87,7 @@ host-side tailer scraping the same device:
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
 | `power.<host>`        | CPU package watts, thermal pressure, fan RPM, die temperatures, aggregate CPU and the top energy consumers, as `metric` events plus edge-triggered crossings; macOS |
 | `dl.<host>.<label>`   | a download in flight: percent, bytes and rate as `metric` events, an edge-triggered WARN on stall, and one verdict when it ends |
+| `sys.<host>`          | the machine's own life events: crash reports (ERROR) and kernel panics (CRITICAL) parsed from DiagnosticReports, the previous shutdown cause once per boot, volume mounts/unmounts/renames, sleep/wake; macOS |
 | `alert.<rule>`        | an alert rule that fired, so alerts sit beside their cause |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.

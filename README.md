@@ -41,7 +41,7 @@ super-log converges all of it on one process and one screen:
 | **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java and Kotlin (`java.util.logging`), Swift, Fortran, POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
-| **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
+| **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
 | **network and DNS** | an HTTP/S logging proxy, WebSocket frames, a syslog and raw TCP/UDP inlet, DNS records with TLS expiry, and listening ports with their processes |
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
 | **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract |
@@ -167,6 +167,19 @@ samples CPU package power, die temperatures, fan RPM, aggregate CPU as one
 number, and the top energy consumers — because a runaway process announces
 itself through the fans long after a chart would have caught it (see the
 `power` row below for the incident that earned this).
+
+**The machine's own life events.** Crash reports and kernel panics parsed
+out of DiagnosticReports — process, exception, signal — the moment they
+land (and from the recent past at startup, because a crash writes its
+report *before* the reboot that restarts the watcher); the previous
+shutdown cause once per boot, translated (`cause -128: uncontrolled power
+loss`) and ERROR when unclean; volume mounts, unmounts and **renames** — a
+rename moves every path on the volume, which is how long writes die with
+nothing recording why; and sleep/wake, which explains every gap in every
+other stream. This bench crashed four times with all of that evidence
+sitting unread; the first live run surfaced an unclean shutdown and 38
+crashes from the preceding three days. The demo starts it unconditionally
+on macOS, beside `power`.
 
 **History, not just the last few minutes.** The journal writes every frame
 verbatim to disk; `search` reads it back with the same filters as the live
@@ -550,6 +563,8 @@ npm run gpu                                 # this machine's GPU, watched
 npm run gpu -- --ssh trainer1               # ...or the box with the card in it
 npm run power                               # watts, thermals, top energy hogs (macOS)
 npm run power -- --once                     # one power reading, then exit
+npm run sys                                 # crashes, panics, shutdown causes, volumes (macOS)
+npm run sys -- --once --backfill 72h        # what has this machine suffered lately?
 npm run bridge -- --ssh otherbench          # another hub's whole feed, into this one
 npm run dl -- -- curl -LO https://host/model.safetensors   # a download, with progress
 npm run dl -- --watch ~/models --size 140GB -- hf download org/model
@@ -964,6 +979,13 @@ test that CI, the Docker image and your terminal all run identically.
 
 Deliberately not built yet, and the reasoning matters as much as the list:
 
+- **`superlog-sys` for Linux/Ubuntu.** The macOS one reads
+  DiagnosticReports, `diskutil activity` and `kern.sleeptime`; the Linux
+  counterpart is `coredumpctl` and `journalctl -k` for crashes and OOM
+  kills, udev/udisks events for volumes, and `systemd-logind` for
+  suspend/resume. Same topic (`sys.<host>`), same event shapes, so the
+  viewers and guide need not care which OS suffered. Waiting on a Linux
+  desktop on the bench to verify against, per the house rule.
 - **A Grafana / Loki / OTLP forwarder.** The obvious ask is "integrate
   Grafana", and the answer is a *forwarder*, not integration. Teaching the
   hub to be a Prometheus target or a Grafana datasource would make it depend

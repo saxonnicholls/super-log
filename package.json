@@ -60,7 +60,8 @@
     "stripe": "node tailers/bin/superlog-stripe.mjs",
     "power": "node tailers/bin/superlog-power.mjs",
     "bridge": "node tailers/bin/superlog-bridge.mjs",
-    "dl": "node tailers/bin/superlog-dl.mjs"
+    "dl": "node tailers/bin/superlog-dl.mjs",
+    "sys": "node tailers/bin/superlog-sys.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -84,7 +85,8 @@
     "superlog-stripe": "tailers/bin/superlog-stripe.mjs",
     "superlog-power": "tailers/bin/superlog-power.mjs",
     "superlog-bridge": "tailers/bin/superlog-bridge.mjs",
-    "superlog-dl": "tailers/bin/superlog-dl.mjs"
+    "superlog-dl": "tailers/bin/superlog-dl.mjs",
+    "superlog-sys": "tailers/bin/superlog-sys.mjs"
   },
   "license": "MIT"
 }
