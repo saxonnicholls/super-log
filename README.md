@@ -41,7 +41,7 @@ super-log converges all of it on one process and one screen:
 | **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java and Kotlin (`java.util.logging`), Swift, Fortran, POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
-| **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Docker containers; any remote host over ssh |
+| **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
 | **network and DNS** | an HTTP/S logging proxy, WebSocket frames, a syslog and raw TCP/UDP inlet, DNS records with TLS expiry, and listening ports with their processes |
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
 | **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract |
@@ -137,6 +137,23 @@ production box, a service that restarted without saying so.
 cargo, npm, xcodebuild, local or over ssh — and compiler diagnostics become
 WARN/ERROR rows with `file:line`, with one summary event carrying exit
 status, duration and counts.
+
+**Massive downloads, watched.** A 70B model from Hugging Face is fifteen
+shards and half a day of `\r`-rewritten progress bars that exist only on the
+terminal that started them — and tqdm, curl and wget all mute or reshape
+those bars the moment their output is a pipe, so `tee` sees nothing. Wrap
+the fetch in `superlog-dl` and percent, bytes and rate become metric events;
+or point `--watch` at the destination directory and progress is measured at
+the filesystem, which no tool can mute and which is the only honest
+aggregate when every shard resets its own bar. The event that matters most
+is the **stall**: no bytes for 30 seconds is a WARN on the bench — hours
+before the fetch's own patience runs out at 97% of 140GB.
+
+**Watts, thermals, and who is drawing them.** On macOS every bench run
+samples CPU package power, die temperatures, fan RPM, aggregate CPU as one
+number, and the top energy consumers — because a runaway process announces
+itself through the fans long after a chart would have caught it (see the
+`power` row below for the incident that earned this).
 
 **History, not just the last few minutes.** The journal writes every frame
 verbatim to disk; `search` reads it back with the same filters as the live
@@ -519,9 +536,11 @@ npm run build -- --ssh web1 -- 'cd /srv/app && cargo build --release'
 
 ### Infrastructure watches
 
-These three diff a snapshot rather than streaming, so the first poll is a
-silent baseline and only *changes* are reported — a watcher that announces
-everything it sees teaches you to ignore it.
+`dns` and `ports` diff a snapshot rather than streaming, so the first poll
+is a silent baseline and only *changes* are reported — a watcher that
+announces everything it sees teaches you to ignore it. The rest publish
+readings as DEBUG `metric` events and raise their voice only on
+edge-triggered crossings.
 
 | Watch      | Publishes                                                                                        | Notable levels                                                                                                                                                                                                                                                                                                                                                                           |
 | ---------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -530,11 +549,32 @@ everything it sees teaches you to ignore it.
 | `vitals` | `host.<name>.vitals` — disk, memory, CPU and load, macOS/Linux/Windows                        | Readings are DEBUG`metric` events (always there for a chart, out of a default INFO view); threshold crossings are **edge-triggered** WARN/ERROR, so 85% says so once rather than every poll, and recovery says so too. Read-only filesystems are skipped: a macOS simulator runtime is 98% full by design, and alerting on it produced 25 false ERRORs before this rule existed. |
 | `build`  | `build.<host>.<label>` — one event per diagnostic, one verdict                                | Compiler errors are ERROR with`file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships.                                                                                                              |
 | `power`  | `power.<host>` — CPU package watts, thermal pressure, fan RPM, CPU/GPU die temperatures, aggregate CPU as one number, and the top energy consumers attached to every sample; macOS | Exists because this machine sat at **1258% aggregate CPU** — eleven saturated cores, one VS Code extension — unnoticed until the fans got loud and kernel_task began throttling, and has crashed under runaway draw. "Too much" is machine-relative, so three detectors: absolute watt caps if you set them, sustained draw above the machine's own learned baseline, and the machine's own verdict (thermal pressure / CPU speed limit), which needs no tuning at all. Watts require root — `sudo scripts/install-power-tailer.sh` grants exactly one pinned powermetrics invocation, nothing else — and without root it still publishes thermals, aggregate CPU and top processes, each reading marked `power_unavailable: not root`. **The demo starts it unconditionally on macOS.** |
+| `dl`     | `dl.<host>.<label>` — a download in flight: percent, bytes and rate as `metric` events, plus one verdict when it ends                                              | Built for the multi-hundred-gigabyte **Hugging Face** era: tqdm bars are `\r`-rewritten, mute themselves in pipes, and reset per shard, so beside reading the bar it can `--watch` the destination itself, which no tool can mute. A **stall** — no movement for 30s — is an edge-triggered WARN hours before the fetch's own patience runs out, and recovery says so too. A wrapper as transparent as `build`: same output, same stdin, same exit status. |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
 record changed, not that a laptop moved networks and hit a different cache.
 `build` is transparent: it prints the output and exits with the build's own
 status, so it can sit inside a Makefile or a CI step unchanged.
+
+`dl` wraps a fetch the way `build` wraps a compiler — output, stdin and
+exit status untouched — and it exists for the downloads everyone now does:
+pulling a large model or dataset from **Hugging Face**, shard by shard, for
+hours.
+
+```sh
+npm run dl -- -- curl -LO https://huggingface.co/Qwen/Qwen2.5-7B/resolve/main/model-00001-of-00004.safetensors
+npm run dl -- --watch ~/.cache/huggingface --size 140GB -- hf download meta-llama/Llama-3.1-70B
+npm run dl -- --watch /data/corpus --size 100GB     # a fetch some other process owns
+```
+
+The first form reads the tool's own bar (tqdm/`hf`, curl's meter, wget, or
+any bare `NN%`). The second is the one to reach for on a big multi-shard
+pull: `hf download` runs one tqdm bar per shard and each resets to 0%, so
+`--watch` measures the destination directory itself every tick —
+symlink-aware, so a Hugging Face cache of blobs and snapshot links counts
+each byte once — and `--size` turns that into the true overall percentage.
+The third form needs no command at all: it follows a download some other
+process owns, and exits when the size is reached.
 
 ## Whole fleets
 
@@ -555,6 +595,20 @@ commands twice. Describe them once ([tailers/fleet.example.json](tailers/fleet.e
 `name` is the topic name, so `os.api` reads better at 3am than
 `os.ubuntu-4gb-nbg1-1`. Everything is **pulled** over ssh — no agent, no open
 port, no route from production to the hub.
+
+### Many benches: superlog-bridge
+
+A hub rebroadcasts everything it ingests on `/ws`, so hubs compose:
+
+```sh
+npm run bridge -- --ssh otherbench
+```
+
+subscribes to another machine's **loopback** hub over an ssh tunnel and
+re-ingests its whole feed here, verbatim — same topics, same bytes, so
+nothing downstream can tell a bridged stream from a local one. Neither hub
+ever listens on the network. One direction only: two hubs bridged at each
+other is a feedback loop, so pick one bench to be *the* bench.
 
 ## History
 
@@ -804,7 +858,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | ----------------- | ---------------------------------------------------------------------------------------------------- |
 | `hub/`          | `superlogd` - the one process everything meets at                                                  |
 | `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`              |
-| `tests/`        | 75 tests: the tools driven as subprocesses against a real hub                                        |
+| `tests/`        | 100 tests: the tools driven as subprocesses against a real hub                                       |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler                                            |
 | `sdk/rust/`     | `super-log` crate: core, `tracing` layer, panic hook                                             |
 | `sdk/python/`   | `superlog`: client, `logging` handler, excepthook, locals capture                                |
@@ -813,7 +867,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace                                                           |
 | `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets                                                      |
 | `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp`                                      |
-| `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy |
+| `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy, power, downloads, hub bridge |
 | `viewer/imgui/` | native viewer                                                                                        |
 | `viewer/react/` | web viewer                                                                                           |
 | `demo/`         | the multi-client clock demo: one command, whole bench                                                |
@@ -842,6 +896,13 @@ against a pty; and a 20-minute Binance soak that found the hub's replay ring
 holding 66 MB for one topic — `leaks(1)` confirmed no leak, the ring was
 bounded by chunk count rather than bytes, and it now peaks at 30 MB under
 the same load.
+
+And since then: the power tailer in full root mode on two real Macs (a
+Mac Pro and a Ventura iMac), its wattage cross-checked against a hand-run
+`powermetrics`; the hub bridge relaying a second machine's loopback hub
+onto this bench byte for byte over ssh; and `superlog-dl` against both a
+live curl transfer and a real 100 GB Hugging Face dataset fetch, watched
+overnight from the machine next to it.
 
 **CI is green on every job**, first run, which is worth stating precisely
 because it verifies things this bench cannot. It builds from a clean
