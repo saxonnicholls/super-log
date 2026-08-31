@@ -26,7 +26,7 @@ always in the interleaving.
 super-log converges all of it on one process and one screen:
 
 ```
- apps, 9 languages   ┐
+ apps, 12+ languages ┐
  GPU and graphics    │
  devices and boards  │                                     ┌─▶ native viewer (ImGui)
  machines, services  ├── POST NDJSON ──▶  superlogd :7333 ─┼─▶ web viewer (React)
@@ -38,7 +38,7 @@ super-log converges all of it on one process and one screen:
 
 | Group | What is in it |
 |---|---|
-| **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java and Kotlin (`java.util.logging`), Swift, Fortran, POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **apps** | C++ (spdlog sink and native `SN_LOG`), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
@@ -69,18 +69,22 @@ error, a shell test — plus the GPU refusing an allocation four times the size
 of the card. Python's row carries the local variables from the failing frame,
 which is the part you would otherwise be adding a print statement to find.*
 
-**Your apps need almost nothing.** Nine dependency-free SDKs: header-only
+**Your apps need almost nothing.** Twelve dependency-free SDKs: header-only
 C++ (both a **spdlog** sink and a native `snicholls::log` one), a Rust
 crate with an optional `tracing` layer, Python plugging into stdlib
 `logging`, Go with a `log/slog` handler, Java with a `java.util.logging`
-bridge (and Kotlin), Swift, Fortran over raw POSIX sockets, a `sh`
-one-liner for scripts, and one JS client for React Native, the browser and
-Node — `patchConsole: true` and every `console.log` is on the bench.
+bridge (Kotlin and Scala ride it, one import, zero glue), Swift, Fortran
+over raw POSIX sockets, OCaml over the same raw sockets, Haskell needing
+only GHC's boot libraries and `curl`, Ruby from the stdlib — with a
+drop-in `::Logger` adapter, which makes the whole **Rails** story one
+`config.logger` assignment — a `sh` one-liner for scripts, and one JS
+client for React Native, the browser and Node — `patchConsole: true` and
+every `console.log` is on the bench.
 
-Five of them hook the logging framework the language already has — the
-spdlog sink, `logging.Handler`, `slog.Handler`, `java.util.logging.Handler`
-and `patchConsole` — so everything a program *already* logs reaches the
-bench without a single call site changing.
+Six of them hook the logging framework the language already has — the
+spdlog sink, `logging.Handler`, `slog.Handler`, `java.util.logging.Handler`,
+Ruby's `::Logger` adapter and `patchConsole` — so everything a program
+*already* logs reaches the bench without a single call site changing.
 
 ![One tick unfolding across four events](assets/one-tick-unfolding.png)
 
@@ -899,6 +903,9 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   first run of either as bring-up; the **web viewer** needs only a browser
   and does not care what your compositor is.
 - **JS:** Node ≥ 18 (≥ 22 for journal, chain watcher and MCP).
+  **Ruby:** ≥ 3.0, stdlib only (Rails via the `::Logger` adapter).
+  **OCaml:** ≥ 4.14 (`ocamlc -I +unix unix.cma`). **Haskell:** GHC ≥ 9,
+  boot libraries plus `curl`. **Scala:** ≥ 3, riding the Java SDK.
   **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
   **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
   **Swift:** ≥ 5.9, SwiftPM. **Fortran:** gfortran or any compiler with
@@ -929,6 +936,9 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `sdk/java/`     | `SuperLog`: client, `java.util.logging` bridge, Kotlin notes                                     |
 | `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace                                                           |
 | `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets                                                      |
+| `sdk/ocaml/`    | `superlog.ml`: client over Unix sockets, mode from `SUPERLOG_MODE`                                 |
+| `sdk/haskell/`  | `SuperLog.hs`: GHC boot libraries + curl, mode compiled in via `-DDEVELOPMENT`                     |
+| `sdk/ruby/`     | `superlog.rb`: stdlib client + the `::Logger` adapter Rails plugs into                             |
 | `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp`                                      |
 | `tailers/`      | adb, simctl, OS logs, files, services, docker, ssh, fleet, chain, journal, search, replay, net proxy, power, downloads, hub bridge |
 | `viewer/imgui/` | native viewer                                                                                        |

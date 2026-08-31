@@ -105,7 +105,7 @@ until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
 done
 export SUPER_LOG_URL="$HUB"
 
-WANT="${*:-cpp rust go python java swift fortran shell node}"
+WANT="${*:-cpp rust go python java swift fortran shell node ruby ocaml haskell scala}"
 echo "verify-sdks: hub on :$PORT, checking:$(printf ' %s' $WANT)"
 
 for lang in $WANT; do
@@ -164,6 +164,31 @@ fortran)
 shell)
     if ! have curl; then skipping shell "no curl"
     else check shell shell.clock sh demo/shell/clock.sh; fi ;;
+
+ruby)
+    if ! have ruby; then skipping ruby "no ruby"
+    else check ruby ruby.clock env SUPERLOG_MODE=development ruby demo/ruby/clock.rb; fi ;;
+
+ocaml)
+    if ! have ocamlc; then skipping ocaml "no ocamlc"
+    elif mkdir -p "$TMP/ml" && cp sdk/ocaml/superlog.ml demo/ocaml/clock.ml "$TMP/ml/" &&
+         (cd "$TMP/ml" && ocamlc -I +unix unix.cma superlog.ml clock.ml -o clock) >/dev/null 2>&1; then
+        check ocaml ocaml.clock env SUPERLOG_MODE=development "$TMP/ml/clock"
+    else skipping ocaml "ocamlc build failed"; fi ;;
+
+haskell)
+    if ! have ghc; then skipping haskell "no ghc"
+    elif ghc -DDEVELOPMENT -isdk/haskell -outputdir "$TMP/hs" -o "$TMP/clock_hs" \
+            demo/haskell/clock.hs >/dev/null 2>&1; then
+        check haskell haskell.clock "$TMP/clock_hs"
+    else skipping haskell "ghc build failed"; fi ;;
+
+scala)
+    if ! have scalac || ! have javac; then skipping scala "no scalac or javac"
+    elif javac -d "$TMP/scala" $(find sdk/java -name '*.java') >/dev/null 2>&1 &&
+         scalac -classpath "$TMP/scala" -d "$TMP/scala" demo/scala/Clock.scala >/dev/null 2>&1; then
+        check scala scala.clock sh demo/scala/run.sh "$TMP/scala"
+    else skipping scala "scala build failed"; fi ;;
 
 node)
     if ! have node; then skipping node "no node"

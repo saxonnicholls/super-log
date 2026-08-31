@@ -158,7 +158,7 @@ fi
 # shell and leave the clock it started running.
 
 SL_TMP="${TMPDIR:-/tmp}"
-for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell}; do
+for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell ruby scala haskell ocaml}; do
     case "$lang" in
     go)
         if ! have go; then skip "go.clock" "no go toolchain"
@@ -197,6 +197,27 @@ for lang in ${SUPER_LOG_LANGS:-go python java swift fortran shell}; do
         if [ ! -f demo/shell/clock.sh ]; then skip "shell.clock" "demo/shell/clock.sh missing"
         elif ! have curl; then skip "shell.clock" "no curl"
         else start "shell.clock" sh demo/shell/clock.sh; fi ;;
+    ruby)
+        if ! have ruby; then skip "ruby.clock" "no ruby"
+        else SUPERLOG_MODE=development start "ruby.clock" ruby demo/ruby/clock.rb; fi ;;
+    scala)
+        if ! have scalac || ! have javac; then skip "scala.clock" "no scalac (brew install scala)"
+        elif javac -d "$SL_TMP/sl_scala" $(find sdk/java -name '*.java') >/dev/null 2>&1 &&
+             scalac -classpath "$SL_TMP/sl_scala" -d "$SL_TMP/sl_scala" demo/scala/Clock.scala >/dev/null 2>&1; then
+            start "scala.clock" sh demo/scala/run.sh "$SL_TMP/sl_scala"
+        else skip "scala.clock" "scala build failed"; fi ;;
+    haskell)
+        if ! have ghc; then skip "haskell.clock" "no ghc (brew install ghc)"
+        elif ghc -DDEVELOPMENT -isdk/haskell -outputdir "$SL_TMP/sl_hs" -o "$SL_TMP/sl_clock_hs" \
+                demo/haskell/clock.hs >/dev/null 2>&1; then
+            start "haskell.clock" "$SL_TMP/sl_clock_hs"
+        else skip "haskell.clock" "ghc build failed"; fi ;;
+    ocaml)
+        if ! have ocamlc; then skip "ocaml.clock" "no ocamlc (brew install ocaml)"
+        elif mkdir -p "$SL_TMP/sl_ml" && cp sdk/ocaml/superlog.ml demo/ocaml/clock.ml "$SL_TMP/sl_ml/" &&
+             (cd "$SL_TMP/sl_ml" && ocamlc -I +unix unix.cma superlog.ml clock.ml -o clock) >/dev/null 2>&1; then
+            SUPERLOG_MODE=development start "ocaml.clock" "$SL_TMP/sl_ml/clock"
+        else skip "ocaml.clock" "ocamlc build failed"; fi ;;
     *) skip "$lang" "not a client this repo ships" ;;
     esac
 done

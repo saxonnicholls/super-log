@@ -58,6 +58,22 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Four more languages: Ruby (and Rails), OCaml, Haskell, Scala.** Ruby
+joins the dependency-free SDKs — stdlib only, with a drop-in `::Logger`
+adapter that makes the Rails story one `config.logger` assignment. OCaml
+speaks the wire over the Unix library and nothing else, mode from
+`SUPERLOG_MODE` with no default; Haskell uses GHC's boot libraries plus
+`curl` (the shell producer's honest bargain), mode compiled in via
+`-DDEVELOPMENT`/`-DPRODUCTION` where neither-or-both refuses to compile.
+Scala needs no SDK at all and the demo proves it: the Java client, one
+import, zero glue — the Kotlin story (Scala ≥ 3.5 retired the classic
+runner, so `demo/scala/run.sh` launches the compiled clock with plain
+java plus the Scala runtime jars). All four clocks are wired into the
+demo launcher, `verify-sdks.sh` and `npm run demo:<lang>`. **Verified
+live against the hub: Ruby, OCaml and Scala**; the Haskell clock is
+written to the same pattern and verifies the moment a ghc lands on this
+bench (its 2GB bottle failed to download on the first try).
+
 **superlog-gas** — operational key balances with the alarm built in
 (topic `gas.<chain>`): the keeper or oracle that runs out of gas stops a
 production system as surely as a crashed server, and fails politely.
