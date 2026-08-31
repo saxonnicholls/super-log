@@ -83,7 +83,10 @@ const INTEL_DOC = `<?xml version="1.0" encoding="UTF-8"?>
   <dict>
     <key>fan</key><real>1878.5</real>
     <key>cpu_die</key><real>67.0</real>
+    <key>cpu_die_fan_target</key><real>0.0</real>
     <key>gpu_die</key><real>59.5</real>
+    <key>gpu_die_fan_target</key><real>0.0</real>
+    <key>simulated_cpu_thermal_level</key><integer>0</integer>
   </dict>
 </dict>
 </plist>`;
@@ -173,7 +176,10 @@ describe('superlog-power', { skip: !darwin }, () => {
     assert.equal(metric(evs, 'power.package_w')?.metric.value, 187.25);
     assert.equal(metric(evs, 'power.cpu_die_c')?.metric.value, 67);
     assert.equal(metric(evs, 'power.gpu_die_c')?.metric.value, 59.5);
-    assert.equal(metric(evs, 'power.fan_rpm')?.metric.value, 1879);
+    const fan = metric(evs, 'power.fan_rpm');
+    assert.equal(fan?.metric.value, 1879);
+    // The *_fan_target setpoints must not appear as dead fans beside it.
+    assert.equal(fan.fields.fans, '1879');
 
     // Aggregate CPU is ONE number, from ps, and it is the incident's number.
     assert.equal(metric(evs, 'power.cpu_pct')?.metric.value, 1258);

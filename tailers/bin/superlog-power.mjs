@@ -361,6 +361,9 @@ function extract(doc) {
     const huntFans = (node, depth = 0) => {
       if (!node || typeof node !== 'object' || depth > 3) return;
       for (const [k, v] of Object.entries(node)) {
+        // cpu_die_fan_target and the simulated_* keys are setpoints, not
+        // readings: a 0 rpm "fan" from either would chart as a dead fan.
+        if (/target|simulated/i.test(k)) continue;
         if (/fan/i.test(k)) {
           const rpm = num(v) ?? dig(v, /rpm|speed|actual/i);
           if (rpm !== undefined) fans.push(rpm);
