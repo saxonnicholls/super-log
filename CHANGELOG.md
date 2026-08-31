@@ -58,6 +58,18 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Real-time file diffs.** `superlog-watch --diff` answers "which LINES"
+rather than "which file": one event per hunk with the removed and added
+lines together, every hunk of one save sharing a `trace` with its
+"modified" anchor, so `/recent?trace=` returns the whole edit as one
+story. Idempotent by content hash — a rewrite that changes no bytes (an
+editor's touch, an atomic re-save) publishes nothing at all, which a bare
+mtime watcher cannot promise. The diff is patience-flavoured (unique-line
+anchors, so a moved brace does not smear an edit across the file), held
+snapshots are bounded (`--diff-max` per file, `--diff-budget` overall),
+and binaries or oversized files are tracked by hash alone and say so.
+Verified under `tests/watch.test.mjs` against a real hub.
+
 **superlog-bridge** — relay another hub's whole feed into this one,
 verbatim: same topics, same events, so nothing downstream can tell a
 bridged stream from a local one. `--ssh` tunnels to the remote hub's

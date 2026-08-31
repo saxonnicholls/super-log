@@ -149,4 +149,55 @@ describe('superlog-watch', () => {
     assert.equal(recs.length, 1);
     assert.equal((await recent(hub.url, { topic })).length, 1);
   });
+
+  it('--diff: the changed lines once, trace-correlated, and a no-op rewrite never', async () => {
+    const { dir, topic } = await watcher('diff', ['--diff']);
+    const file = join(dir, 'config.yaml');
+
+    writeFileSync(file, 'name: bench\nport: 7333\nmode: dev\n');
+    await waitFor(hub.url, change('created'), { topic });
+
+    // One line edited: one hunk with BOTH sides in it, sharing a trace with
+    // its modified anchor, so /recent?trace= returns the edit whole.
+    writeFileSync(file, 'name: bench\nport: 9999\nmode: dev\n');
+    let recs = await waitFor(hub.url, change('diff'), { topic });
+    const hunk = of(recs, 'diff')[0];
+    assertValidEvent(hunk, topic);
+    assert.match(hunk.msg, /^config\.yaml:2\n/);
+    assert.match(hunk.msg, /- port: 7333/);
+    assert.match(hunk.msg, /\+ port: 9999/);
+    const anchor = of(recs, 'modified')[0];
+    assert.ok(anchor.trace && anchor.trace === hunk.trace, 'hunk and anchor must share a trace');
+    assert.equal(anchor.fields.hunks, '1');
+
+    // A rewrite with identical bytes settles alone and must publish NOTHING
+    // - then two separated edits in one save must still arrive, as TWO
+    // hunks, proving the silence was judgement rather than death.
+    writeFileSync(file, 'name: bench\nport: 9999\nmode: dev\n');
+    await new Promise((r) => setTimeout(r, 500));            // its own debounce window
+    writeFileSync(file, 'name: BENCH\nport: 9999\nmode: prod\n');
+    recs = await waitFor(hub.url, (rs) => of(rs, 'diff').length >= 3, { topic });
+    assert.equal(of(recs, 'modified').length, 2,
+      'a rewrite with identical bytes became a modified event');
+    const second = of(recs, 'modified')[1];
+    assert.equal(second.fields.hunks, '2');
+    const hunks = of(recs, 'diff').slice(1);
+    assert.match(hunks[0].msg, /- name: bench/);
+    assert.match(hunks[0].msg, /\+ name: BENCH/);
+    assert.match(hunks[1].msg, /- mode: dev/);
+    assert.match(hunks[1].msg, /\+ mode: prod/);
+    assert.equal(hunks[0].trace, hunks[1].trace, 'hunks of one save must share a trace');
+    assert.notEqual(hunks[0].trace, hunk.trace, 'different saves must not share one');
+  });
+
+  it('--diff refuses to pretend about binaries', async () => {
+    const { dir, topic } = await watcher('diffbin', ['--diff']);
+    const file = join(dir, 'blob.bin');
+    writeFileSync(file, Buffer.from([0, 1, 2, 3]));
+    await waitFor(hub.url, change('created'), { topic });
+    writeFileSync(file, Buffer.from([0, 9, 9, 9]));
+    const recs = await waitFor(hub.url, change('modified'), { topic });
+    assert.equal(of(recs, 'modified')[0].fields.undiffable, 'binary');
+    assert.equal(of(recs, 'diff').length, 0, 'a binary produced line hunks');
+  });
 });

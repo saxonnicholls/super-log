@@ -73,7 +73,7 @@ host-side tailer scraping the same device:
 | `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each |
 | `git.<host>.<repo>`   | a checkout: commits, branch switches, rewritten history, tags, conflicts |
 | `github.<owner>.<repo>`| a GitHub repository: pushes, CI runs, pull requests, issues, releases |
-| `fs.<host>.<dir>`     | a directory tree: files created, modified and deleted |
+| `fs.<host>.<dir>`     | a directory tree: files created, modified and deleted; with `--diff`, one event per changed hunk (removed and added lines together), the hunks of one save sharing a `trace` with their modified event |
 | `tee.<host>`          | anything piped through superlog-tee; `--topic` names it something better |
 | `ws.<host>.<stream>`  | frames on a WebSocket, with a periodic frames/s `metric` |
 | `serial.<host>.<port>`| a board's serial console; ESP-IDF, Zephyr and bracketed levels recognised |
