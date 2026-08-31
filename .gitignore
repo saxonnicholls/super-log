@@ -42,6 +42,9 @@ gas.json
 # Alert rules: may carry a webhook URL, which is a credential
 alerts.json
 
+# Lake (Lean) build artefacts
+.lake/
+
 # Fortran build artefacts
 *.mod
 *.smod

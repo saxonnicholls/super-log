@@ -1,0 +1,14 @@
+info: sllean: no previous manifest, creating one from scratch
+info: toolchain not updated; already up-to-date
+✔ [2/8] Built Sllean.Basic (596ms)
+✔ [3/8] Built Sllean (483ms)
+✔ [4/8] Built Main (504ms)
+✖ [6/8] Building Sllean.Extra (513ms)
+error: Sllean/Extra.lean:2:20: Type mismatch
+  "no"
+has type
+  String
+but is expected to have type
+  Nat
+warning: Sllean/Basic.lean:7:4: declaration uses 'sorry'
+error: build failed

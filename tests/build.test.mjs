@@ -205,13 +205,19 @@ describe('superlog-build', () => {
     assert.equal(diags.find((e) => e.msg.includes('332148')).level, 'ERROR');
   });
 
-  it('calls a clean build a success', async () => {
+  it('calls a clean build a success, and its progress lines are a metric', async () => {
     const { verdict, diags } = await build('clean', cat('build-clean.txt'));
 
     assert.equal(verdict.level, 'INFO');
     assert.match(verdict.msg, /build succeeded in \d+\.\ds - 0 error\(s\), 0 warning\(s\)/);
     assert.equal(verdict.fields.result, 'success');
-    for (const d of diags) assert.equal(d.level, 'INFO');
+    // make's "[ 25%]" lines are readings, not news: DEBUG, with the
+    // percentage riding as build.progress_pct so an hours-long build
+    // charts like a download instead of spamming INFO all afternoon.
+    const prog = diags.filter((d) => d.metric?.name === 'build.progress_pct');
+    assert.deepEqual(prog.map((d) => d.metric.value), [25, 75, 100]);
+    for (const d of prog) assert.equal(d.level, 'DEBUG');
+    for (const d of diags) assert.ok(d.level === 'INFO' || d.level === 'DEBUG');
   });
 
   it('is transparent: same exit status, output still printed', async () => {
@@ -247,6 +253,24 @@ describe('superlog-build', () => {
     assert.ok(diags.find((e) => e.level === 'ERROR' && /in function `main'/.test(e.msg)),
               'the /usr/bin/ld: context line stayed INFO');
     assert.match(verdict.msg, /FAILED|error/i);
+  });
+
+  it('reads a lake (Lean) build: progress charts, the error carries its source', async () => {
+    const { diags, verdict } = await build('lean', cat('build-lean.txt'));
+
+    // An hours-long mathlib build's only heartbeat, as a metric.
+    const prog = diags.filter((d) => d.metric?.name === 'build.progress_pct');
+    assert.deepEqual(prog.map((d) => d.metric.value), [25, 38, 50, 75]);
+    for (const d of prog) assert.equal(d.level, 'DEBUG');
+
+    // lake puts the severity BEFORE the source, the reverse of clang.
+    const err = diags.find((e) => e.level === 'ERROR' && /Type mismatch/.test(e.msg));
+    assert.ok(err, 'the Lean error was not published');
+    assert.equal(err.src, 'Sllean/Extra.lean:2');
+    const sorry = diags.find((e) => /uses 'sorry'/.test(e.msg));
+    assert.equal(sorry.level, 'WARN');
+    assert.equal(sorry.src, 'Sllean/Basic.lean:7');
+    assert.match(verdict.msg, /error/);
   });
 
   it("Apple links: duplicate symbols and the driver's own verdict carry their level", async () => {

@@ -124,6 +124,11 @@ const PATTERNS = [
   // Yosys / nextpnr / GHDL keep it lowercase and unadorned.
   { rx: /^(?:yosys|nextpnr[\w-]*|ghdl)?\s*(ERROR|Warning|WARNING):\s*(.*)$/,
     map: (m) => ({ sev: /ERROR/i.test(m[1]) ? 'error' : 'warning', msg: m[2] }) },
+  // Lean (lake):          error: Sllean/Basic.lean:2:20: Type mismatch
+  // Severity first, source after - the reverse of clang - so neither the
+  // clang pattern nor the bare-rustc one recovers the file:line.
+  { rx: /^(error|warning): (.+?\.lean):(\d+):(\d+): (.*)$/,
+    map: (m) => ({ src: `${m[2]}:${m[3]}`, sev: m[1], msg: m[5] }) },
   // rustc:                error[E0308]: mismatched types
   { rx: /^(error|warning)(\[[A-Z0-9]+\])?:\s+(.*)$/,
     map: (m) => ({ sev: m[1], msg: `${m[2] ?? ''}${m[2] ? ' ' : ''}${m[3]}` }) },
@@ -337,7 +342,7 @@ function captureReport(line) {
   if (done || capturing.lines >= REPORT_LINES) capturing = null;
 }
 
-function publish(level, msg, fields) {
+function publish(level, msg, fields, metric) {
   // A new event beginning means whatever was in flight is finished, so this
   // settles even mid-capture - which is how the closing verdict seals a
   // report whose terminator the tool never printed.
@@ -352,7 +357,8 @@ function publish(level, msg, fields) {
     // otherwise a stream of diagnostics with no way to say which run a given
     // error belonged to.
     trace: buildTrace,
-    tag: label, msg, ...(fields?.src ? { src: fields.src } : {}),
+    tag: label, msg, ...(metric ? { metric } : {}),
+    ...(fields?.src ? { src: fields.src } : {}),
     ...(fields && Object.keys(fields).some((k) => k !== 'src')
       ? { fields: Object.fromEntries(Object.entries(fields).filter(([k]) => k !== 'src')) }
       : {}),
@@ -407,6 +413,22 @@ const feed = (which, chunk) => {
     }
     // A bare `==pid==` is valgrind's paragraph break, not a line of output.
     if (!line.trim() || RULE.test(line) || /^==\d+==\s*$/.test(line)) continue;
+    // Build progress - lake's "✔ [1234/5678] Built Mathlib.X", ninja's
+    // "[123/456] Building CXX object...", make's "[ 47%]". For an
+    // hours-long Lean or mathlib build this is the only heartbeat there
+    // is, so it becomes a DEBUG reading with a progress METRIC: the build
+    // charts like a download instead of spamming INFO all afternoon.
+    const prog =
+      /^[^\w\s]?\s*\[(\d+)\/(\d+)\]\s+\S/u.exec(line) ??
+      /^\[\s*(\d+)%\]\s+\S/.exec(line);
+    if (prog) {
+      const pct = prog[2] !== undefined
+        ? Math.round((Number(prog[1]) / Math.max(1, Number(prog[2]))) * 100)
+        : Number(prog[1]);
+      publish('DEBUG', line.trim().slice(0, 200), { stream: which },
+              { name: 'build.progress_pct', value: pct });
+      continue;
+    }
     // stderr is where compilers put diagnostics, but plenty of tools log
     // progress there too - so classify by content, not by stream.
     if (isContinuation(line) && appendSnippet(line)) continue;

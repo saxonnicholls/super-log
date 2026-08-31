@@ -16,7 +16,7 @@
     "build": {
       "topics": "build.<host>.<label>",
       "what": "A build or test run wrapped: one event per compiler diagnostic with src file:line, one verdict with exit status, duration and counts. Knows clang/gcc (and their drivers' own 'clang: error:'), cmake, make, rustc, npm, xcodebuild, Vivado/Quartus, and LINKERS: Apple ld/lld, GNU 'undefined reference'/'multiple definition' (which carry no severity word), duplicate symbols, collect2.",
-      "read": "Filter level>=WARN for diagnostics. The verdict fields carry errors/warnings counts; 'exited 0 DESPITE N errors' means the build lied about success. Sanitizer (ASan/TSan/UBSan) and valgrind findings arrive WHOLE as single events with the full report in fields.report.",
+      "read": "lake/ninja/make progress lines are DEBUG readings carrying a build.progress_pct metric - an hours-long Lean or mathlib build charts like a download. Filter level>=WARN for diagnostics. The verdict fields carry errors/warnings counts; 'exited 0 DESPITE N errors' means the build lied about success. Sanitizer (ASan/TSan/UBSan) and valgrind findings arrive WHOLE as single events with the full report in fields.report.",
       "gotchas": "Every event of one build shares a trace - query by trace to see one build end to end. Compiler snippet/caret lines are folded into fields.snippet, not separate events."
     },
     "fs": {
@@ -44,7 +44,7 @@
       "gotchas": "A missing reading is absent, never zero - macOS cards without sensors report no temperature at all."
     },
     "apps-sdk": {
-      "topics": "cpp.<app>, c.<app>, rust.<app>, python.<app>, go.<app>, java.<app>, swift.<app>, fortran.<app>, ocaml.<app>, haskell.<app>, ruby.<app>, scala.<app>, shell.<app>, node.<app>, web.<app>",
+      "topics": "cpp.<app>, c.<app>, rust.<app>, python.<app>, go.<app>, java.<app>, swift.<app>, fortran.<app>, ocaml.<app>, lean.<app>, haskell.<app>, ruby.<app>, scala.<app>, shell.<app>, node.<app>, web.<app>",
       "what": "Programs instrumented with the SDKs, one topic per app per language. Kotlin and Scala ride the Java SDK; Rails rides Ruby's ::Logger adapter; six SDKs hook the language's own logging framework so existing log lines arrive with no call sites changed.",
       "read": "Levels are the producer's own. Uncaught exceptions arrive with stacks even when nobody logged them. Events may carry a trace - the same id crosses HTTP to other tiers, so /recent?trace= stitches one action across languages.",
       "gotchas": "Every SDK is DEVELOPMENT xor PRODUCTION with no default, and production ships NOTHING by default - an app that publishes nothing may simply be built in production mode, which is the design, not a bug."

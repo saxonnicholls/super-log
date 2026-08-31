@@ -58,6 +58,17 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Lean 4, both halves.** An SDK for the programs (`sdk/lean/Superlog.lean`:
+core IO plus `curl` — Lean grew a kernel before it grew sockets — mode
+from `SUPERLOG_MODE` with no default, verified live), and the build story
+for the jobs that run all night: `superlog-build` now reads lake's
+severity-first diagnostics (`error: File.lean:2:20: ...`) with their
+`file:line`, and turns `[n/m]` progress — lake's, ninja's, and make's
+`[ 47%]` alike — into DEBUG readings carrying a `build.progress_pct`
+metric, so a six-hour mathlib build charts like a download instead of
+spamming INFO all afternoon. Fixtures captured from a real Lean 4.33
+lake build; the clean-build test now asserts the metric.
+
 **Plain C.** One stb-style header (`sdk/c/superlog.h`), C99 plus POSIX
 sockets, zero allocation — the caller owns the `superlog_t` and the batch
 buffer lives inside it. The same compile-time discipline as the C++

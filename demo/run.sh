@@ -158,7 +158,7 @@ fi
 # shell and leave the clock it started running.
 
 SL_TMP="${TMPDIR:-/tmp}"
-for lang in ${SUPER_LOG_LANGS:-c go python java swift fortran shell ruby scala haskell ocaml}; do
+for lang in ${SUPER_LOG_LANGS:-c go python java swift fortran shell ruby scala haskell ocaml lean}; do
     case "$lang" in
     c)
         if ! have cc; then skip "c.clock" "no C compiler"
@@ -217,6 +217,11 @@ for lang in ${SUPER_LOG_LANGS:-c go python java swift fortran shell ruby scala h
                 demo/haskell/clock.hs >/dev/null 2>&1; then
             start "haskell.clock" "$SL_TMP/sl_clock_hs"
         else skip "haskell.clock" "ghc build failed"; fi ;;
+    lean)
+        if ! have lake; then skip "lean.clock" "no lake (elan default stable)"
+        elif (cd demo/lean && lake build) >/dev/null 2>&1; then
+            SUPERLOG_MODE=development start "lean.clock" ./demo/lean/.lake/build/bin/clock
+        else skip "lean.clock" "lake build failed"; fi ;;
     ocaml)
         if ! have ocamlc; then skip "ocaml.clock" "no ocamlc (brew install ocaml)"
         elif mkdir -p "$SL_TMP/sl_ml" && cp sdk/ocaml/superlog.ml demo/ocaml/clock.ml "$SL_TMP/sl_ml/" &&

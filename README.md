@@ -26,7 +26,7 @@ always in the interleaving.
 super-log converges all of it on one process and one screen:
 
 ```
- apps, 13+ languages ┐
+ apps, 14+ languages ┐
  GPU and graphics    │
  devices and boards  │                                     ┌─▶ native viewer (ImGui)
  machines, services  ├── POST NDJSON ──▶  superlogd :7333 ─┼─▶ web viewer (React)
@@ -38,7 +38,7 @@ super-log converges all of it on one process and one screen:
 
 | Group | What is in it |
 |---|---|
-| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Lean 4, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); filesystem changes down to the changed LINES, diffed in real time; big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
@@ -69,7 +69,7 @@ error, a shell test — plus the GPU refusing an allocation four times the size
 of the card. Python's row carries the local variables from the failing frame,
 which is the part you would otherwise be adding a print statement to find.*
 
-**Your apps need almost nothing.** Thirteen dependency-free SDKs: header-only
+**Your apps need almost nothing.** Fourteen dependency-free SDKs: header-only
 C++ (both a **spdlog** sink and a native `snicholls::log` one), plain C in
 one stb-style header — zero-alloc, and a production build provably contains
 no logging at all — a Rust
@@ -77,7 +77,9 @@ crate with an optional `tracing` layer, Python plugging into stdlib
 `logging`, Go with a `log/slog` handler, Java with a `java.util.logging`
 bridge (Kotlin and Scala ride it, one import, zero glue), Swift, Fortran
 over raw POSIX sockets, OCaml over the same raw sockets, Haskell needing
-only GHC's boot libraries and `curl`, Ruby from the stdlib — with a
+only GHC's boot libraries and `curl`, Lean 4 for the proof jobs that run
+all night (core IO plus `curl` — Lean grew a kernel before it grew
+sockets), Ruby from the stdlib — with a
 drop-in `::Logger` adapter, which makes the whole **Rails** story one
 `config.logger` assignment — a `sh` one-liner for scripts, and one JS
 client for React Native, the browser and Node — `patchConsole: true` and
@@ -608,6 +610,21 @@ main = do
   flushLog lg
 ```
 
+**Lean 4** (core IO plus `curl`; mode from `SUPERLOG_MODE` — proof search
+runs all night, and a metric per thousand goals beats a silent terminal.
+`superlog-build -- lake build` covers the build itself, with lake's
+`[n/m]` progress as a chartable `build.progress_pct`):
+
+```lean
+import Superlog
+
+def main : IO Unit := do
+  let lg ← Superlog.init "lean.search" "search"
+  Superlog.info lg "search up" [("depth", "12")]
+  Superlog.metric lg "goals.open" 4123
+  Superlog.flush lg
+```
+
 **Machines, services, containers, chains** (no app changes at all):
 
 ```sh
@@ -981,6 +998,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   **Ruby:** ≥ 3.0, stdlib only (Rails via the `::Logger` adapter).
   **OCaml:** ≥ 4.14 (`ocamlc -I +unix unix.cma`). **Haskell:** GHC ≥ 9,
   boot libraries plus `curl`. **Scala:** ≥ 3, riding the Java SDK.
+  **Lean:** 4.x via elan/lake, core IO plus `curl`.
   **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
   **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
   **Swift:** ≥ 5.9, SwiftPM. **Fortran:** gfortran or any compiler with
@@ -1013,6 +1031,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `sdk/swift/`    | `SuperLog`: client, `@TaskLocal` trace                                                           |
 | `sdk/fortran/`  | `superlog.F90`: client over raw POSIX sockets                                                      |
 | `sdk/ocaml/`    | `superlog.ml`: client over Unix sockets, mode from `SUPERLOG_MODE`                                 |
+| `sdk/lean/`     | `Superlog.lean`: Lean 4 client, core IO + curl, mode from `SUPERLOG_MODE`                          |
 | `sdk/haskell/`  | `SuperLog.hs`: GHC boot libraries + curl, mode compiled in via `-DDEVELOPMENT`                     |
 | `sdk/ruby/`     | `superlog.rb`: stdlib client + the `::Logger` adapter Rails plugs into                             |
 | `sdk/js/`       | `@super-log/client`, `@super-log/react`, `@super-log/mcp`                                      |

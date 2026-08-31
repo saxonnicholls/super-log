@@ -1,0 +1,9 @@
+name = "clock"
+defaultTargets = ["clock"]
+
+[[lean_lib]]
+name = "Superlog"
+
+[[lean_exe]]
+name = "clock"
+root = "Clock"

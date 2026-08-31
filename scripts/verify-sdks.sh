@@ -105,7 +105,7 @@ until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
 done
 export SUPER_LOG_URL="$HUB"
 
-WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala}"
+WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala lean}"
 echo "verify-sdks: hub on :$PORT, checking:$(printf ' %s' $WANT)"
 
 for lang in $WANT; do
@@ -174,6 +174,12 @@ c)
 ruby)
     if ! have ruby; then skipping ruby "no ruby"
     else check ruby ruby.clock env SUPERLOG_MODE=development ruby demo/ruby/clock.rb; fi ;;
+
+lean)
+    if ! have lake; then skipping lean "no lake"
+    elif (cd demo/lean && lake build) >/dev/null 2>&1; then
+        check lean lean.clock env SUPERLOG_MODE=development demo/lean/.lake/build/bin/clock
+    else skipping lean "lake build failed"; fi ;;
 
 ocaml)
     if ! have ocamlc; then skipping ocaml "no ocamlc"

@@ -71,7 +71,7 @@ host-side tailer scraping the same device:
 | `grpc.<host>.<target>`| gRPC calls through the logging proxy - one event per RPC, levelled by `grpc-status` from the trailers rather than the HTTP status; streaming RPCs are reported when the stream ends, with message counts each way |
 | `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
 | `net.<host>.listeners`| listening sockets and the processes that own them |
-| `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each |
+| `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each; lake/ninja/make progress rides as a `build.progress_pct` metric |
 | `git.<host>.<repo>`   | a checkout: commits, branch switches, rewritten history, tags, conflicts |
 | `github.<owner>.<repo>`| a GitHub repository: pushes, CI runs, pull requests, issues, releases |
 | `fs.<host>.<dir>`     | a directory tree: files created, modified and deleted; with `--diff`, one event per changed hunk (removed and added lines together), the hunks of one save sharing a `trace` with their modified event |
