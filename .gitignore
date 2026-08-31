@@ -21,6 +21,7 @@ compile_commands.json
 # Runtime artefacts
 imgui.ini
 superlog-journal/
+logs/
 
 # Expo / React Native
 .expo/
