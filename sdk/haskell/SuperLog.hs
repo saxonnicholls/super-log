@@ -116,7 +116,7 @@ flushLog lg = do
     ls -> do
       _ <- readProcessWithExitCode "curl"
              [ "-s", "-m", "5", "-o", "/dev/null"
-             , "-X", "POST", lgUrl ++ "/ingest/" ++ lgTopic lg
+             , "-X", "POST", lgUrl lg ++ "/ingest/" ++ lgTopic lg
              , "-H", "content-type: application/x-ndjson"
              , "--data-binary", intercalate "\n" ls ] ""
       pure ()

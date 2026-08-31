@@ -69,10 +69,9 @@ Scala needs no SDK at all and the demo proves it: the Java client, one
 import, zero glue — the Kotlin story (Scala ≥ 3.5 retired the classic
 runner, so `demo/scala/run.sh` launches the compiled clock with plain
 java plus the Scala runtime jars). All four clocks are wired into the
-demo launcher, `verify-sdks.sh` and `npm run demo:<lang>`. **Verified
-live against the hub: Ruby, OCaml and Scala**; the Haskell clock is
-written to the same pattern and verifies the moment a ghc lands on this
-bench (its 2GB bottle failed to download on the first try).
+demo launcher, `verify-sdks.sh` and `npm run demo:<lang>`. **All four
+verified live against the hub** — every clock's ticks, staged pricing
+error and metrics arrived, from the real compilers on this bench.
 
 **superlog-gas** — operational key balances with the alarm built in
 (topic `gas.<chain>`): the keeper or oracle that runs out of gas stops a

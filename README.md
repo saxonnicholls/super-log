@@ -535,6 +535,53 @@ log.log(super_log::Level::Info, "engine up", None);
 log.metric("fps", 58.9);
 ```
 
+**Ruby, and therefore Rails** (stdlib only; mode from `SUPERLOG_MODE`):
+
+```ruby
+require_relative "superlog"                        # sdk/ruby/superlog.rb
+log = SuperLog.new(topic: "ruby.myapp", app: "myapp")
+log.info("up", port: 3000)
+log.metric("queue.depth", 17)
+
+# Rails: everything it already logs, one assignment, no controller touched
+config.logger = ActiveSupport::BroadcastLogger.new(
+  ActiveSupport::Logger.new($stdout), log.logger_adapter)
+```
+
+**Scala** (no SDK, on purpose — the Java client, one import, zero glue,
+exactly as Kotlin uses it):
+
+```scala
+import com.snicholls.superlog.SuperLog
+
+val log = SuperLog.builder().topic("scala.pricer").app("pricer")
+  .development(true).production(false).build()
+log.installUncaughtHandler()              // every thread's uncaught, chained
+log.info("engine up", SuperLog.fields("port", Int.box(9000)))
+```
+
+**OCaml** (the `unix` library and nothing else; mode from `SUPERLOG_MODE`):
+
+```ocaml
+(* ocamlc -I +unix unix.cma superlog.ml myapp.ml -o myapp *)
+let log = Superlog.create ~topic:"ocaml.solver" ~app:"solver" () in
+Superlog.info log "solver up" ~fields:[ ("mesh", "1.2M cells") ];
+Superlog.metric log "solver.residual" 1.6e-9;
+Superlog.flush log
+```
+
+**Haskell** (GHC's boot libraries plus `curl`; the mode is compiled in —
+`-DDEVELOPMENT` or `-DPRODUCTION`, neither or both refuses to build):
+
+```haskell
+import SuperLog
+main = do
+  lg <- newLog "haskell.pricer" "pricer"
+  info lg "engine up" [("port", "9000")]
+  metric lg "queue.depth" 17
+  flushLog lg
+```
+
 **Machines, services, containers, chains** (no app changes at all):
 
 ```sh
