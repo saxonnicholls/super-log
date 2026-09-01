@@ -11,10 +11,12 @@
 //  engine's own firings, and production's inbound webhooks through
 //  superlog-alarm.
 //
-//  The Test button runs the gateway's /selftest - hub, tunnel, a real
-//  round-trip out to the internet and back in through the public URL, and
-//  the notification channel roster - and shows every step with its
-//  diagnosis. An unverified alarm channel is not a channel.
+//  Alarms own the top of the panel and never share it: the routes grid
+//  below is collapsible and scrolls inside its own space. Every route is a
+//  row with the same columns - the gateway's own front door included,
+//  because a route is a route - and expands into the full diagnostics:
+//  whole URL (copyable), kind, ping clock, counters, its verdict from the
+//  last test run. The test button round-trips EVERY route, not just one.
 //
 
 import { useEffect, useMemo, useState } from 'react';
@@ -29,9 +31,10 @@ interface Selftest {
 }
 
 interface TunnelHealth {
-  name: string; url: string; interval_s: number;
-  healthy: boolean | null; last_ms: number | null; fails: number;
-  last_checked?: string | null;
+  name: string; url: string; public_url?: string; interval_s: number;
+  healthy: boolean | null; last_ms: number | null; fails: number; checks?: number;
+  last_checked?: string | null; last_ok?: string | null;
+  kind?: string; target?: string | null; state?: string | null; deletable?: boolean;
 }
 interface GatewayHealth {
   tunnels?: TunnelHealth[];
@@ -52,7 +55,10 @@ const age = (ms: number): string => {
 
 export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
   const [open, setOpen] = useState(true);
+  const [routesOpen, setRoutesOpen] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [test, setTest] = useState<Selftest | 'running' | null>(null);
+  const [testOpen, setTestOpen] = useState(false);
   const [gw, setGw] = useState<GatewayHealth | null>(null);
   const [newName, setNewName] = useState('');
   const [newPort, setNewPort] = useState('');
@@ -80,7 +86,7 @@ export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
 
   const firing = alarms.filter((a) => !a.recovered && a.row.level !== 'INFO');
 
-  // The lights: the gateway measures its tunnels on their own clocks; the
+  // The lights: the gateway measures its routes on their own clocks; the
   // blotter just asks every 30s and draws what it is told.
   useEffect(() => {
     let alive = true;
@@ -124,7 +130,16 @@ export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
         steps: [{ name: 'reach the alarm gateway', ok: false, ms: 0,
                   detail: `${gateway} - ${String((e as Error).message)}. Is superlog-alarm running? (npm run alarm)` }],
       });
+      setTestOpen(true);
     }
+  };
+
+  // Each route's verdict from the last test run; the gateway's front door
+  // answers under its flagship step name.
+  const verdictFor = (name: string): SelftestStep | undefined => {
+    if (!test || test === 'running') return undefined;
+    return test.steps.find((s) => s.name === `route ${name}` ||
+                                  (name === 'ALARM' && s.name === 'public round-trip'));
   };
 
   if (!open) {
@@ -138,114 +153,25 @@ export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
     );
   }
 
+  const routes = gw?.tunnels ?? [];
+  const testSummary = test && test !== 'running'
+    ? { ok: test.ok, okc: test.steps.filter((s) => s.ok).length, n: test.steps.length }
+    : null;
+
   return (
-    <aside style={{ width: 340, borderLeft: '1px solid #262b33', display: 'flex',
+    <aside style={{ width: 380, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center',
                     padding: '8px 10px', borderBottom: '1px solid #262b33' }}>
         <strong style={{ color: firing.length ? '#e05b4f' : '#8a93a3' }}>
           ⚠ alarms{firing.length ? ` · ${firing.length} firing` : ''}
         </strong>
-        <button style={{ ...box, marginLeft: 'auto' }} onClick={runTest}
-                title="prove the whole path: hub, tunnel, a round-trip from the internet, channels">
-          {test === 'running' ? 'testing…' : 'test alarm'}
-        </button>
-        <button style={box} onClick={() => setOpen(false)} title="collapse">✕</button>
+        <button style={{ ...box, marginLeft: 'auto' }} onClick={() => setOpen(false)}
+                title="collapse">✕</button>
       </div>
 
-      {test && test !== 'running' && (
-        <div style={{ padding: '6px 10px', borderBottom: '1px solid #262b33',
-                      background: test.ok ? '#12210f' : '#2a1210' }}>
-          <div style={{ color: test.ok ? '#68c964' : '#e05b4f', marginBottom: 4 }}>
-            {test.ok ? 'test alarm delivered - the path works' : 'test failed - the diagnosis:'}
-            <button style={{ ...box, float: 'right' }} onClick={() => setTest(null)}>dismiss</button>
-          </div>
-          {test.steps.map((s) => (
-            <div key={s.name} style={{ fontSize: 12, marginBottom: 2 }}>
-              <span style={{ color: s.ok ? '#68c964' : '#e05b4f' }}>{s.ok ? '✓' : '✗'} {s.name}</span>
-              <span style={{ color: '#8a93a3' }}> ({s.ms}ms) {s.detail}</span>
-            </div>
-          ))}
-          {test.channels && (
-            <div style={{ fontSize: 12, color: '#8a93a3', marginTop: 4 }}>
-              channels:{' '}
-              {test.channels.map((c) => (
-                <span key={c.name} title={c.configured ? 'ready' : c.why}
-                      style={{ marginRight: 6,
-                               color: c.active ? (c.configured ? '#68c964' : '#e05b4f') : '#3d434d' }}>
-                  {c.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {gw?.tunnels && gw.tunnels.length > 0 && (
-        <div style={{ padding: '6px 10px', borderBottom: '1px solid #262b33', fontSize: 12 }}>
-          {gw.tunnels.map((t) => {
-            const deletable = gw.endpoints?.some(
-              (e) => e.name.toUpperCase() === t.name && e.state !== 'removed');
-            return (
-              <div key={t.name} title={`${t.url}\npinged every ${t.interval_s}s`}
-                   style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                <span style={{ color: '#c3c9d4' }}>{t.name}:</span>
-                <span style={{ color: '#5c6470', overflow: 'hidden', textOverflow: 'ellipsis',
-                               whiteSpace: 'nowrap', maxWidth: 130 }}>
-                  {t.url.replace(/^https?:\/\//, '')}
-                </span>
-                <span>{t.healthy === true ? '🟢' : t.healthy === false ? '🔴' : '⚪'}</span>
-                <span style={{ color: '#5c6470', marginLeft: 'auto' }}
-                      title={t.last_checked ?? 'not yet pinged'}>
-                  {t.healthy === false ? `${t.fails} fails · ` : ''}
-                  {t.last_checked
-                    ? `${age(Date.now() - Date.parse(t.last_checked))} ago`
-                    : 'not yet'}
-                  {t.last_ms != null ? ` · ${t.last_ms}ms` : ''}
-                </span>
-                {deletable && (
-                  <button style={{ ...box, padding: '0 4px' }} title="tear this endpoint down"
-                          onClick={() => {
-                            void fetch(`${gateway}/provision/${t.name.toLowerCase()}`,
-                                       { method: 'DELETE' }).then(() => setGw((g) => g && ({
-                              ...g,
-                              tunnels: g.tunnels?.filter((x) => x.name !== t.name),
-                              endpoints: g.endpoints?.filter(
-                                (x) => x.name.toUpperCase() !== t.name),
-                            })));
-                          }}>✕</button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 4, padding: '6px 10px',
-                    borderBottom: '1px solid #262b33' }}>
-        <input value={newName} onChange={(e) => setNewName(e.target.value)}
-               placeholder="name" style={{ ...box, width: 90 }} />
-        <input value={newPort} onChange={(e) => setNewPort(e.target.value)}
-               placeholder="port (blank=capture)" style={{ ...box, width: 120 }} />
-        <button style={box} onClick={() => void provision()}
-                title="one click, one public URL: forward a local port, or capture deliveries (Stripe webhook testing) as wh.<name> events">
-          + endpoint
-        </button>
-      </div>
-      {provisioned && (
-        <div style={{ padding: '4px 10px', fontSize: 12, borderBottom: '1px solid #262b33',
-                      color: provisioned.startsWith('failed') ? '#e05b4f' : '#68c964',
-                      wordBreak: 'break-all' }}>
-          {provisioned}
-          {!provisioned.startsWith('failed') && (
-            <button style={{ ...box, marginLeft: 6 }}
-                    onClick={() => void navigator.clipboard.writeText(provisioned)}>copy</button>
-          )}
-          <button style={{ ...box, marginLeft: 6 }} onClick={() => setProvisioned(null)}>✕</button>
-        </div>
-      )}
-
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 10px' }}>
+      {/* Alarms first, always: this space belongs to them alone. */}
+      <div style={{ flex: 1, minHeight: 120, overflowY: 'auto', padding: '4px 10px' }}>
         {alarms.length === 0 && (
           <div style={{ color: '#3d434d', padding: 12 }}>
             no alarms - which is the idea.
@@ -276,6 +202,173 @@ export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
           </div>
         ))}
       </div>
+
+      {/* The routes grid: collapsible, scrolling in its own space. */}
+      <div style={{ borderTop: '1px solid #262b33' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 10px' }}>
+          <button style={{ ...box, border: 'none', background: 'none', padding: 0 }}
+                  onClick={() => setRoutesOpen((v) => !v)}>
+            {routesOpen ? '▾' : '▸'} routes{routes.length ? ` · ${routes.length}` : ''}
+          </button>
+          <button style={{ ...box, marginLeft: 'auto' }} onClick={() => void runTest()}
+                  title="prove the whole path: hub, tunnel, channels, then a public round-trip through EVERY route">
+            {test === 'running' ? 'testing…' : 'test alarm'}
+          </button>
+          {testSummary && (
+            <button style={{ ...box, border: 'none', background: 'none', padding: 0,
+                             color: testSummary.ok ? '#68c964' : '#e05b4f' }}
+                    onClick={() => setTestOpen((v) => !v)}
+                    title="show every step of the last test">
+              {testSummary.ok ? 'PASS' : 'FAIL'} {testSummary.okc}/{testSummary.n}
+            </button>
+          )}
+        </div>
+
+        {routesOpen && testOpen && test && test !== 'running' && (
+          <div style={{ padding: '4px 10px', borderTop: '1px solid #1b2027',
+                        maxHeight: 140, overflowY: 'auto' }}>
+            {test.steps.map((s) => (
+              <div key={s.name} style={{ fontSize: 12, marginBottom: 2 }}>
+                <span style={{ color: s.ok ? '#68c964' : '#e05b4f' }}>{s.ok ? '✓' : '✗'} {s.name}</span>
+                <span style={{ color: '#8a93a3' }}> ({s.ms}ms) {s.detail}</span>
+              </div>
+            ))}
+            {test.channels && (
+              <div style={{ fontSize: 12, color: '#8a93a3', marginTop: 4 }}>
+                channels:{' '}
+                {test.channels.map((c) => (
+                  <span key={c.name} title={c.configured ? 'ready' : c.why}
+                        style={{ marginRight: 6,
+                                 color: c.active ? (c.configured ? '#68c964' : '#e05b4f') : '#3d434d' }}>
+                    {c.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {routesOpen && (
+          <div style={{ maxHeight: 260, overflowY: 'auto', borderTop: '1px solid #1b2027' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: '#5c6470', textAlign: 'left' }}>
+                  <th style={th}></th><th style={th}>route</th><th style={th}>url</th>
+                  <th style={th}>seen</th><th style={th}>ping</th><th style={th}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {routes.map((t) => {
+                  const isOpen = !!expanded[t.name];
+                  const v = verdictFor(t.name);
+                  // The route itself, not the watchdog's ping target.
+                  const pub = t.public_url ?? t.url;
+                  return [
+                    <tr key={t.name} style={{ borderTop: '1px solid #1b2027' }}>
+                      <td style={{ ...td, color: t.healthy === true ? '#68c964'
+                                       : t.healthy === false ? '#ff2e1f' : '#5c6470',
+                                   fontWeight: t.healthy === false ? 'bold' : 'normal' }}>
+                        {t.healthy === true ? 'up' : t.healthy === false ? 'DOWN' : '--'}
+                      </td>
+                      <td style={{ ...td, color: '#c3c9d4', cursor: 'pointer',
+                                   whiteSpace: 'nowrap' }}
+                          onClick={() => setExpanded((e) => ({ ...e, [t.name]: !isOpen }))}>
+                        {isOpen ? '▾' : '▸'} {t.name}
+                      </td>
+                      <td style={{ ...td, color: '#5c6470', maxWidth: 120, overflow: 'hidden',
+                                   textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={pub}>
+                        {pub.replace(/^https?:\/\//, '')}
+                      </td>
+                      <td style={{ ...td, color: '#5c6470', whiteSpace: 'nowrap' }}
+                          title={t.last_checked ?? 'not yet pinged'}>
+                        {t.last_checked ? age(Date.now() - Date.parse(t.last_checked)) : '-'}
+                      </td>
+                      <td style={{ ...td, color: '#5c6470', whiteSpace: 'nowrap' }}>
+                        {t.last_ms != null ? `${t.last_ms}ms` : '-'}
+                      </td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                        <button style={{ ...box, padding: '0 4px' }} title="copy the full URL"
+                                onClick={() => void navigator.clipboard.writeText(pub)}>⧉</button>
+                        {t.deletable && (
+                          <button style={{ ...box, padding: '0 4px', marginLeft: 4 }}
+                                  title="tear this endpoint down"
+                                  onClick={() => {
+                                    void fetch(`${gateway}/provision/${t.name.toLowerCase()}`,
+                                               { method: 'DELETE' }).then(() => setGw((g) => g && ({
+                                      ...g,
+                                      tunnels: g.tunnels?.filter((x) => x.name !== t.name),
+                                      endpoints: g.endpoints?.filter(
+                                        (x) => x.name.toUpperCase() !== t.name),
+                                    })));
+                                  }}>✕</button>
+                        )}
+                      </td>
+                    </tr>,
+                    isOpen && (
+                      <tr key={`${t.name}-detail`}>
+                        <td style={td}></td>
+                        <td colSpan={5} style={{ ...td, paddingBottom: 8 }}>
+                          <div style={{ color: '#c3c9d4', wordBreak: 'break-all' }}>
+                            {pub}
+                            <button style={{ ...box, marginLeft: 6, padding: '0 4px' }}
+                                    onClick={() => void navigator.clipboard.writeText(pub)}>copy</button>
+                          </div>
+                          {t.url !== pub && (
+                            <div style={{ ...detail, wordBreak: 'break-all' }}>ping target: {t.url}</div>
+                          )}
+                          <div style={detail}>kind: {t.kind ?? 'watch'}
+                            {t.target ? ` -> ${t.target}` : ''}</div>
+                          {t.interval_s > 0 && (
+                            <div style={detail}>ping clock: every {t.interval_s}s
+                              {t.checks != null ? ` - ${t.checks} checks` : ''}
+                              {t.fails ? `, ${t.fails} failing now` : ''}</div>
+                          )}
+                          <div style={detail}>last ok: {t.last_ok
+                            ? `${age(Date.now() - Date.parse(t.last_ok))} ago` : 'never'}</div>
+                          {t.state && <div style={detail}>tunnel: {t.state}</div>}
+                          {v && (
+                            <div style={{ ...detail, color: v.ok ? '#68c964' : '#e05b4f' }}>
+                              last test: {v.ok ? 'ok' : 'FAILED'}
+                              <span style={{ color: '#8a93a3' }}> - {v.detail}</span>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {routesOpen && (
+          <div style={{ display: 'flex', gap: 4, padding: '6px 10px',
+                        borderTop: '1px solid #1b2027' }}>
+            <input value={newName} onChange={(e) => setNewName(e.target.value)}
+                   placeholder="name" style={{ ...box, width: 90 }} />
+            <input value={newPort} onChange={(e) => setNewPort(e.target.value)}
+                   placeholder="port (blank=capture)" style={{ ...box, width: 120 }} />
+            <button style={box} onClick={() => void provision()}
+                    title="one click, one public URL: forward a local port, or capture deliveries (Stripe webhook testing) as wh.<name> events">
+              + endpoint
+            </button>
+          </div>
+        )}
+        {routesOpen && provisioned && (
+          <div style={{ padding: '4px 10px', fontSize: 12,
+                        color: provisioned.startsWith('failed') ? '#e05b4f' : '#68c964',
+                        wordBreak: 'break-all' }}>
+            {provisioned}
+            {!provisioned.startsWith('failed') && (
+              <button style={{ ...box, marginLeft: 6 }}
+                      onClick={() => void navigator.clipboard.writeText(provisioned)}>copy</button>
+            )}
+            <button style={{ ...box, marginLeft: 6 }} onClick={() => setProvisioned(null)}>✕</button>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -284,3 +377,6 @@ const box: React.CSSProperties = {
   background: '#181c22', color: '#d6dae2', border: '1px solid #262b33',
   borderRadius: 4, padding: '2px 6px', font: 'inherit', cursor: 'pointer',
 };
+const th: React.CSSProperties = { padding: '2px 6px', fontWeight: 'normal' };
+const td: React.CSSProperties = { padding: '2px 6px', verticalAlign: 'top' };
+const detail: React.CSSProperties = { color: '#8a93a3', marginTop: 2 };

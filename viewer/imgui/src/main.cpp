@@ -333,6 +333,13 @@ struct gateway_state {
         double last_ms = -1;
         long seen_ago_s = -1;                   // derived from last_checked at poll time
         bool deletable = false;
+        // The expandable half: every row answers the same questions.
+        // public_url is the route itself - what a copy hands you; url is
+        // merely what the watchdog pings.
+        std::string public_url;
+        std::string kind, target, state, last_ok;
+        double interval_s = 0;
+        int checks = 0, fails = 0;
     };
     std::vector<route> routes;
     bool reachable = false;
@@ -378,10 +385,6 @@ void poll_gateway(gateway_state& st, const std::string& gateway)
         st.reachable = !j.is_discarded() && j.is_object();
         if (!st.reachable)
             return;
-        std::vector<std::string> endpoint_names;
-        if (j.contains("endpoints"))
-            for (const auto& e : j["endpoints"])
-                endpoint_names.push_back(e.value("name", ""));
         if (j.contains("tunnels"))
             for (const auto& t : j["tunnels"]) {
                 gateway_state::route r;
@@ -393,10 +396,18 @@ void poll_gateway(gateway_state& st, const std::string& gateway)
                     r.last_ms = t["last_ms"].get<double>();
                 if (t.contains("last_checked") && t["last_checked"].is_string())
                     r.seen_ago_s = iso_ago_s(t["last_checked"].get<std::string>());
-                std::string lower = r.name;
-                for (auto& c : lower) c = static_cast<char>(std::tolower(c));
-                for (const auto& en : endpoint_names)
-                    if (en == lower) r.deletable = true;
+                r.deletable = t.value("deletable", false);
+                r.public_url = t.value("public_url", r.url);
+                r.kind = t.value("kind", "");
+                if (t.contains("target") && t["target"].is_string()) r.target = t["target"];
+                if (t.contains("state") && t["state"].is_string()) r.state = t["state"];
+                if (t.contains("last_ok") && t["last_ok"].is_string()) r.last_ok = t["last_ok"];
+                if (t.contains("interval_s") && t["interval_s"].is_number())
+                    r.interval_s = t["interval_s"].get<double>();
+                if (t.contains("checks") && t["checks"].is_number())
+                    r.checks = t["checks"].get<int>();
+                if (t.contains("fails") && t["fails"].is_number())
+                    r.fails = t["fails"].get<int>();
                 st.routes.push_back(std::move(r));
             }
     }).detach();
@@ -774,6 +785,7 @@ int main()
         ImGui::End();
 
         // ---- the alarm blotter: its own window, sparse by construction
+        ImGuiID alarms_dock = 0;
         {
             int firing = 0;
             for (const auto& a : blotter)
@@ -785,143 +797,12 @@ int main()
             ImGui::SetNextWindowPos(ImVec2(vp->WorkSize.x - 400, 40), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(380, 330), ImGuiCond_FirstUseEver);
             ImGui::Begin(title);
-            {
-                // Snapshot under the lock, render from the copy, and NEVER
-                // call run_selftest while holding it - it takes the same
-                // mutex, and a recursive lock on a plain mutex is UB (it
-                // crashed the first person to press the button).
-                bool st_running, st_done, st_ok;
-                std::vector<selftest_state::step> st_steps;
-                {
-                    std::lock_guard<std::mutex> g(selftest.m);
-                    st_running = selftest.running;
-                    st_done = selftest.done;
-                    st_ok = selftest.ok;
-                    st_steps = selftest.steps;
-                }
-                const bool clicked =
-                    ImGui::Button(st_running ? "testing..." : "test alarm");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("prove the whole path: hub, tunnel,\n"
-                                      "a round-trip from the internet, channels");
-                if (st_done) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(st_ok ? ImVec4(0.4f, 0.8f, 0.4f, 1)
-                                             : ImVec4(0.9f, 0.4f, 0.3f, 1),
-                                       st_ok ? "path verified" : "test FAILED");
-                    for (const auto& sp : st_steps) {
-                        ImGui::TextColored(sp.ok ? ImVec4(0.4f, 0.8f, 0.4f, 1)
-                                                 : ImVec4(0.9f, 0.4f, 0.3f, 1),
-                                           "%s %s", sp.ok ? "ok" : "X", sp.name.c_str());
-                        if (!sp.detail.empty()) {
-                            ImGui::PushTextWrapPos();
-                            ImGui::TextDisabled("   %s", sp.detail.c_str());
-                            ImGui::PopTextWrapPos();
-                        }
-                    }
-                    ImGui::Separator();
-                }
-                if (clicked && !st_running)
-                    run_selftest(selftest, gateway);
-            }
-            // ---- routes: NAME: url : light : last seen, and the factory
-            {
-                // Snapshot under the lock, render from the copy, invoke
-                // after release - run_gateway_cmd and poll_gateway take
-                // this same mutex, and a std::mutex relocked by its own
-                // thread is an abort, not a queue (the selftest button
-                // paid this lesson first).
-                std::vector<gateway_state::route> routes;
-                bool provisioning = false;
-                std::string provision_result;
-                bool poll_due = false;
-                {
-                    std::lock_guard<std::mutex> g(gwstate.m);
-                    if (ImGui::GetTime() - gwstate.polled_at > 30.0) {
-                        gwstate.polled_at = ImGui::GetTime();
-                        poll_due = true;
-                    }
-                    routes = gwstate.routes;
-                    provisioning = gwstate.provisioning;
-                    provision_result = gwstate.provision_result;
-                }
-                if (poll_due)
-                    poll_gateway(gwstate, gateway);
-                std::string pending_cmd;
-                const char* pending_label = nullptr;
-                for (const auto& r : routes) {
-                    const ImVec4 light = r.healthy == 1 ? ImVec4(0.41f, 0.79f, 0.39f, 1)
-                                       : r.healthy == 0 ? ImVec4(1.0f, 0.18f, 0.12f, 1)
-                                                        : ImVec4(0.45f, 0.47f, 0.52f, 1);
-                    ImGui::TextColored(light, "%s", r.healthy == 1 ? "up" :
-                                                    r.healthy == 0 ? "DOWN" : "??");
-                    ImGui::SameLine();
-                    ImGui::TextUnformatted(r.name.c_str());
-                    ImGui::SameLine();
-                    std::string u = r.url;
-                    if (u.rfind("https://", 0) == 0) u = u.substr(8);
-                    if (u.size() > 26) u = u.substr(0, 26) + "..";
-                    ImGui::TextDisabled("%s", u.c_str());
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", r.url.c_str());
-                    ImGui::SameLine();
-                    if (r.seen_ago_s >= 0)
-                        ImGui::TextDisabled("%lds ago %s", r.seen_ago_s,
-                                            r.last_ms >= 0
-                                                ? (std::to_string(static_cast<int>(r.last_ms)) + "ms").c_str()
-                                                : "");
-                    else
-                        ImGui::TextDisabled("not yet pinged");
-                    if (r.deletable) {
-                        ImGui::SameLine();
-                        ImGui::PushID(r.name.c_str());
-                        if (ImGui::SmallButton("x")) {
-                            std::string lower = r.name;
-                            for (auto& c : lower) c = static_cast<char>(std::tolower(c));
-                            pending_cmd = "curl -s -m 10 -X DELETE " + gateway +
-                                          "/provision/" + lower + " 2>/dev/null";
-                            pending_label = "delete";
-                        }
-                        ImGui::PopID();
-                    }
-                }
-                ImGui::SetNextItemWidth(90);
-                ImGui::InputTextWithHint("##epname", "name", ep_name, sizeof ep_name);
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(60);
-                ImGui::InputTextWithHint("##epport", "port", ep_port, sizeof ep_port);
-                ImGui::SameLine();
-                if (ImGui::Button(provisioning ? "..." : "+ endpoint") &&
-                    !provisioning) {
-                    std::string body = "{";
-                    if (ep_name[0]) body += std::string("\"name\":\"") + ep_name + "\"";
-                    if (ep_port[0]) body += std::string(ep_name[0] ? "," : "") +
-                                            "\"port\":" + ep_port;
-                    body += "}";
-                    pending_cmd = "curl -s -m 60 -X POST " + gateway +
-                                  "/provision -d '" + body + "' 2>/dev/null";
-                    pending_label = "provision";
-                    ep_name[0] = ep_port[0] = '\0';
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("one click, one public URL: forward a\n"
-                                      "local port, or capture deliveries\n"
-                                      "(blank port) as wh.<name> events");
-                if (!provision_result.empty()) {
-                    ImGui::PushTextWrapPos();
-                    ImGui::TextDisabled("%s", provision_result.c_str());
-                    ImGui::PopTextWrapPos();
-                    if (provision_result.rfind("https://", 0) == 0) {
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("copy url"))
-                            ImGui::SetClipboardText(provision_result.c_str());
-                    }
-                }
-                if (pending_label)
-                    run_gateway_cmd(gwstate, pending_cmd, pending_label);
-                ImGui::Separator();
-            }
-
+            // The blotter owns this window outright: alarms are the thing
+            // that must never scroll out of sight behind diagnostics, so
+            // the routes machinery lives in its own dockable window, which
+            // joins this one's dock node on first appearance - a window
+            // nobody can find may as well not exist.
+            alarms_dock = ImGui::GetWindowDockID();
             if (blotter.empty())
                 ImGui::TextDisabled("no alarms - which is the idea.");
             // Newest state at the top; a blotter is read from the top.
@@ -942,6 +823,213 @@ int main()
                 ImGui::PopTextWrapPos();
                 ImGui::Separator();
             }
+            ImGui::End();
+        }
+
+        // ---- routes: one grid, one row per route, the same diagnostics
+        // for every row - the gateway's own front door included, because a
+        // route is a route. Expand a row for the whole story; the alarms
+        // window above stays sparse and never shares its space with this.
+        {
+            const ImVec4 rt_green(0.41f, 0.79f, 0.39f, 1);
+            const ImVec4 rt_red(1.0f, 0.18f, 0.12f, 1);
+            const ImVec4 rt_grey(0.45f, 0.47f, 0.52f, 1);
+
+            // Snapshot both shared states under their locks, render from
+            // the copies, invoke workers only after release - the same
+            // mutexes are taken by run_selftest / run_gateway_cmd /
+            // poll_gateway, and a std::mutex relocked by its own thread is
+            // an abort, not a queue (two buttons paid that lesson already).
+            bool st_running, st_done, st_ok;
+            std::vector<selftest_state::step> st_steps;
+            {
+                std::lock_guard<std::mutex> g(selftest.m);
+                st_running = selftest.running;
+                st_done = selftest.done;
+                st_ok = selftest.ok;
+                st_steps = selftest.steps;
+            }
+            std::vector<gateway_state::route> routes;
+            bool provisioning = false;
+            std::string provision_result;
+            bool poll_due = false;
+            {
+                std::lock_guard<std::mutex> g(gwstate.m);
+                if (ImGui::GetTime() - gwstate.polled_at > 30.0) {
+                    gwstate.polled_at = ImGui::GetTime();
+                    poll_due = true;
+                }
+                routes = gwstate.routes;
+                provisioning = gwstate.provisioning;
+                provision_result = gwstate.provision_result;
+            }
+            if (poll_due)
+                poll_gateway(gwstate, gateway);
+            std::string pending_cmd;
+            const char* pending_label = nullptr;
+
+            char rtitle[64];
+            std::snprintf(rtitle, sizeof rtitle, "routes - %d###routes",
+                          static_cast<int>(routes.size()));
+            if (alarms_dock)
+                ImGui::SetNextWindowDockID(alarms_dock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkSize.x - 580, 390), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(560, 340), ImGuiCond_FirstUseEver);
+            ImGui::Begin(rtitle);
+
+            const bool clicked = ImGui::Button(st_running ? "testing..." : "test alarm");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("prove the whole path: hub, tunnel, channels,\n"
+                                  "then a public round-trip through EVERY route");
+            if (st_done) {
+                int okc = 0;
+                for (const auto& sp : st_steps) okc += sp.ok ? 1 : 0;
+                ImGui::SameLine();
+                ImGui::TextColored(st_ok ? rt_green : rt_red,
+                                   st_ok ? "PASS" : "FAIL");
+                ImGui::SameLine();
+                ImGui::TextDisabled("%d/%d steps", okc, static_cast<int>(st_steps.size()));
+                ImGui::SameLine();
+                if (ImGui::TreeNodeEx("detail", ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                                ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                    for (const auto& sp : st_steps) {
+                        ImGui::TextColored(sp.ok ? rt_green : rt_red, "%s %s",
+                                           sp.ok ? "ok" : "X", sp.name.c_str());
+                        if (!sp.detail.empty()) {
+                            ImGui::PushTextWrapPos();
+                            ImGui::TextDisabled("   %s", sp.detail.c_str());
+                            ImGui::PopTextWrapPos();
+                        }
+                    }
+                }
+            }
+            if (clicked && !st_running)
+                run_selftest(selftest, gateway);
+            ImGui::Separator();
+
+            if (ImGui::BeginTable("routegrid", 6,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 36.0f);
+                ImGui::TableSetupColumn("route", ImGuiTableColumnFlags_WidthFixed, 104.0f);
+                ImGui::TableSetupColumn("url", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("seen", ImGuiTableColumnFlags_WidthFixed, 44.0f);
+                ImGui::TableSetupColumn("ping", ImGuiTableColumnFlags_WidthFixed, 52.0f);
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+                ImGui::TableHeadersRow();
+                for (const auto& r : routes) {
+                    ImGui::PushID(r.name.c_str());
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(r.healthy == 1 ? rt_green
+                                     : r.healthy == 0 ? rt_red : rt_grey,
+                                       "%s", r.healthy == 1 ? "up"
+                                           : r.healthy == 0 ? "DOWN" : "--");
+                    ImGui::TableNextColumn();
+                    const bool open = ImGui::TreeNodeEx(r.name.c_str(),
+                                                        ImGuiTreeNodeFlags_SpanAvailWidth);
+                    ImGui::TableNextColumn();
+                    {
+                        std::string u = r.public_url;
+                        if (u.rfind("https://", 0) == 0) u = u.substr(8);
+                        ImGui::TextDisabled("%s", u.c_str());
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", r.public_url.c_str());
+                    }
+                    ImGui::TableNextColumn();
+                    if (r.seen_ago_s >= 0) ImGui::TextDisabled("%lds", r.seen_ago_s);
+                    else ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    if (r.last_ms >= 0) ImGui::TextDisabled("%dms", static_cast<int>(r.last_ms));
+                    else ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    if (ImGui::SmallButton("copy"))
+                        ImGui::SetClipboardText(r.public_url.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("copy the full URL");
+                    if (r.deletable) {
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("x")) {
+                            std::string lower = r.name;
+                            for (auto& c : lower) c = static_cast<char>(std::tolower(c));
+                            pending_cmd = "curl -s -m 10 -X DELETE " + gateway +
+                                          "/provision/" + lower + " 2>/dev/null";
+                            pending_label = "delete";
+                        }
+                    }
+                    if (open) {
+                        const auto kv = [](const char* k, const std::string& v) {
+                            ImGui::TableNextRow();
+                            ImGui::TableSetColumnIndex(1);
+                            ImGui::TextDisabled("%s", k);
+                            ImGui::TableSetColumnIndex(2);
+                            ImGui::PushTextWrapPos();
+                            ImGui::TextUnformatted(v.c_str());
+                            ImGui::PopTextWrapPos();
+                        };
+                        kv("url", r.public_url); // the whole route, wrapped, no clipping
+                        if (r.url != r.public_url)
+                            kv("ping target", r.url);
+                        kv("kind", r.kind + (r.target.empty() ? "" : " -> " + r.target));
+                        if (r.interval_s > 0)
+                            kv("ping clock", "every " +
+                               std::to_string(static_cast<int>(r.interval_s)) + "s - " +
+                               std::to_string(r.checks) + " checks, " +
+                               std::to_string(r.fails) + " failing now");
+                        if (!r.last_ok.empty()) {
+                            const long ago = iso_ago_s(r.last_ok);
+                            kv("last ok", ago >= 0 ? std::to_string(ago) + "s ago" : r.last_ok);
+                        } else {
+                            kv("last ok", "never");
+                        }
+                        if (!r.state.empty())
+                            kv("tunnel", r.state);
+                        for (const auto& sp : st_steps) {
+                            const bool mine = sp.name == "route " + r.name ||
+                                (r.name == "ALARM" && sp.name == "public round-trip");
+                            if (mine)
+                                kv(sp.ok ? "last test: ok" : "last test: FAILED", sp.detail);
+                        }
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+
+            ImGui::SetNextItemWidth(90);
+            ImGui::InputTextWithHint("##epname", "name", ep_name, sizeof ep_name);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(60);
+            ImGui::InputTextWithHint("##epport", "port", ep_port, sizeof ep_port);
+            ImGui::SameLine();
+            if (ImGui::Button(provisioning ? "..." : "+ endpoint") && !provisioning) {
+                std::string body = "{";
+                if (ep_name[0]) body += std::string("\"name\":\"") + ep_name + "\"";
+                if (ep_port[0]) body += std::string(ep_name[0] ? "," : "") +
+                                        "\"port\":" + ep_port;
+                body += "}";
+                pending_cmd = "curl -s -m 60 -X POST " + gateway +
+                              "/provision -d '" + body + "' 2>/dev/null";
+                pending_label = "provision";
+                ep_name[0] = ep_port[0] = '\0';
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("one click, one public URL: forward a\n"
+                                  "local port, or capture deliveries\n"
+                                  "(blank port) as wh.<name> events");
+            if (!provision_result.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("%s", provision_result.c_str());
+                ImGui::PopTextWrapPos();
+                if (provision_result.rfind("https://", 0) == 0) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("copy url"))
+                        ImGui::SetClipboardText(provision_result.c_str());
+                }
+            }
+            if (pending_label)
+                run_gateway_cmd(gwstate, pending_cmd, pending_label);
             ImGui::End();
         }
 

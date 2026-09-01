@@ -867,10 +867,23 @@ const server = createServer(async (req, res) => {
            interval_s: hb.intervalMs / 1000 })),
       channels: channelRoster(channels).map((c) =>
         ({ ...c, active: notifyNames.includes(c.name) })),
-      tunnels: [...watched.entries()].map(([name, w]) =>
-        ({ name, url: w.url, interval_s: w.intervalMs / 1000,
-           healthy: w.healthy, checks: w.checks, fails: w.fails,
-           last_ok: w.lastOk, last_ms: w.lastMs, last_checked: w.lastChecked ?? null })),
+      tunnels: [...watched.entries()].map(([name, w]) => {
+        // Enough per route for a viewer to build a full diagnostics tree -
+        // and the gateway's own front door carries the same shape as
+        // everything else, because it IS a route like everything else.
+        const ep = provisioned.get(name.toLowerCase());
+        // url is what the watchdog pings; public_url is the route itself -
+        // the address you paste somewhere. They differ for capture
+        // endpoints (ping /healthz, deliver to /hook/<name>) and for the
+        // front door (ping /healthz, alarm at the bare hostname).
+        return { name, url: w.url, interval_s: w.intervalMs / 1000,
+                 public_url: name === 'ALARM' ? (tunnel.url ?? w.url) : (ep?.url ?? w.url),
+                 healthy: w.healthy, checks: w.checks, fails: w.fails,
+                 last_ok: w.lastOk, last_ms: w.lastMs, last_checked: w.lastChecked ?? null,
+                 kind: name === 'ALARM' ? `gateway (${tunnel.kind})` : ep ? ep.kind : 'watch',
+                 target: ep?.kind === 'forward' ? ep.target : null,
+                 state: ep?.state ?? null, deletable: !!ep };
+      }),
       endpoints: [...provisioned.entries()].map(([name, e]) =>
         ({ name, kind: e.kind, url: e.url, state: e.state })),
     });
