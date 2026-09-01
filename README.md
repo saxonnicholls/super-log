@@ -46,7 +46,7 @@ super-log converges all of it on one process and one screen:
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
 | **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract; operational key balances (gas or ERC-20) with edge-triggered fund-now alarms |
 | **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee` |
-| **alarms** | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated); public endpoints provisioned one per click or many per manifest file, each with its own ping clock and health light, every route round-trip-tested by the test button, the live URLs written to `endpoints.env` |
+| **alarms, webhooks** | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated); public endpoints provisioned one per click or many per manifest file, each with its own ping clock and health light, every route round-trip-tested by the test button, the live URLs written to `endpoints.env`; **webhook testing** built in — capture Stripe/GitHub deliveries as `wh.*` events, verify Stripe signatures on arrival, or relay each delivery to your local handler with its real response returned (`stripe listen`, with a record) |
 
 Every producer speaks one small wire protocol
 ([docs/PROTOCOL.md](docs/PROTOCOL.md): one JSON event per line, batched over
@@ -296,6 +296,27 @@ optional `interval_s`) and keeps it applied as the file changes — new names
 appear, removed names are torn down, though only names the file created.
 Every URL the gateway currently owns is rewritten to **`endpoints.env`**
 (gitignored) on every change, so scripts and agents can simply source it.
+
+**Webhook testing, done properly — Stripe as the worked example.** A
+capture endpoint alone is already a webhook inspector: paste its URL into
+the Stripe dashboard (or `stripe trigger payment_intent.succeeded` at it),
+and every delivery lands as a `wh.stripe` event with method, headers
+(`stripe-signature` kept) and up to 32KB of body — a real invoice event
+runs 5–15KB and arrives whole. Two additions make it a development tool
+rather than a peephole. Give the endpoint your signing secret
+(`"secret":"whsec_..."` in the manifest, or `STRIPE_WEBHOOK_SECRET`) and
+the gateway verifies the Stripe signature scheme **on arrival**: each
+event carries `sig: verified` or `sig: FAILED` (WARN), with stale
+timestamps flagged as possible replays — and no secret means the field
+stays absent, never a fake verdict. Give it a **relay**
+(`{"name":"stripe","relay":5000}` or a full URL like
+`http://127.0.0.1:5000/webhook`) and each delivery is also handed to your
+local handler, whose **real response goes back to Stripe** — `stripe
+listen --forward-to`, except every delivery, signature verdict and your
+handler's status code are on the bench, in order, beside your app's own
+logs. A handler that is down shows up as `relay unreachable` at WARN — the
+exact finding a webhook test exists to produce. (`local: true` skips the
+tunnel entirely when the bench only needs to test against itself.)
 
 **Producers never block.** Every SDK uses a bounded queue that drops oldest
 under burst — counted, never hidden. A logger that can stall the app it
@@ -693,6 +714,8 @@ npm run alert -- --test                     # prove delivery without waiting
 npm run alert -- --channels                 # the notification roster, and what is missing
 npm run alarm                               # production's webhook door, tunnelled + tested
 npm run alarm -- --provision endpoints.json # ...plus many public endpoints, from a manifest
+                                            # incl. Stripe webhook testing: capture, verify
+                                            # signatures, relay to your local handler
 npm run build -- --label cxx -- cmake --build build -j
 npm run build -- --label asan -- ./build/tests   # sanitizer findings, whole
 npm run git                                 # this repo: commits, branches, conflicts

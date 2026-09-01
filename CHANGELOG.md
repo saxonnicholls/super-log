@@ -5,6 +5,31 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-alarm: webhook testing (Stripe-grade)** — capture endpoints grew
+into a webhook development tool. The `wh.<name>` body cap rose from 4KB to
+32KB (a real Stripe invoice event runs 5–15KB; a tester that truncates the
+payload is not a tester). With a signing secret on the endpoint
+(`"secret":"whsec_..."` in the manifest, or `STRIPE_WEBHOOK_SECRET`) the
+Stripe signature scheme is verified on arrival — `fields.sig` says
+`verified` or `FAILED` (WARN), stale timestamps are flagged as possible
+replays, and no secret means the field stays absent, never a fake verdict.
+A `relay` endpoint (`"relay":5000` or a full URL) additionally hands each
+delivery to a local handler and returns the handler's real response to the
+sender — `stripe listen --forward-to`, except every delivery, signature
+verdict and handler status land on the bench; a handler that is down is
+`relay unreachable` at WARN, the exact finding the endpoint exists to
+produce. `"local": true` skips the tunnel when the /hook route itself is
+the endpoint (bench-local tests, your own reverse proxy).
+
+Verified against a real hub with a stand-in handler
+(`tests/alarm.test.mjs`): a correctly signed delivery reads
+`sig: verified` at INFO with the payload intact, a tampered one reads
+`FAILED` at WARN, and a relayed delivery hands the sender the handler's
+own 201 and path while the bench records `relay_status: 201`. Written but
+unverified by tests: relay through a real public tunnel (the suite uses
+`local` endpoints to keep cloudflared out of CI; the public capture path
+itself is live-verified on this bench).
+
 **superlog-alarm: every route tested, endpoints from a manifest** — the
 selftest now walks the whole roster, not just the flagship tunnel: one
 verdict per watched route, in parallel, where "tested" means what the route

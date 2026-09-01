@@ -62,7 +62,7 @@
 
 import { spawn } from 'node:child_process';
 import { readFileSync, watchFile, writeFileSync } from 'node:fs';
-import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { hostname } from 'node:os';
@@ -94,8 +94,11 @@ POST /selftest          loopback only: the whole public path, step by step
 
 --hostname provisions a NAMED Cloudflare tunnel via the API. --provision
 reads a declarative manifest of endpoints (see the manifest section in the
-source) and keeps it applied as the file changes. Severity: P0=CRITICAL,
-P1=ERROR, P2=WARN.`);
+source) and keeps it applied as the file changes; entries can capture
+webhook deliveries as wh.<name> events, RELAY them to a local handler
+(stripe listen, with a record), verify Stripe signatures given a secret
+(per-endpoint or STRIPE_WEBHOOK_SECRET), or forward a raw port. Severity:
+P0=CRITICAL, P1=ERROR, P2=WARN.`);
   process.exit(0);
 }
 
@@ -364,9 +367,11 @@ function writeEndpointsFile() {
   if (tunnel.url) kv.push(['ALARM_URL', tunnel.url]);
   for (const [name, ep] of provisioned)
     if (ep.url) kv.push([`${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_URL`, ep.url]);
-  for (const [name, w] of watched)
-    if (!kv.some(([k]) => k === `${name}_URL`) && name !== 'ALARM')
-      kv.push([`${name.replace(/[^A-Z0-9]/g, '_')}_URL`, w.url]);
+  for (const [name, w] of watched) {
+    const key = `${name.replace(/[^A-Z0-9]/g, '_')}_URL`;
+    if (!kv.some(([k]) => k === key) && name !== 'ALARM')
+      kv.push([key, w.url]);
+  }
   try {
     writeFileSync(endpointsFile,
       '# Written by superlog-alarm - the URLs this gateway currently owns.\n' +
@@ -377,13 +382,51 @@ function writeEndpointsFile() {
   }
 }
 
-function provisionEndpoint(name, target, intervalS) {
+// Three kinds now, because webhook TESTING wants more than watching:
+// CAPTURE lands deliveries as wh.<name> events; RELAY does that AND
+// forwards each delivery to a local handler, answering the sender with
+// the handler's real response - stripe listen, plus a bench record of
+// every delivery; FORWARD hands the internet a port, gateway not in the
+// path. A per-endpoint `secret` (or STRIPE_WEBHOOK_SECRET) turns on
+// Stripe-scheme signature verification for capture/relay deliveries.
+// `local: true` skips the tunnel: the /hook route itself is the endpoint,
+// for bench-local tests or when you bring your own reverse proxy.
+function provisionEndpoint(name, opts = {}) {
+  const relay = typeof opts.relay === 'number'
+    ? `http://127.0.0.1:${opts.relay}` : opts.relay ? String(opts.relay) : null;
+  const kind = relay ? 'relay' : opts.target ? 'forward' : 'capture';
+  const to = kind === 'forward' ? String(opts.target) : `http://127.0.0.1:${port}`;
+  const intervalS = Number(opts.intervalS) || 0;
+  const secret = opts.secret ? String(opts.secret) : null;
+
+  const finish = (ep) => {
+    watched.set(name.toUpperCase(), {
+      url: kind === 'forward' ? ep.url
+         : ep.url.replace(/\/hook\/.*$/, '/healthz'),
+      intervalMs: (intervalS || 120) * 1000,
+      healthy: null, fails: 0, lastOk: null, lastMs: null, checks: 0,
+    });
+    startPingFor(name.toUpperCase());
+    void publishAlert('gateway', 'INFO',
+      `endpoint '${name}' provisioned (${kind}) at ${ep.url}`,
+      { endpoint: name, kind, url: ep.url });
+    writeEndpointsFile();
+    console.error(`superlog-alarm: endpoint '${name}' (${kind}) -> ${ep.url}` +
+                  (relay ? ` relaying to ${relay}` : ''));
+  };
+
+  if (opts.local && kind !== 'forward') {
+    const ep = { kind, target: to, relay, secret, child: null, state: 'local',
+                 url: `http://127.0.0.1:${port}/hook/${name}` };
+    provisioned.set(name, ep);
+    finish(ep);
+    return Promise.resolve(ep);
+  }
+
   return new Promise((resolve) => {
-    const kind = target ? 'forward' : 'capture';
-    const to = target ?? `http://127.0.0.1:${port}`;
     const child = spawn('cloudflared', ['tunnel', '--url', to, '--no-autoupdate'],
                         { stdio: ['ignore', 'pipe', 'pipe'] });
-    const ep = { kind, target: to, url: null, child, state: 'starting' };
+    const ep = { kind, target: to, relay, secret, url: null, child, state: 'starting' };
     provisioned.set(name, ep);
     let carry = '';
     let settled = false;
@@ -395,19 +438,9 @@ function provisionEndpoint(name, target, intervalS) {
       carry = (carry + d.toString()).slice(-8192);
       const url = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(carry)?.[0];
       if (url && !ep.url) {
-        ep.url = kind === 'capture' ? `${url}/hook/${name}` : url;
+        ep.url = kind === 'forward' ? url : `${url}/hook/${name}`;
         ep.state = 'up';
-        watched.set(name.toUpperCase(), {
-          url: kind === 'capture' ? `${url}/healthz` : url,
-          intervalMs: (intervalS || 120) * 1000,
-          healthy: null, fails: 0, lastOk: null, lastMs: null, checks: 0,
-        });
-        startPingFor(name.toUpperCase());
-        void publishAlert('gateway', 'INFO',
-          `endpoint '${name}' provisioned (${kind}) at ${ep.url}`,
-          { endpoint: name, kind, url: ep.url });
-        writeEndpointsFile();
-        console.error(`superlog-alarm: endpoint '${name}' (${kind}) -> ${ep.url}`);
+        finish(ep);
         if (!settled) { settled = true; clearTimeout(timer); resolve(ep); }
       }
     };
@@ -441,14 +474,21 @@ function deleteEndpoint(name) {
 // file is applied at startup and re-applied whenever it changes - new
 // names appear, and names removed from the file are torn down, but only
 // names the file created; the button's endpoints are not the file's to
-// kill. Three shapes, one entry each, interval_s tuning the ping clock:
+// kill. Four shapes, one entry each, interval_s tuning the ping clock:
 //
 //   {"name":"stripe"}                        capture -> wh.stripe events
+//   {"name":"stripe","relay":5000,           ...AND hand each delivery to a
+//    "secret":"whsec_..."}                   local handler, whose response
+//                                            goes back to the sender, with
+//                                            Stripe signatures verified
 //   {"name":"webapp","port":5173}            forward a local port
 //   {"name":"partner","url":"https://..."}   watch-only: just the light
 //
-// The file is config like alerts.json - gitignored, because names and
-// ports describe the bench.
+// relay takes a port or a full URL ("http://127.0.0.1:5000/webhook");
+// "local": true skips the tunnel (the /hook route itself is the endpoint,
+// for bench-local tests or your own reverse proxy). The file is config
+// like alerts.json - gitignored, because names, ports and signing secrets
+// describe the bench.
 
 const provisionFile = opt('provision', env.SUPER_LOG_PROVISION ?? null);
 let applyingManifest = false;
@@ -483,7 +523,8 @@ async function applyProvisionFile(path) {
       } else if (!provisioned.has(name)) {
         const target = e.target ? String(e.target)
                      : e.port ? `http://127.0.0.1:${Number(e.port)}` : null;
-        const ep = await provisionEndpoint(name, target, iv);
+        const ep = await provisionEndpoint(name,
+          { target, relay: e.relay, secret: e.secret, local: e.local, intervalS: iv });
         ep.fromFile = true;
         if (!ep.url)
           console.error(`superlog-alarm: ${path}: endpoint '${name}' failed (${ep.state})`);
@@ -881,7 +922,7 @@ const server = createServer(async (req, res) => {
                  healthy: w.healthy, checks: w.checks, fails: w.fails,
                  last_ok: w.lastOk, last_ms: w.lastMs, last_checked: w.lastChecked ?? null,
                  kind: name === 'ALARM' ? `gateway (${tunnel.kind})` : ep ? ep.kind : 'watch',
-                 target: ep?.kind === 'forward' ? ep.target : null,
+                 target: ep?.kind === 'forward' ? ep.target : ep?.relay ?? null,
                  state: ep?.state ?? null, deletable: !!ep };
       }),
       endpoints: [...provisioned.entries()].map(([name, e]) =>
@@ -900,27 +941,81 @@ const server = createServer(async (req, res) => {
 
   // The capture half of a provisioned endpoint: any method, no token
   // (Stripe cannot send ours - the unguessable URL is the secrecy), every
-  // delivery a wh.<name> event with method, a few headers and a capped
-  // body. Answer 200 fast; webhook senders retry slow endpoints.
+  // delivery a wh.<name> event with method, a few headers and the body
+  // (32KB cap - a real Stripe invoice event runs 5-15KB, and a webhook
+  // tester that truncates the payload is not a tester). With a secret on
+  // the books the Stripe signature scheme is verified on arrival; with a
+  // relay target the delivery is handed to the local handler and ITS
+  // response goes back to the sender - stripe listen, with a record.
   const hookMatch = /^\/hook\/([A-Za-z0-9._-]{1,48})$/.exec(url.pathname);
   if (hookMatch) {
     const name = hookMatch[1];
+    const ep = provisioned.get(sanitize(name));
     const body = await readBody(req);
     const keep = ['content-type', 'user-agent', 'stripe-signature', 'x-github-event'];
     const heads = Object.fromEntries(keep.filter((h) => req.headers[h])
       .map((h) => [h, String(req.headers[h]).slice(0, 200)]));
+    const fields = { ...heads, method: req.method, body: body.slice(0, 32000) };
+    let level = 'INFO';
+    let note = '';
+
+    // Stripe scheme: t=<unix>,v1=<hex hmac-sha256 of "t.body">. Verified
+    // only when a secret exists - no secret means the field stays ABSENT,
+    // never a fake "unverified" that reads like a finding.
+    const secret = ep?.secret ?? env.STRIPE_WEBHOOK_SECRET ?? null;
+    const sigHead = req.headers['stripe-signature'];
+    if (secret && typeof sigHead === 'string') {
+      const parts = sigHead.split(',').map((s) => s.trim().split('='));
+      const t = parts.find(([k]) => k === 't')?.[1] ?? '';
+      const expect = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
+      const okSig = parts.filter(([k]) => k === 'v1').some(([, v]) =>
+        v?.length === expect.length && timingSafeEqual(Buffer.from(v), Buffer.from(expect)));
+      const ageS = Math.abs(Date.now() / 1000 - Number(t));
+      fields.sig = !okSig ? 'FAILED'
+        : ageS > 300 ? `verified, but timestamp ${Math.round(ageS)}s old - replay?`
+        : 'verified';
+      if (fields.sig !== 'verified') level = 'WARN';
+      note += okSig ? ', sig ok' : ', sig BAD';
+    }
+
+    let relayed = null;
+    if (ep?.relay) {
+      try {
+        const fw = { ...req.headers };
+        for (const h of ['host', 'content-length', 'connection', 'transfer-encoding'])
+          delete fw[h];
+        relayed = await fetch(ep.relay, {
+          method: req.method, headers: fw, body: body || undefined,
+          signal: AbortSignal.timeout(20000),
+        });
+        fields.relay_status = String(relayed.status);
+      } catch (e) {
+        // The handler being down IS the finding a relay endpoint exists for.
+        fields.relay_status = `unreachable (${String(e.cause?.code ?? e.message)})`;
+        level = 'WARN';
+      }
+      note += `, relay ${fields.relay_status}`;
+    }
+
     const line = JSON.stringify({
-      v: 1, ts: new Date().toISOString(), seq: seq++, session, level: 'INFO',
+      v: 1, ts: new Date().toISOString(), seq: seq++, session, level,
       origin: { runtime: 'node', app: 'webhook', platform: 'alert', device },
-      tag: 'hook', msg: `${req.method} /hook/${name} (${body.length}b)`,
-      fields: { ...heads, method: req.method,
-                body: body.slice(0, 4000) },
+      tag: 'hook', msg: `${req.method} /hook/${name} (${body.length}b${note})`,
+      fields,
     });
     await fetch(`${hubUrl}/ingest/wh.${sanitize(name)}`, {
       method: 'POST', headers: { 'content-type': 'application/x-ndjson' }, body: line,
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
     forwardOn(`/hook/${name}`, body, Number(req.headers['x-superlog-hop']) || 0);
+    if (relayed) {
+      const text = await relayed.text().catch(() => '');
+      res.writeHead(relayed.status,
+        { 'content-type': relayed.headers.get('content-type') ?? 'application/json' });
+      return res.end(text);
+    }
+    if (ep?.relay)
+      return json(res, 502, { ok: false, error: 'relay target unreachable' });
     return json(res, 200, { ok: true });
   }
 
@@ -935,7 +1030,9 @@ const server = createServer(async (req, res) => {
     if (provisioned.has(name))
       return json(res, 409, { ok: false, error: `endpoint '${name}' already exists` });
     const target = body.port ? `http://127.0.0.1:${Number(body.port)}` : null;
-    const ep = await provisionEndpoint(name, target, Number(body.interval_s) || 0);
+    const ep = await provisionEndpoint(name,
+      { target, relay: body.relay, secret: body.secret, local: body.local,
+        intervalS: Number(body.interval_s) || 0 });
     return json(res, ep.url ? 200 : 502,
       { ok: !!ep.url, name, kind: ep.kind, url: ep.url,
         ...(ep.url ? {} : { error: `tunnel ${ep.state} - is cloudflared installed?` }) });
