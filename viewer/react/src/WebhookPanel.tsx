@@ -23,6 +23,7 @@ const age = (ms: number): string => {
 const LEVEL_COLOR: Record<string, string> = {
   INFO: '#68c964', WARN: '#d9a441', ERROR: '#e05b4f', CRITICAL: '#ff2e1f',
 };
+const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'] as const;
 
 export function WebhookPanel({ rows, hub, verdictFor }: {
   rows: LogRow[]; hub: string;
@@ -33,14 +34,25 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
   const [newPort, setNewPort] = useState('');
   const [provisioned, setProvisioned] = useState<string | null>(null);
   const [openBody, setOpenBody] = useState<number | null>(null);
+  // The same two filters the main log has: which endpoint, and how loud.
+  const [epFilter, setEpFilter] = useState('');   // '' = all endpoints
+  const [minLevel, setMinLevel] = useState(0);
 
   // Development's routes: the endpoint factory's children. Production's
   // (the door, watch-only externals) live in the alarms panel.
   const devRoutes = (gw?.tunnels ?? []).filter((t) =>
     t.kind === 'capture' || t.kind === 'relay' || t.kind === 'forward');
 
+  const endpoints = useMemo(() => [...new Set([
+    ...devRoutes.map((r) => r.name.toLowerCase()),
+    ...rows.filter((r) => r.topic.startsWith('wh.')).map((r) => r.topic.slice(3)),
+  ])].sort(), [devRoutes, rows]);
+
   const deliveries = useMemo(() =>
-    rows.filter((r) => r.topic.startsWith('wh.')).slice(-100).reverse(), [rows]);
+    rows.filter((r) => r.topic.startsWith('wh.') &&
+                       (!epFilter || r.topic.slice(3) === epFilter) &&
+                       LEVELS.indexOf(r.level as typeof LEVELS[number]) >= minLevel)
+      .slice(-100).reverse(), [rows, epFilter, minLevel]);
 
   const provision = async () => {
     try {
@@ -96,7 +108,19 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
         </div>
       )}
 
-      <div style={{ color: '#5c6470', fontSize: 11, padding: '4px 10px' }}>deliveries</div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center',
+                    padding: '4px 10px' }}>
+        <span style={{ color: '#5c6470', fontSize: 11 }}>deliveries</span>
+        <select value={epFilter} onChange={(e) => setEpFilter(e.target.value)}
+                style={{ ...box, marginLeft: 'auto' }}>
+          <option value="">all endpoints</option>
+          {endpoints.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+        <select value={minLevel} onChange={(e) => setMinLevel(Number(e.target.value))}
+                style={box}>
+          {LEVELS.map((l, i) => <option key={l} value={i}>{l}</option>)}
+        </select>
+      </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 6px' }}>
         {deliveries.length === 0 && (
           <div style={{ color: '#3d434d', padding: 12, fontSize: 12 }}>

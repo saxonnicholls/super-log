@@ -34,6 +34,7 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -1247,13 +1248,50 @@ int main()
                 run_gateway_cmd(gwstate, pending_cmd, pending_label);
             ImGui::Separator();
             ImGui::TextDisabled("deliveries");
+            // The same two filters the main log has: which stream (here,
+            // which endpoint) and how loud. The selection is the NAME, not
+            // an index - the endpoint list grows under the combo.
+            static char wh_ep_filter[48] = "";      // empty = all endpoints
+            static int wh_min_level = 0;
+            {
+                std::vector<std::string> eps;
+                for (const auto& r : dev_routes) {
+                    std::string l = r.name;
+                    for (auto& c : l) c = static_cast<char>(std::tolower(c));
+                    eps.push_back(l);
+                }
+                for (const auto& w : webhooks)
+                    eps.push_back(w.endpoint);
+                std::sort(eps.begin(), eps.end());
+                eps.erase(std::unique(eps.begin(), eps.end()), eps.end());
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(130);
+                if (ImGui::BeginCombo("##whep",
+                                      wh_ep_filter[0] ? wh_ep_filter : "all endpoints")) {
+                    if (ImGui::Selectable("all endpoints", !wh_ep_filter[0]))
+                        wh_ep_filter[0] = '\0';
+                    for (const auto& e : eps)
+                        if (ImGui::Selectable(e.c_str(), e == wh_ep_filter))
+                            std::snprintf(wh_ep_filter, sizeof wh_ep_filter, "%s", e.c_str());
+                    ImGui::EndCombo();
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(90);
+                ImGui::Combo("##whlvl", &wh_min_level, levels, 6);
+            }
             ImGui::BeginChild("whfeed", ImVec2(0, 0));
+            bool any_shown = false;
             if (webhooks.empty())
                 ImGui::TextDisabled("none yet - paste an endpoint URL into a\n"
                                     "webhook sender (a Stripe endpoint, a\n"
                                     "GitHub hook) and watch them arrive.");
             int wi = 0;
             for (auto it = webhooks.rbegin(); it != webhooks.rend(); ++it, ++wi) {
+                if (it->level < wh_min_level)
+                    continue;
+                if (wh_ep_filter[0] && it->endpoint != wh_ep_filter)
+                    continue;
+                any_shown = true;
                 ImGui::PushID(wi);
                 ImGui::TextColored(level_color(it->level), "%s", it->endpoint.c_str());
                 ImGui::SameLine();
@@ -1270,6 +1308,9 @@ int main()
                 ImGui::Separator();
                 ImGui::PopID();
             }
+            if (!webhooks.empty() && !any_shown)
+                ImGui::TextDisabled("%zu deliveries hidden by the filters above",
+                                    webhooks.size());
             ImGui::EndChild();
             ImGui::End();
         }
