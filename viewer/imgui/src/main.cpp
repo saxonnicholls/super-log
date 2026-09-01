@@ -343,7 +343,7 @@ struct gateway_state {
     };
     std::vector<route> routes;
     bool reachable = false;
-    double polled_at = 0;
+    double polled_at = -100;    // in the past, so the first frame polls now
     bool polling = false;
     std::string provision_result;
     bool provisioning = false;
@@ -410,6 +410,8 @@ void poll_gateway(gateway_state& st, const std::string& gateway)
                     r.fails = t["fails"].get<int>();
                 st.routes.push_back(std::move(r));
             }
+        std::fprintf(stderr, "poll_gateway: %zu routes, %zu bytes\n",
+                     st.routes.size(), out.size());
     }).detach();
 }
 
@@ -785,7 +787,6 @@ int main()
         ImGui::End();
 
         // ---- the alarm blotter: its own window, sparse by construction
-        ImGuiID alarms_dock = 0;
         {
             int firing = 0;
             for (const auto& a : blotter)
@@ -797,12 +798,17 @@ int main()
             ImGui::SetNextWindowPos(ImVec2(vp->WorkSize.x - 400, 40), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(380, 330), ImGuiCond_FirstUseEver);
             ImGui::Begin(title);
-            // The blotter owns this window outright: alarms are the thing
-            // that must never scroll out of sight behind diagnostics, so
-            // the routes machinery lives in its own dockable window, which
-            // joins this one's dock node on first appearance - a window
-            // nobody can find may as well not exist.
-            alarms_dock = ImGui::GetWindowDockID();
+            // The blotter owns the top of this window and flexes; the
+            // routes grid lives under a collapsing header pinned to the
+            // bottom, scrolling in its own space. One window: alarms can
+            // never be crowded out, and there is no second window to go
+            // hunting for - the separate-window version spent its life
+            // buried underneath this one.
+            static bool routes_open = true;
+            const float routes_reserved = routes_open
+                ? std::min(360.0f, ImGui::GetContentRegionAvail().y * 0.6f)
+                : ImGui::GetFrameHeightWithSpacing() + 4.0f;
+            ImGui::BeginChild("blotterpane", ImVec2(0, -routes_reserved));
             if (blotter.empty())
                 ImGui::TextDisabled("no alarms - which is the idea.");
             // Newest state at the top; a blotter is read from the top.
@@ -823,13 +829,11 @@ int main()
                 ImGui::PopTextWrapPos();
                 ImGui::Separator();
             }
-            ImGui::End();
-        }
+            ImGui::EndChild();
 
         // ---- routes: one grid, one row per route, the same diagnostics
         // for every row - the gateway's own front door included, because a
-        // route is a route. Expand a row for the whole story; the alarms
-        // window above stays sparse and never shares its space with this.
+        // route is a route. Expand a row for the whole story.
         {
             const ImVec4 rt_green(0.41f, 0.79f, 0.39f, 1);
             const ImVec4 rt_red(1.0f, 0.18f, 0.12f, 1);
@@ -869,13 +873,11 @@ int main()
             const char* pending_label = nullptr;
 
             char rtitle[64];
-            std::snprintf(rtitle, sizeof rtitle, "routes - %d###routes",
+            std::snprintf(rtitle, sizeof rtitle, "routes - %d###routeshdr",
                           static_cast<int>(routes.size()));
-            if (alarms_dock)
-                ImGui::SetNextWindowDockID(alarms_dock, ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowPos(ImVec2(vp->WorkSize.x - 580, 390), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(560, 340), ImGuiCond_FirstUseEver);
-            ImGui::Begin(rtitle);
+            routes_open = ImGui::CollapsingHeader(rtitle, ImGuiTreeNodeFlags_DefaultOpen);
+            if (routes_open) {
+            ImGui::BeginChild("routespane", ImVec2(0, 0));
 
             const bool clicked = ImGui::Button(st_running ? "testing..." : "test alarm");
             if (ImGui::IsItemHovered())
@@ -1030,6 +1032,9 @@ int main()
             }
             if (pending_label)
                 run_gateway_cmd(gwstate, pending_cmd, pending_label);
+            ImGui::EndChild();
+            }
+        }
             ImGui::End();
         }
 
