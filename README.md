@@ -264,9 +264,13 @@ rule fires when all its conditions land inside one window, the correlation
 **Production can raise the alarm, without logging a thing.** Every SDK's
 PRODUCTION mode ships nothing by design — but an ALARM is not logging, it
 is a rare deliberate act, and `superlog-alarm` is its door: a token-guarded
-public webhook through a **Cloudflare tunnel** (quick tunnel with zero
-config; a stable named tunnel auto-provisioned via the API given a token;
-ngrok and zrok too). One curl from any language fires
+public webhook through a **Cloudflare tunnel** — a quick tunnel with zero
+config, or a stable named tunnel auto-provisioned via the API given a
+token. Cloudflare is the verified, daily-driven path: quick tunnels, the
+named tunnel, DNS provisioning and the endpoint factory all run against it
+on a real bench. `--tunnel ngrok` and `--tunnel zrok` exist as code paths
+but have not been driven the same way yet — see Future directions. One
+curl from any language fires
 `alert.inbound.<name>`; the same key re-firing is **one alarm with a
 repeat count**, not 113 pages; recovery closes the loop; and every checker
 can POST a heartbeat so the gateway itself raises `monitor_dead:<name>`
@@ -303,8 +307,12 @@ manifest (`{"name":"stripe"}` capture, `{"name":"webapp","port":5173}`
 forward, `{"name":"partner","url":"https://…"}` watch-only, each with
 optional `interval_s`) and keeps it applied as the file changes — new names
 appear, removed names are torn down, though only names the file created.
-Every URL the gateway currently owns is rewritten to **`endpoints.env`**
-(gitignored) on every change, so scripts and agents can simply source it.
+[endpoints.json.example](endpoints.json.example) shows every shape; the
+real file is gitignored because names, ports and signing secrets describe
+the bench. Every URL the gateway currently owns is rewritten to
+**`endpoints.env`** (gitignored) on every change, so scripts and agents
+can simply source it — and agents can also just ask: the MCP server's
+`list_webhooks` returns the roster with public URLs and health.
 
 **Webhook testing, done properly — Stripe as the worked example.** A
 capture endpoint alone is already a webhook inspector: paste its URL into
@@ -326,6 +334,22 @@ handler's status code are on the bench, in order, beside your app's own
 logs. A handler that is down shows up as `relay unreachable` at WARN — the
 exact finding a webhook test exists to produce. (`local: true` skips the
 tunnel entirely when the bench only needs to test against itself.)
+GitHub's scheme (`x-hub-signature-256`) verifies beside Stripe's against
+the same secret; other providers are one clause each.
+
+The webhooks panel's **deliveries feed** is built for reading the results:
+filter by endpoint and by level exactly like the main log (WARN isolates
+the failed signatures and unreachable relays), expand any delivery's
+payload in place, and **copy** — one button per delivery, one for the
+whole filtered set — hands you paste-able evidence: the feed line, the
+signature and relay verdicts, then the payload verbatim. The whole loop is
+exercised end-to-end with the Stripe CLI:
+
+```sh
+stripe listen --print-secret            # the whsec_... for endpoints.json
+stripe listen --forward-to http://127.0.0.1:7336/hook/stripe-test
+stripe trigger payment_intent.succeeded # real events, signatures verified
+```
 
 **Producers never block.** Every SDK uses a bounded queue that drops oldest
 under burst — counted, never hidden. A logger that can stall the app it
@@ -1196,6 +1220,14 @@ Deliberately not built yet, and the reasoning matters as much as the list:
 - **A byte budget on the hub's replay ring**, which belongs in ts-moveables
   rather than here; until it lands, `SUPER_LOG_REPLAY_CHUNKS` bounds the
   ring by count instead. See the comment in `hub/src/main.cpp`.
+- **ngrok and zrok as verified tunnel providers.** The gateway plays
+  happily with Cloudflare today — quick tunnels, the stable named tunnel,
+  DNS provisioning, the endpoint factory, all driven daily on a real
+  bench. `--tunnel ngrok` and `--tunnel zrok` parse their output and
+  should work, but "should work" is not the house standard: each needs an
+  account on the bench and the same live round-trip treatment before the
+  README may claim it. The endpoint factory's quick tunnels are
+  Cloudflare-only until then.
 - **Windows** as a first-class host for the hub and viewers. Windows
   machines already work as producers, and the event-log tailer is written
   but unverified.
