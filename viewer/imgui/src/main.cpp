@@ -322,6 +322,118 @@ void note_alarm(std::vector<alarm_entry>& blotter, const row& r, double now)
 // diagnosis per step. curl rather than a hand-rolled client: it is the
 // same honest bargain the shell and Haskell SDKs make, and TLS through a
 // tunnel is exactly the thing not to hand-roll.
+// The gateway's roster - routes with lights, and the one-button endpoint
+// factory. Same bargain as the selftest: curl on worker threads, state
+// with static storage so a detached thread can never outlive it.
+struct gateway_state {
+    std::mutex m;
+    struct route {
+        std::string name, url;
+        int healthy = -1;                       // -1 unknown, 0 down, 1 up
+        double last_ms = -1;
+        long seen_ago_s = -1;                   // derived from last_checked at poll time
+        bool deletable = false;
+    };
+    std::vector<route> routes;
+    bool reachable = false;
+    double polled_at = 0;
+    bool polling = false;
+    std::string provision_result;
+    bool provisioning = false;
+};
+
+long iso_ago_s(const std::string& iso)
+{
+    if (iso.size() < 19)
+        return -1;
+    std::tm tm{};
+    if (!strptime(iso.c_str(), "%Y-%m-%dT%H:%M:%S", &tm))
+        return -1;
+    const std::time_t then = timegm(&tm);
+    return then > 0 ? static_cast<long>(std::time(nullptr) - then) : -1;
+}
+
+void poll_gateway(gateway_state& st, const std::string& gateway)
+{
+    {
+        std::lock_guard<std::mutex> g(st.m);
+        if (st.polling)
+            return;
+        st.polling = true;
+    }
+    std::thread([&st, gateway] {
+        const std::string cmd = "curl -s -m 10 " + gateway + "/healthz 2>/dev/null";
+        std::string out;
+        if (std::FILE* p = ::popen(cmd.c_str(), "r")) {
+            std::array<char, 4096> buf;
+            std::size_t n;
+            while ((n = std::fread(buf.data(), 1, buf.size(), p)) > 0)
+                out.append(buf.data(), n);
+            ::pclose(p);
+        }
+        std::lock_guard<std::mutex> g(st.m);
+        st.polling = false;
+        st.routes.clear();
+        const auto j = nlohmann::json::parse(out, nullptr, false);
+        st.reachable = !j.is_discarded() && j.is_object();
+        if (!st.reachable)
+            return;
+        std::vector<std::string> endpoint_names;
+        if (j.contains("endpoints"))
+            for (const auto& e : j["endpoints"])
+                endpoint_names.push_back(e.value("name", ""));
+        if (j.contains("tunnels"))
+            for (const auto& t : j["tunnels"]) {
+                gateway_state::route r;
+                r.name = t.value("name", "");
+                r.url = t.value("url", "");
+                if (t.contains("healthy") && t["healthy"].is_boolean())
+                    r.healthy = t["healthy"].get<bool>() ? 1 : 0;
+                if (t.contains("last_ms") && t["last_ms"].is_number())
+                    r.last_ms = t["last_ms"].get<double>();
+                if (t.contains("last_checked") && t["last_checked"].is_string())
+                    r.seen_ago_s = iso_ago_s(t["last_checked"].get<std::string>());
+                std::string lower = r.name;
+                for (auto& c : lower) c = static_cast<char>(std::tolower(c));
+                for (const auto& en : endpoint_names)
+                    if (en == lower) r.deletable = true;
+                st.routes.push_back(std::move(r));
+            }
+    }).detach();
+}
+
+void run_gateway_cmd(gateway_state& st, const std::string& cmd, const char* label)
+{
+    {
+        std::lock_guard<std::mutex> g(st.m);
+        if (st.provisioning)
+            return;
+        st.provisioning = true;
+        st.provision_result = std::string(label) + "...";
+    }
+    std::thread([&st, cmd, label] {
+        std::string out;
+        if (std::FILE* p = ::popen(cmd.c_str(), "r")) {
+            std::array<char, 4096> buf;
+            std::size_t n;
+            while ((n = std::fread(buf.data(), 1, buf.size(), p)) > 0)
+                out.append(buf.data(), n);
+            ::pclose(p);
+        }
+        std::lock_guard<std::mutex> g(st.m);
+        st.provisioning = false;
+        const auto j = nlohmann::json::parse(out, nullptr, false);
+        if (j.is_discarded() || !j.is_object())
+            st.provision_result = std::string(label) + " failed - is superlog-alarm running?";
+        else if (j.value("ok", false))
+            st.provision_result = j.contains("url") ? j["url"].get<std::string>()
+                                : std::string(label) + " done";
+        else
+            st.provision_result = std::string(label) + " failed: " + j.value("error", "unknown");
+        st.polled_at = 0;                       // refresh the roster next frame
+    }).detach();
+}
+
 struct selftest_state {
     std::mutex m;
     bool running = false, done = false, ok = false;
@@ -473,6 +585,9 @@ int main()
     // writing when main() unwinds - state with static storage cannot be
     // pulled out from under it.
     static selftest_state selftest;
+    static gateway_state gwstate;
+    static char ep_name[48] = "";
+    static char ep_port[8] = "";
     // The gateway lives beside the hub unless SUPER_LOG_ALARM_URL says not.
     const std::string gateway = [&] {
         if (const char* g = std::getenv("SUPER_LOG_ALARM_URL"))
@@ -709,6 +824,84 @@ int main()
                 if (clicked && !st_running)
                     run_selftest(selftest, gateway);
             }
+            // ---- routes: NAME: url : light : last seen, and the factory
+            {
+                if (ImGui::GetTime() - gwstate.polled_at > 30.0) {
+                    gwstate.polled_at = ImGui::GetTime();
+                    poll_gateway(gwstate, gateway);
+                }
+                std::lock_guard<std::mutex> g(gwstate.m);
+                for (const auto& r : gwstate.routes) {
+                    const ImVec4 light = r.healthy == 1 ? ImVec4(0.41f, 0.79f, 0.39f, 1)
+                                       : r.healthy == 0 ? ImVec4(1.0f, 0.18f, 0.12f, 1)
+                                                        : ImVec4(0.45f, 0.47f, 0.52f, 1);
+                    ImGui::TextColored(light, "%s", r.healthy == 1 ? "up" :
+                                                    r.healthy == 0 ? "DOWN" : "??");
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(r.name.c_str());
+                    ImGui::SameLine();
+                    std::string u = r.url;
+                    if (u.rfind("https://", 0) == 0) u = u.substr(8);
+                    if (u.size() > 26) u = u.substr(0, 26) + "..";
+                    ImGui::TextDisabled("%s", u.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", r.url.c_str());
+                    ImGui::SameLine();
+                    if (r.seen_ago_s >= 0)
+                        ImGui::TextDisabled("%lds ago %s", r.seen_ago_s,
+                                            r.last_ms >= 0
+                                                ? (std::to_string(static_cast<int>(r.last_ms)) + "ms").c_str()
+                                                : "");
+                    else
+                        ImGui::TextDisabled("not yet pinged");
+                    if (r.deletable) {
+                        ImGui::SameLine();
+                        ImGui::PushID(r.name.c_str());
+                        if (ImGui::SmallButton("x")) {
+                            std::string lower = r.name;
+                            for (auto& c : lower) c = static_cast<char>(std::tolower(c));
+                            run_gateway_cmd(gwstate,
+                                "curl -s -m 10 -X DELETE " + gateway + "/provision/" + lower +
+                                " 2>/dev/null", "delete");
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::SetNextItemWidth(90);
+                ImGui::InputTextWithHint("##epname", "name", ep_name, sizeof ep_name);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(60);
+                ImGui::InputTextWithHint("##epport", "port", ep_port, sizeof ep_port);
+                ImGui::SameLine();
+                if (ImGui::Button(gwstate.provisioning ? "..." : "+ endpoint") &&
+                    !gwstate.provisioning) {
+                    std::string body = "{";
+                    if (ep_name[0]) body += std::string("\"name\":\"") + ep_name + "\"";
+                    if (ep_port[0]) body += std::string(ep_name[0] ? "," : "") +
+                                            "\"port\":" + ep_port;
+                    body += "}";
+                    run_gateway_cmd(gwstate,
+                        "curl -s -m 60 -X POST " + gateway + "/provision -d '" + body +
+                        "' 2>/dev/null", "provision");
+                    ep_name[0] = ep_port[0] = '\0';
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("one click, one public URL: forward a\n"
+                                      "local port, or capture deliveries\n"
+                                      "(blank port) as wh.<name> events");
+                if (!gwstate.provision_result.empty()) {
+                    ImGui::PushTextWrapPos();
+                    ImGui::TextDisabled("%s", gwstate.provision_result.c_str());
+                    ImGui::PopTextWrapPos();
+                    if (gwstate.provision_result.rfind("https://", 0) == 0) {
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("copy url"))
+                            ImGui::SetClipboardText(gwstate.provision_result.c_str());
+                    }
+                }
+                ImGui::Separator();
+            }
+
             if (blotter.empty())
                 ImGui::TextDisabled("no alarms - which is the idea.");
             // Newest state at the top; a blotter is read from the top.

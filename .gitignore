@@ -59,3 +59,6 @@ HANDOFF.md
 # Python bytecode - importing the SDK once leaves this behind
 __pycache__/
 *.py[cod]
+
+# The alarm gateway's live URL roster - ephemeral, semi-sensitive
+endpoints.env

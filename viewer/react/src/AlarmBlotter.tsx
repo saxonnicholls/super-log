@@ -31,6 +31,7 @@ interface Selftest {
 interface TunnelHealth {
   name: string; url: string; interval_s: number;
   healthy: boolean | null; last_ms: number | null; fails: number;
+  last_checked?: string | null;
 }
 interface GatewayHealth {
   tunnels?: TunnelHealth[];
@@ -182,17 +183,41 @@ export function AlarmBlotter({ rows, hub }: { rows: LogRow[]; hub: string }) {
 
       {gw?.tunnels && gw.tunnels.length > 0 && (
         <div style={{ padding: '6px 10px', borderBottom: '1px solid #262b33', fontSize: 12 }}>
-          {gw.tunnels.map((t) => (
-            <div key={t.name} title={`${t.url}\npinged every ${t.interval_s}s`}
-                 style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-              <span>{t.healthy === true ? '🟢' : t.healthy === false ? '🔴' : '⚪'}</span>
-              <span style={{ color: '#c3c9d4' }}>{t.name}</span>
-              <span style={{ color: '#5c6470' }}>every {t.interval_s}s</span>
-              <span style={{ color: '#5c6470', marginLeft: 'auto' }}>
-                {t.healthy === false ? `${t.fails} fails` : t.last_ms != null ? `${t.last_ms}ms` : '…'}
-              </span>
-            </div>
-          ))}
+          {gw.tunnels.map((t) => {
+            const deletable = gw.endpoints?.some(
+              (e) => e.name.toUpperCase() === t.name && e.state !== 'removed');
+            return (
+              <div key={t.name} title={`${t.url}\npinged every ${t.interval_s}s`}
+                   style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                <span style={{ color: '#c3c9d4' }}>{t.name}:</span>
+                <span style={{ color: '#5c6470', overflow: 'hidden', textOverflow: 'ellipsis',
+                               whiteSpace: 'nowrap', maxWidth: 130 }}>
+                  {t.url.replace(/^https?:\/\//, '')}
+                </span>
+                <span>{t.healthy === true ? '🟢' : t.healthy === false ? '🔴' : '⚪'}</span>
+                <span style={{ color: '#5c6470', marginLeft: 'auto' }}
+                      title={t.last_checked ?? 'not yet pinged'}>
+                  {t.healthy === false ? `${t.fails} fails · ` : ''}
+                  {t.last_checked
+                    ? `${age(Date.now() - Date.parse(t.last_checked))} ago`
+                    : 'not yet'}
+                  {t.last_ms != null ? ` · ${t.last_ms}ms` : ''}
+                </span>
+                {deletable && (
+                  <button style={{ ...box, padding: '0 4px' }} title="tear this endpoint down"
+                          onClick={() => {
+                            void fetch(`${gateway}/provision/${t.name.toLowerCase()}`,
+                                       { method: 'DELETE' }).then(() => setGw((g) => g && ({
+                              ...g,
+                              tunnels: g.tunnels?.filter((x) => x.name !== t.name),
+                              endpoints: g.endpoints?.filter(
+                                (x) => x.name.toUpperCase() !== t.name),
+                            })));
+                          }}>✕</button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

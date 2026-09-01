@@ -61,6 +61,7 @@
 //
 
 import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -283,6 +284,7 @@ for (const [k, v] of Object.entries(env)) {
 
 async function pingEndpoint(name, w) {
   const t0 = Date.now();
+  w.lastChecked = new Date().toISOString();
   let ok = false;
   try {
     const got = await publicFetch('GET', w.url, {});
@@ -346,6 +348,30 @@ function startPings() {
 
 const provisioned = new Map();  // name -> {kind, target, url, child, state}
 
+// Every URL this gateway owns, as an env file other tools can source -
+// scripts, agents, the next terminal over. Rewritten whenever an endpoint
+// appears or dies; gitignored, because the URLs are ephemeral and
+// semi-sensitive. ALARM_URL is the gateway's own front door.
+const endpointsFile = opt('endpoints-file', env.SUPER_LOG_ENDPOINTS_FILE ?? 'endpoints.env');
+
+function writeEndpointsFile() {
+  const kv = [];
+  if (tunnel.url) kv.push(['ALARM_URL', tunnel.url]);
+  for (const [name, ep] of provisioned)
+    if (ep.url) kv.push([`${name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_URL`, ep.url]);
+  for (const [name, w] of watched)
+    if (!kv.some(([k]) => k === `${name}_URL`) && name !== 'ALARM')
+      kv.push([`${name.replace(/[^A-Z0-9]/g, '_')}_URL`, w.url]);
+  try {
+    writeFileSync(endpointsFile,
+      '# Written by superlog-alarm - the URLs this gateway currently owns.\n' +
+      '# Source it (`. endpoints.env`) or read it; rewritten on every change.\n' +
+      kv.map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
+  } catch (e) {
+    console.error(`superlog-alarm: cannot write ${endpointsFile}: ${e.message}`);
+  }
+}
+
 function provisionEndpoint(name, target, intervalS) {
   return new Promise((resolve) => {
     const kind = target ? 'forward' : 'capture';
@@ -375,6 +401,7 @@ function provisionEndpoint(name, target, intervalS) {
         void publishAlert('gateway', 'INFO',
           `endpoint '${name}' provisioned (${kind}) at ${ep.url}`,
           { endpoint: name, kind, url: ep.url });
+        writeEndpointsFile();
         console.error(`superlog-alarm: endpoint '${name}' (${kind}) -> ${ep.url}`);
         if (!settled) { settled = true; clearTimeout(timer); resolve(ep); }
       }
@@ -420,6 +447,7 @@ function watchTunnelOutput(child, extract) {
                                healthy: null, fails: 0, lastOk: null, lastMs: null, checks: 0 });
       else watched.get('ALARM').url = `${url}/healthz`;
       startPingFor('ALARM');
+      writeEndpointsFile();
     }
   };
   child.stdout?.on('data', scan);
@@ -484,11 +512,18 @@ async function provisionCloudflare() {
         const recs = await cf('GET', `/zones/${zone}/dns_records?type=CNAME&name=${wantHostname}`);
         routed = (recs?.length ?? 0) > 0;       // someone created it by hand - good enough
       } catch { /* cannot even read - definitely not routed */ }
-      if (!routed)
-        throw new Error(
-          `the API token cannot create DNS on this zone (${e.message.slice(0, 120)}). ` +
-          `Grant it Zone -> DNS -> Edit for the zone, or add the record yourself: ` +
-          `CNAME ${wantHostname} -> ${tun.id}.cfargotunnel.com (proxied)`);
+      if (!routed) {
+        // Proceed anyway: the operator may have added the CNAME by hand
+        // (we cannot even READ this zone to check), and the endpoint watch
+        // pings the hostname on its own clock - the light tells the truth
+        // within two minutes either way. Measurement over assumption.
+        console.error(
+          `superlog-alarm: cannot create OR verify DNS for ${wantHostname} ` +
+          `(token lacks Zone -> DNS on this zone). Running the named tunnel anyway - ` +
+          `if https://${wantHostname} stays red, add the record: ` +
+          `CNAME ${wantHostname} -> ${tun.id}.cfargotunnel.com (proxied), or grant ` +
+          `the token Zone -> DNS -> Edit including this zone.`);
+      }
     }
   }
 
@@ -692,7 +727,7 @@ const server = createServer(async (req, res) => {
       tunnels: [...watched.entries()].map(([name, w]) =>
         ({ name, url: w.url, interval_s: w.intervalMs / 1000,
            healthy: w.healthy, checks: w.checks, fails: w.fails,
-           last_ok: w.lastOk, last_ms: w.lastMs })),
+           last_ok: w.lastOk, last_ms: w.lastMs, last_checked: w.lastChecked ?? null })),
       endpoints: [...provisioned.entries()].map(([name, e]) =>
         ({ name, kind: e.kind, url: e.url, state: e.state })),
     });
@@ -759,6 +794,7 @@ const server = createServer(async (req, res) => {
     try { ep.child?.kill('SIGTERM'); } catch { /* already gone */ }
     provisioned.delete(name);
     watched.delete(name.toUpperCase());
+    writeEndpointsFile();
     return json(res, 200, { ok: true, removed: name });
   }
 
