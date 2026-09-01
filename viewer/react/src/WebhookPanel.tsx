@@ -25,6 +25,16 @@ const LEVEL_COLOR: Record<string, string> = {
 };
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'] as const;
 
+// A delivery as paste-able text - the line the feed shows, then the
+// verdicts, then the payload verbatim.
+const whText = (r: LogRow): string => {
+  const lines = [`${r.ts ?? new Date(r.hubTs).toISOString()} ${r.level} ${r.topic} ${r.msg}`];
+  if (r.fields?.sig) lines.push(`  sig: ${r.fields.sig}`);
+  if (r.fields?.relay_status) lines.push(`  relay: ${r.fields.relay_status}`);
+  if (r.fields?.body) lines.push(r.fields.body);
+  return lines.join('\n');
+};
+
 export function WebhookPanel({ rows, hub, verdictFor }: {
   rows: LogRow[]; hub: string;
   verdictFor: (name: string) => SelftestStep | undefined;
@@ -37,6 +47,7 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
   // The same two filters the main log has: which endpoint, and how loud.
   const [epFilter, setEpFilter] = useState('');   // '' = all endpoints
   const [minLevel, setMinLevel] = useState(0);
+  const [copiedAll, setCopiedAll] = useState(false);
 
   // Development's routes: the endpoint factory's children. Production's
   // (the door, watch-only externals) live in the alarms panel.
@@ -120,6 +131,17 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
                 style={box}>
           {LEVELS.map((l, i) => <option key={l} value={i}>{l}</option>)}
         </select>
+        <button style={box}
+                title="every delivery the filters show, newest first, payloads included"
+                onClick={() => {
+                  if (deliveries.length)
+                    void navigator.clipboard.writeText(
+                      deliveries.map(whText).join('\n\n') + '\n');
+                  setCopiedAll(true);
+                  setTimeout(() => setCopiedAll(false), 1500);
+                }}>
+          {copiedAll ? 'copied' : 'copy all'}
+        </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 6px' }}>
         {deliveries.length === 0 && (
@@ -138,6 +160,11 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
             <div key={r.hubSeq} style={{ padding: '4px 0', borderBottom: '1px solid #1b2027',
                                          fontSize: 12 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                <button style={{ ...box, padding: '0 4px', fontSize: 11 }}
+                        title="copy this delivery, payload included"
+                        onClick={() => void navigator.clipboard.writeText(whText(r) + '\n')}>
+                  ⧉
+                </button>
                 <span style={{ color: LEVEL_COLOR[r.level] ?? '#d6dae2' }}>
                   {r.topic.slice(3)}
                 </span>

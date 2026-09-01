@@ -330,10 +330,21 @@ void note_alarm(std::vector<alarm_entry>& blotter, const row& r, double now)
 // every delivery is its own fact.
 
 struct wh_entry {
-    std::string endpoint, msg, body, sig, relay;
+    std::string endpoint, msg, body, sig, relay, time;
     int level = 2;
     double at = 0;
 };
+
+// A delivery as paste-able text - what a bug report or a diff wants:
+// the line the feed shows, then the verdicts, then the payload verbatim.
+std::string wh_text(const wh_entry& w)
+{
+    std::string s = w.time + " " + levels[w.level] + " wh." + w.endpoint + " " + w.msg;
+    if (!w.sig.empty()) s += "\n  sig: " + w.sig;
+    if (!w.relay.empty()) s += "\n  relay: " + w.relay;
+    if (!w.body.empty()) s += "\n" + w.body;
+    return s;
+}
 
 void note_webhook(std::vector<wh_entry>& feed, const row& r, double now)
 {
@@ -343,6 +354,7 @@ void note_webhook(std::vector<wh_entry>& feed, const row& r, double now)
     e.endpoint = r.topic.substr(3);
     e.msg = r.msg;
     e.level = r.level;
+    e.time = r.time;
     e.at = now;
     const auto j = nlohmann::json::parse(r.raw, nullptr, false);
     if (!j.is_discarded() && j.is_object() && j.contains("fields") && j["fields"].is_object()) {
@@ -1278,6 +1290,25 @@ int main()
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(90);
                 ImGui::Combo("##whlvl", &wh_min_level, levels, 6);
+                // Copy the whole (filtered) feed - what the filters show
+                // is what the clipboard gets, exactly like the main log.
+                static double wh_copied_until = 0;
+                ImGui::SameLine();
+                if (ImGui::SmallButton(ImGui::GetTime() < wh_copied_until
+                                           ? "copied" : "copy all")) {
+                    std::string all;
+                    int n = 0;
+                    for (auto it = webhooks.rbegin(); it != webhooks.rend(); ++it) {
+                        if (it->level < wh_min_level) continue;
+                        if (wh_ep_filter[0] && it->endpoint != wh_ep_filter) continue;
+                        all += wh_text(*it) + "\n\n";
+                        ++n;
+                    }
+                    if (n) ImGui::SetClipboardText(all.c_str());
+                    wh_copied_until = ImGui::GetTime() + 1.5;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("every delivery the filters show,\nnewest first, payloads included");
             }
             ImGui::BeginChild("whfeed", ImVec2(0, 0));
             bool any_shown = false;
@@ -1293,6 +1324,9 @@ int main()
                     continue;
                 any_shown = true;
                 ImGui::PushID(wi);
+                if (ImGui::SmallButton("copy"))
+                    ImGui::SetClipboardText((wh_text(*it) + '\n').c_str());
+                ImGui::SameLine();
                 ImGui::TextColored(level_color(it->level), "%s", it->endpoint.c_str());
                 ImGui::SameLine();
                 ImGui::TextUnformatted(it->msg.c_str());
