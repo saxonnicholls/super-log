@@ -19,7 +19,11 @@ re-applied as the file changes, with removals torn down (only names the
 file created; the button's endpoints are not the file's to kill). A
 route deleted from the roster now also stops its ping clock (the loop
 checks it still owns its map entry), and the viewers' route deletion was
-extracted into one `deleteEndpoint` shared with the manifest.
+extracted into one `deleteEndpoint` shared with the manifest. Route checks
+share the flagship's DNS patience (four attempts, three seconds apart) —
+a route provisioned moments ago failed its verdict on this bench purely
+because its tunnel name had not reached 1.1.1.1 yet, and a route must not
+be reported dead for being young.
 
 Verified: per-route selftest verdicts (env-declared and manifest-declared
 routes), manifest apply at startup, and declarative removal sparing

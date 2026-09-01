@@ -715,7 +715,23 @@ async function checkRoute(name, w) {
   const t0 = Date.now();
   const ep = provisioned.get(name.toLowerCase());
   const done = (ok, detail) => ({ name: `route ${name}`, ok, ms: Date.now() - t0, detail });
-  try {
+  // The flagship's patience applies here too: a freshly minted tunnel name
+  // takes a few seconds to reach DNS at all, and a route provisioned
+  // moments ago must not be reported dead for being young.
+  let lastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    if (attempt > 1) await new Promise((r) => setTimeout(r, 3000));
+    try {
+      return await tryRoute(name, w, ep, done);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  return done(false, String(lastErr?.message ?? lastErr));
+}
+
+async function tryRoute(name, w, ep, done) {
+  {
     if (ep?.kind === 'capture' && ep.url) {
       const probe = `probe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       const got = await publicFetch('POST', ep.url,
@@ -739,8 +755,6 @@ async function checkRoute(name, w) {
     if (ep?.kind === 'forward' && [502, 503, 504].includes(got.status))
       throw new Error(`tunnel up, but nothing is answering on ${ep.target} - is the service running?`);
     return done(true, `answered ${got.status} (via ${got.via})`);
-  } catch (e) {
-    return done(false, String(e.message ?? e));
   }
 }
 
