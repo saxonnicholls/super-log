@@ -53,5 +53,18 @@
       "notify": ["console", "hub", "command"],
       "command": "echo \"$SUPERLOG_ALERT_TITLE\" >> /tmp/payment-alerts.log"
     }
+    ,{
+      "//": "The correlation no single filter can say: a deploy happened AND errors spiked, inside ten minutes. Both must be seen; either alone is routine.",
+      "name": "deploy went bad",
+      "combo": {
+        "all": [
+          { "topic": "git.", "contains": "pushed" },
+          { "topic": "*", "level": "ERROR" }
+        ],
+        "window": 600
+      },
+      "cooldown": 900,
+      "notify": ["console", "desktop", "hub"]
+    }
   ]
 }

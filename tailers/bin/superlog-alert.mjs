@@ -17,6 +17,8 @@
 //    level    something bad was logged            (an ERROR appeared)
 //    rate     too much of something               (20 errors in a minute)
 //    silence  something STOPPED being logged      (a stream went quiet)
+//    combo    several things happened TOGETHER    (a deploy AND an error
+//                                                  spike inside one window)
 //
 //  The third is the one most tools miss and the one that matters most on a
 //  server: a box that stops logging looks exactly like a box with nothing
@@ -33,8 +35,8 @@
 
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { platform } from 'node:os';
 import { loadEnv } from './env.mjs';
+import { channelRoster, deliver, makeChannels } from './notify.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -45,10 +47,12 @@ if (args.includes('--help') || args.includes('-h')) {
   console.error(`superlog-alert - rules that reach you when nobody is watching
 
   superlog-alert [--config alerts.json] [--url HUB] [--dry-run] [--test]
+                 [--channels]        # the notification roster and what is missing
 
 Rule shapes: level (something bad happened), rate (too much of it),
-silence (a stream stopped - the one that catches a dead server).
-See tailers/alerts.example.json.`);
+silence (a stream stopped - the one that catches a dead server), and
+combo (several conditions all inside one window - the correlation the
+other shapes cannot say). See tailers/alerts.example.json.`);
   process.exit(0);
 }
 
@@ -66,8 +70,20 @@ try {
 }
 
 const hubUrl = opt('url', cfg.url ?? env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333');
-const webhook = cfg.webhook ?? env.SUPER_LOG_WEBHOOK ?? '';
 const defaultNotify = cfg.notify ?? ['console', 'hub'];
+
+// One registry for every human-facing channel - desktop, webhook, telegram,
+// twilio, email and whatever comes next live in notify.mjs, so a new way to
+// reach a person is one entry there, not a rewrite here. `hub` stays local:
+// it is bench plumbing, not a person.
+const channels = makeChannels(cfg, env);
+const channelsSaid = new Set();
+
+if (args.includes('--channels')) {
+  for (const c of channelRoster(channels))
+    console.error(`  ${c.configured ? '+' : '-'} ${c.name.padEnd(16)} ${c.configured ? 'ready' : c.why}`);
+  process.exit(0);
+}
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];
 const rank = (l) => {
   const i = LEVELS.indexOf(String(l ?? 'INFO').toUpperCase());
@@ -82,11 +98,12 @@ const rules = (cfg.rules ?? []).map((r, i) => ({
   trace: r.trace ?? null,
   rate: r.rate ?? null,               // { count, window } seconds
   silence: r.silence ?? null,         // seconds without a matching event
+  combo: r.combo ?? null,             // { all: [{topic,level,contains}...], window } seconds
   cooldown: (r.cooldown ?? 300) * 1000,
   notify: r.notify ?? defaultNotify,
   command: r.command ?? cfg.command ?? '',
   // state
-  hits: [], lastFired: 0, firing: false, lastSeen: Date.now(),
+  hits: [], lastFired: 0, firing: false, lastSeen: Date.now(), comboSeen: [],
 }));
 
 if (!rules.length) {
@@ -100,50 +117,14 @@ const topicMatches = (want, name) =>
 
 // ------------------------------------------------------------ delivering
 
-async function notifyDesktop(title, body) {
-  if (platform() === 'darwin') {
-    // Via osascript's own quoting rather than the shell's: an alert body is
-    // log text, and log text contains quotes.
-    const script = `display notification ${JSON.stringify(body).slice(0, 400)} with title ${JSON.stringify(title)}`;
-    spawn('osascript', ['-e', script], { stdio: 'ignore' });
-  } else {
-    spawn('notify-send', [title, body.slice(0, 400)], { stdio: 'ignore' })
-      .on('error', () => {});
-  }
-}
-
-async function notifyWebhook(title, body, ev) {
-  if (!webhook) return;
-  try {
-    await fetch(webhook, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      // `text` is what Slack, Discord and Mattermost all read, so one shape
-      // works for the common cases without a per-service adapter.
-      body: JSON.stringify({ text: `*${title}*\n${body}`, title, body, event: ev }),
-      signal: AbortSignal.timeout(10000),
-    });
-  } catch (e) {
-    console.error(`superlog-alert: webhook failed: ${e.message}`);
-  }
-}
-
-function notifyCommand(cmd, title, body) {
-  if (!cmd) return;
-  // The alert is passed in the environment, not interpolated into the
-  // command, so a log line containing a backtick cannot become a shell.
-  spawn('sh', ['-c', cmd], {
-    stdio: 'ignore',
-    env: { ...process.env, SUPERLOG_ALERT_TITLE: title, SUPERLOG_ALERT_BODY: body },
-  }).on('error', () => {});
-}
-
 let hubBuf = [];
+const session = Math.random().toString(16).slice(2, 10);
+let hubSeq = 0;
 function notifyHub(rule, level, title, body, ev) {
   hubBuf.push({
     topic: `alert.${rule.name.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}`,
     line: JSON.stringify({
-      v: 1, ts: new Date().toISOString(), level,
+      v: 1, ts: new Date().toISOString(), seq: hubSeq++, session, level,
       origin: { runtime: 'node', app: 'alert', platform: 'alert' },
       tag: 'alert', msg: `${title}: ${body}`.slice(0, 500),
       ...(ev?.trace ? { trace: ev.trace } : {}),
@@ -175,12 +156,14 @@ async function fire(rule, level, title, body, ev) {
   const line = `[${level}] ${title} - ${body}`;
   console.error(`superlog-alert: ${line}`);
   if (dryRun) return;
-  for (const how of rule.notify) {
-    if (how === 'desktop') await notifyDesktop(title, body);
-    else if (how === 'webhook') await notifyWebhook(title, body, ev);
-    else if (how === 'command') notifyCommand(rule.command, title, body);
-    else if (how === 'hub') notifyHub(rule, level, title, body, ev);
-  }
+  const wantsHub = rule.notify.includes('hub');
+  if (wantsHub) notifyHub(rule, level, title, body, ev);
+  // A per-rule `command` overrides the registry's config-level one.
+  const reg = rule.command
+    ? makeChannels({ ...cfg, command: rule.command }, env)
+    : channels;
+  await deliver(reg, rule.notify.filter((n) => n !== 'hub'),
+                { title, body, level, event: ev }, channelsSaid);
   await flushHub();
 }
 
@@ -202,6 +185,30 @@ async function onEvent(topic, ev) {
   const now = Date.now();
 
   for (const rule of rules) {
+    // A combo rule owns its own matching: each condition is a rule-shaped
+    // filter of its own, and the rule fires when ALL of them have been seen
+    // inside the window - the correlation ("a deploy happened AND errors
+    // spiked") that no single-event filter can express.
+    if (rule.combo) {
+      const conds = rule.combo.all ?? [];
+      const windowMs = (rule.combo.window ?? 300) * 1000;
+      conds.forEach((c, i) => {
+        if (topicMatches(c.topic ?? '*', topic) &&
+            (c.level === undefined || rank(ev.level) >= rank(c.level)) &&
+            (!c.contains ||
+             JSON.stringify(ev).toLowerCase().includes(String(c.contains).toLowerCase())))
+          rule.comboSeen[i] = now;
+      });
+      if (conds.length &&
+          conds.every((_, i) => now - (rule.comboSeen[i] ?? -Infinity) <= windowMs)) {
+        await fire(rule, 'ERROR', rule.name,
+                   `all ${conds.length} conditions met within ${windowMs / 1000}s - ` +
+                   `latest: ${topic}: ${ev.msg ?? ''}`.slice(0, 400), ev);
+        rule.comboSeen = [];                      // the next firing needs all of them again
+      }
+      continue;
+    }
+
     if (!matches(rule, topic, ev)) continue;
     rule.lastSeen = now;
 

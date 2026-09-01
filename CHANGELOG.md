@@ -58,6 +58,32 @@ so. Verified against the real Unity and Unreal logs on this machine
 (`superlog-tail apps` finds 13 of them); parsing under
 `tests/engines.test.mjs`.
 
+**Alarms, both directions, with somewhere to go.** Shaped by a real
+4.7-day outage that was detected in 600 seconds and ignored for 113
+re-fires. Outbound: `superlog-alert` gains a fourth rule shape — `combo`
+fires when several conditions all land inside one window, the correlation
+no single filter can say — and every human-facing channel now lives in
+one registry (`notify.mjs`): console, desktop, webhook, command today,
+Telegram / Twilio SMS / WhatsApp / email as config-gated entries
+(`--channels` prints the roster and what each missing channel needs).
+Inbound: `superlog-alarm` is production's door — a token-guarded webhook
+through a Cloudflare tunnel (quick tunnel zero-config; a NAMED tunnel
+auto-provisioned via the API, falling back loudly with the exact missing
+permission when DNS edit rights are absent; ngrok and zrok as alternates)
+— with dedup keys and repeat counts, recovery events, renotify windows,
+and per-checker heartbeats that raise `monitor_dead:<name>` CRITICAL when
+a watcher goes silent. Both viewers gain an **alarm blotter** — sparse,
+one row per key, repeats counted, recovery greyed not erased — and a
+**test-alarm button** driving the gateway's `/selftest`: hub, tunnel, a
+real internet round-trip through the public URL (with a DoH + SNI
+fallback that diagnoses "your resolver filters the tunnel name;
+production's does not"), and the channel roster. Verified live end to
+end: a real Cloudflare quick tunnel, repeats 1→3 on one key, recovery
+with fired-count, monitor_dead firing and recovering, the desktop
+notification arriving on a real human, and `tests/alarm.test.mjs` +
+`tests/alert.test.mjs`. The ImGui blotter's first button-press found a
+recursive mutex lock; fixed, snapshot-then-render now.
+
 **Lean 4, both halves.** An SDK for the programs (`sdk/lean/Superlog.lean`:
 core IO plus `curl` — Lean grew a kernel before it grew sockets — mode
 from `SUPERLOG_MODE` with no default, verified live), and the build story

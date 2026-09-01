@@ -46,6 +46,7 @@ super-log converges all of it on one process and one screen:
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
 | **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract; operational key balances (gas or ERC-20) with edge-triggered fund-now alarms |
 | **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee` |
+| **alarms** | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated) |
 
 Every producer speaks one small wire protocol
 ([docs/PROTOCOL.md](docs/PROTOCOL.md): one JSON event per line, batched over
@@ -248,12 +249,33 @@ and agents narrow by topic prefix. Read-only by construction, and
 dependency-free — MCP over stdio is newline-delimited JSON-RPC 2.0.
 
 **Something reaches you when nobody is watching.** Rules over the live feed
-fire to a desktop notification, a webhook, a command, or back onto the bench
-as `alert.*`. Three shapes, because production breaks in three ways:
-something bad was logged, *too much* of it was logged, or something
-**stopped** being logged — the last being the one most tools miss, since a
-server with nothing to say and a server that is gone look identical until
-you check. Rate and silence rules report recovery too.
+fire through one channel registry — console, desktop, webhook, command
+today; Telegram, Twilio SMS / WhatsApp and email are config-gated entries
+in the same registry (`superlog-alert --channels` prints the roster and
+exactly what each missing channel needs) — and back onto the bench as
+`alert.*`. Four rule shapes, because production breaks in four ways:
+something bad was logged, *too much* of it was logged, something
+**stopped** being logged (a quiet server and a dead server look identical
+until you check), and several things happened **together** — a `combo`
+rule fires when all its conditions land inside one window, the correlation
+("a deploy happened AND errors spiked") no single filter can say.
+
+**Production can raise the alarm, without logging a thing.** Every SDK's
+PRODUCTION mode ships nothing by design — but an ALARM is not logging, it
+is a rare deliberate act, and `superlog-alarm` is its door: a token-guarded
+public webhook through a **Cloudflare tunnel** (quick tunnel with zero
+config; a stable named tunnel auto-provisioned via the API given a token;
+ngrok and zrok too). One curl from any language fires
+`alert.inbound.<name>`; the same key re-firing is **one alarm with a
+repeat count**, not 113 pages; recovery closes the loop; and every checker
+can POST a heartbeat so the gateway itself raises `monitor_dead:<name>`
+when a watcher goes silent — the alarm the dead watcher cannot send. Both
+viewers carry an **alarm blotter** — a sparse panel, deliberately unlike
+the firehose, one row per key — with a **test-alarm button** that proves
+the whole path step by step: hub, tunnel, a real round-trip from the
+internet back through the public URL, and the notification channels
+(including the diagnosis when your own router's DNS filters the tunnel's
+name while production's resolves it fine).
 
 **Producers never block.** Every SDK uses a bounded queue that drops oldest
 under burst — counted, never hidden. A logger that can stall the app it
@@ -648,6 +670,8 @@ npm run vitals -- --once                    # disk, memory, CPU, load
 npm run vitals -- --ssh web1                # ...on a server, watched
 npm run alert                               # rules from alerts.json
 npm run alert -- --test                     # prove delivery without waiting
+npm run alert -- --channels                 # the notification roster, and what is missing
+npm run alarm                               # production's webhook door, tunnelled + tested
 npm run build -- --label cxx -- cmake --build build -j
 npm run build -- --label asan -- ./build/tests   # sanitizer findings, whole
 npm run git                                 # this repo: commits, branches, conflicts
