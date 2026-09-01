@@ -5,6 +5,33 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Viewers: production and development split, one menu.json** — both
+viewers separate the two webhook audiences into their own panels: **alarms
+(production)** is the sparse blotter with the alarm path beneath it (test
+button, per-step detail, the gateway door and watch-only routes), and
+**webhooks (development)** is the endpoint factory plus a live feed of
+every captured delivery with payload, signature verdict and relay status —
+both are webhooks, but one is an incident surface and one is a development
+tool, and a screen that mixes them teaches the eye to skim past alarms.
+Both viewers render the same menu bar from `viewer/menu.json` (asoOne's
+schema: key/label/action/attributes/children, CHECKBOX seeded by
+`checked`) with View toggles per window — a window nobody can find may as
+well not exist, and the earlier separate routes window spent its life
+buried under the alarms window. Every route row gained a **ping** button
+(`POST /ping/<name>`, loopback): the same watchdog measurement on the same
+books, just now instead of next interval. The GitHub HMAC scheme
+(`x-hub-signature-256`) verifies beside Stripe's, and the MCP server
+gained `list_webhooks` so an agent can find the URL to hand a webhook
+sender without asking a human.
+
+Verified: both HMAC schemes and the relay pass-through against a real hub
+(`tests/alarm.test.mjs`); live on this bench, through real public tunnels:
+two Stripe-signed events `verified` at INFO, a tampered one `FAILED` at
+WARN, a GitHub-signed payload `verified`, `/ping` measuring a route on
+demand, and `list_webhooks` answering over real stdio JSON-RPC. The React
+build and the ImGui build both compile clean; menu fallback (baked-in copy
+when menu.json is missing) is written but untested.
+
 **superlog-alarm: webhook testing (Stripe-grade)** — capture endpoints grew
 into a webhook development tool. The `wh.<name>` body cap rose from 4KB to
 32KB (a real Stripe invoice event runs 5–15KB; a tester that truncates the

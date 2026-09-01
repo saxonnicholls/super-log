@@ -959,23 +959,33 @@ const server = createServer(async (req, res) => {
     let level = 'INFO';
     let note = '';
 
-    // Stripe scheme: t=<unix>,v1=<hex hmac-sha256 of "t.body">. Verified
-    // only when a secret exists - no secret means the field stays ABSENT,
-    // never a fake "unverified" that reads like a finding.
+    // HMAC schemes, verified only when a secret exists - no secret means
+    // the field stays ABSENT, never a fake "unverified" that reads like a
+    // finding. Stripe: stripe-signature: t=<unix>,v1=<hex hmac-sha256 of
+    // "t.body">, with the timestamp bounding replays. GitHub:
+    // x-hub-signature-256: sha256=<hex hmac-sha256 of the raw body>.
+    // Other providers are one clause each - send the scheme, not a PR.
     const secret = ep?.secret ?? env.STRIPE_WEBHOOK_SECRET ?? null;
     const sigHead = req.headers['stripe-signature'];
+    const ghHead = req.headers['x-hub-signature-256'];
+    const macEq = (a, b) =>
+      a?.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
     if (secret && typeof sigHead === 'string') {
       const parts = sigHead.split(',').map((s) => s.trim().split('='));
       const t = parts.find(([k]) => k === 't')?.[1] ?? '';
       const expect = createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
-      const okSig = parts.filter(([k]) => k === 'v1').some(([, v]) =>
-        v?.length === expect.length && timingSafeEqual(Buffer.from(v), Buffer.from(expect)));
+      const okSig = parts.filter(([k]) => k === 'v1').some(([, v]) => macEq(v, expect));
       const ageS = Math.abs(Date.now() / 1000 - Number(t));
       fields.sig = !okSig ? 'FAILED'
         : ageS > 300 ? `verified, but timestamp ${Math.round(ageS)}s old - replay?`
         : 'verified';
       if (fields.sig !== 'verified') level = 'WARN';
       note += okSig ? ', sig ok' : ', sig BAD';
+    } else if (secret && typeof ghHead === 'string') {
+      const expect = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
+      fields.sig = macEq(ghHead.trim(), expect) ? 'verified' : 'FAILED';
+      if (fields.sig !== 'verified') level = 'WARN';
+      note += fields.sig === 'verified' ? ', sig ok' : ', sig BAD';
     }
 
     let relayed = null;
@@ -1045,6 +1055,21 @@ const server = createServer(async (req, res) => {
     if (!deleteEndpoint(name))
       return json(res, 404, { ok: false, error: `no endpoint '${name}'` });
     return json(res, 200, { ok: true, removed: name });
+  }
+
+  // An on-demand tick of a route's own watchdog clock - same measurement,
+  // same edge/recovery bookkeeping, just NOW instead of next interval.
+  const pingMatch = /^\/ping\/([A-Za-z0-9._:-]{1,48})$/.exec(url.pathname);
+  if (req.method === 'POST' && pingMatch) {
+    const from = req.socket.remoteAddress ?? '';
+    if (!/^(::1|127\.|::ffff:127\.)/.test(from))
+      return json(res, 403, { ok: false, error: 'loopback only' });
+    const name = pingMatch[1].toUpperCase();
+    const w = watched.get(name);
+    if (!w) return json(res, 404, { ok: false, error: `no route '${name}'` });
+    await pingEndpoint(name, w);
+    return json(res, 200, { ok: true, name, healthy: w.healthy, last_ms: w.lastMs,
+                            fails: w.fails, last_checked: w.lastChecked ?? null });
   }
 
   const hbMatch = /^\/heartbeat\/([A-Za-z0-9._:-]{1,64})$/.exec(url.pathname);

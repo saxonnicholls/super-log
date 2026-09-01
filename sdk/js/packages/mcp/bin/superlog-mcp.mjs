@@ -316,6 +316,44 @@ const TOOLS = [
     },
   },
   {
+    name: 'list_webhooks',
+    description:
+      "List the alarm gateway's routes: the production alarm door and every " +
+      'provisioned webhook endpoint (capture / relay / forward) with its PUBLIC ' +
+      'URL, health light, ping latency and kind. Use this to find the URL to ' +
+      'hand a webhook sender (Stripe, GitHub, a partner) - deliveries then ' +
+      'arrive as wh.<name> events (tail_logs with topic wh.<name>; fields carry ' +
+      'the signature verdict, relay status and up to 32KB of body). Ask ' +
+      'stream_guide about "wh" for how to read them.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    run: async () => {
+      const gw = process.env.SUPER_LOG_ALARM_URL ?? HUB.replace(/:\d+$/, ':7336');
+      let h;
+      try {
+        h = await fetch(`${gw}/healthz`, { signal: AbortSignal.timeout(4000) })
+          .then((r) => r.json());
+      } catch {
+        return (
+          `The alarm gateway is not answering at ${gw}. Start it with: npm run alarm\n` +
+          'It provisions public webhook endpoints - one per click in either viewer, ' +
+          'or many from an endpoints.json manifest.'
+        );
+      }
+      const lines = (h.tunnels ?? []).map((t) =>
+        `${t.healthy === true ? 'up  ' : t.healthy === false ? 'DOWN' : '??  '}` +
+        `${String(t.name).padEnd(14)}${t.kind ?? 'watch'}` +
+        (t.target ? ` -> ${t.target}` : '') +
+        `\n    ${t.public_url ?? t.url}` +
+        (t.last_ms != null ? `   (${t.last_ms}ms, pinged every ${t.interval_s}s)` : ''));
+      return (
+        `Routes on the alarm gateway at ${gw} - deliveries land as wh.<name> events:\n` +
+        (lines.join('\n') || '(no routes yet)') +
+        '\n\nThe same URLs are in endpoints.env beside the gateway, rewritten on every ' +
+        'change; quick-tunnel URLs rotate when the gateway restarts, so read, never cache.'
+      );
+    },
+  },
+  {
     name: 'list_streams',
     description:
       'Summarise which log streams (topics) are active and their level mix. ' +

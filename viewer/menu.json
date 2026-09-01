@@ -1,0 +1,20 @@
+[
+  {
+    "key": "menu.view",
+    "label": "View",
+    "attributes": ["SUBMENU"],
+    "children": [
+      { "key": "menu.view.log", "label": "Log firehose", "action": "toggle.log", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.alarms", "label": "Alarms (production)", "action": "toggle.alarms", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.webhooks", "label": "Webhooks (development)", "action": "toggle.webhooks", "attributes": ["CHECKBOX"], "checked": true }
+    ]
+  },
+  {
+    "key": "menu.actions",
+    "label": "Actions",
+    "attributes": ["SUBMENU"],
+    "children": [
+      { "key": "menu.actions.test", "label": "Test the alarm path", "action": "selftest", "attributes": ["NORMAL"] }
+    ]
+  }
+]

@@ -6,9 +6,12 @@
 //  four device streams interleaved by hub sequence, colour-coded by topic.
 //
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
 import { AlarmBlotter } from './AlarmBlotter';
+import { WebhookPanel } from './WebhookPanel';
+import { MenuBar, menuDefaults } from './MenuBar';
+import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
 
 // The hub lives on whichever machine served this page - true for the demo,
@@ -37,6 +40,28 @@ function topicColor(topic: string): string {
 
 export default function App() {
   const { rows, connected, clear } = useLogFeed(HUB);
+  // The menu seeds the window toggles; viewer/menu.json is the same file
+  // the ImGui viewer renders, so both screens carry the same bar.
+  const [toggles, setToggles] = useState<Record<string, boolean>>(menuDefaults);
+  // The selftest is shared state: the alarms panel runs it, both panels
+  // show per-route verdicts from it.
+  const [test, setTest] = useState<Selftest | 'running' | null>(null);
+  const runTest = useCallback(async () => {
+    setTest('running');
+    const gateway = gatewayUrl(HUB);
+    try {
+      const r = await fetch(`${gateway}/selftest`, { method: 'POST' });
+      setTest((await r.json()) as Selftest);
+    } catch (e) {
+      setTest({ ok: false, steps: [{ name: 'reach the alarm gateway', ok: false, ms: 0,
+        detail: `${gateway} - ${String((e as Error).message)}. Is superlog-alarm running? (npm run alarm)` }] });
+    }
+  }, []);
+  const verdictFor = useCallback((name: string): SelftestStep | undefined => {
+    if (!test || test === 'running') return undefined;
+    return test.steps.find((s) => s.name === `route ${name}` ||
+                                  (name === 'ALARM' && s.name === 'public round-trip'));
+  }, [test]);
   const [minLevel, setMinLevel] = useState(0);
   const [needle, setNeedle] = useState('');
   const [topicFilter, setTopicFilter] = useState<string | null>(null);
@@ -79,6 +104,9 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <MenuBar toggles={toggles}
+               onToggle={(a) => setToggles((t) => ({ ...t, [a]: !t[a] }))}
+               onAction={(a) => { if (a === 'selftest') void runTest(); }} />
       <header style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 12px',
                        borderBottom: '1px solid #262b33', flexWrap: 'wrap' }}>
         <strong style={{ color: '#7aa2f7' }}>super-log</strong>
@@ -167,6 +195,7 @@ export default function App() {
       </header>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      {toggles['toggle.log'] !== false &&
       <main style={{ flex: 1, overflowY: 'auto', padding: '4px 12px' }}>
         {visible.map((r) => (
           <div key={r.hubSeq} className="row" style={{ display: 'flex', gap: 8, whiteSpace: 'pre-wrap' }}>
@@ -216,10 +245,15 @@ export default function App() {
           </div>
         ))}
         <div ref={bottom} />
-      </main>
-      {/* The blotter: alarms only, one row per key, deliberately sparse -
-          and the Test button that proves the whole public path. */}
-      <AlarmBlotter rows={rows} hub={HUB} />
+      </main>}
+      {/* Production and development, separated: the alarm blotter (sparse,
+          one row per key) and the webhook workbench (endpoints, deliveries,
+          signature verdicts). Both toggle from the View menu. */}
+      {toggles['toggle.alarms'] !== false &&
+        <AlarmBlotter rows={rows} hub={HUB} test={test}
+                      onTest={() => void runTest()} verdictFor={verdictFor} />}
+      {toggles['toggle.webhooks'] !== false &&
+        <WebhookPanel rows={rows} hub={HUB} verdictFor={verdictFor} />}
       </div>
     </div>
   );

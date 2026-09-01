@@ -154,6 +154,17 @@ describe('superlog-alarm', () => {
       { topic: 'wh.sig', timeoutMs: 10000 });
     assert.equal(bad.map((r) => r.event).find((e) => e.fields.sig === 'FAILED').level, 'WARN');
 
+    // GitHub's scheme too: x-hub-signature-256 = sha256=<hmac of raw body>.
+    const gh = 'sha256=' + createHmac('sha256', 'whsec_test').update(payload).digest('hex');
+    await fetch(gwUrl('/hook/sig'), {
+      method: 'POST', body: payload,
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': gh },
+    });
+    const both = await waitFor(hub.url,
+      (rs) => rs.filter((r) => r.event?.fields?.sig === 'verified').length >= 2,
+      { topic: 'wh.sig', timeoutMs: 10000 });
+    assert.ok(both.length, 'both HMAC schemes verify against the same secret');
+
     // Relay: the sender gets the HANDLER's response, the bench gets the record.
     const relayed = await fetch(gwUrl('/hook/rly'), {
       method: 'POST', body: '{"x":1}', headers: { 'content-type': 'application/json' },

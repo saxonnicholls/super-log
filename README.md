@@ -237,6 +237,7 @@ to guess what a topic means.
 | `search_logs`    | Find by text when you know the message but not the stream                                |
 | `search_history` | The on-disk journal — hours or days, for "what happened at 3am"                         |
 | `wait_for`       | Block until a matching event arrives, instead of sleeping and hoping                     |
+| `list_webhooks`  | The alarm gateway's routes with public URLs and health — the URL to hand a webhook sender, without asking a human |
 | `stream_guide`   | The bench's own manual: detailed per-capability docs and playbooks, fetched on demand    |
 
 ```sh
@@ -282,13 +283,21 @@ forwarded port that answers 502 is reported as "tunnel up, your service is
 not", and a watch-only URL passes on any HTTP answer, because any answer
 proves the wire.
 
-The gateway is also an **endpoint factory**. Both blotters list every route
-as `NAME : url : ● : last seen · ping`, each pinged on its own configurable
-clock (down after two consecutive failures raises `tunnel_down:<name>`,
-recovery clears it), with a **`+ endpoint`** button — a name alone captures
-deliveries as `wh.<name>` events (paste the URL into a Stripe or GitHub
-webhook form and watch them arrive), a name plus port forwards a local
-service — and a delete button beside each. Many endpoints live better in a
+The gateway is also an **endpoint factory**, and the viewers split its two
+audiences: **alarms (production)** — the sparse blotter plus the alarm
+path's own routes — and **webhooks (development)** — the endpoint grid and
+a live feed of every captured delivery with its payload, signature verdict
+and relay status. Both are toggled from a menu bar that the ImGui and
+React viewers render from the same declarative
+[viewer/menu.json](viewer/menu.json). Every route is a grid row —
+`status : route : url : seen : ping` — expandable into full diagnostics,
+with **ping** (measure this route now, on the same watchdog books),
+**copy** (the full public URL) and delete buttons, each route pinged on
+its own configurable clock (two consecutive failures raises
+`tunnel_down:<name>`, recovery clears it). **`+ endpoint`** provisions in
+one click — a name alone captures deliveries as `wh.<name>` events (paste
+the URL into a Stripe or GitHub webhook form and watch them arrive), a
+name plus port forwards a local service. Many endpoints live better in a
 file: `npm run alarm -- --provision endpoints.json` applies a declarative
 manifest (`{"name":"stripe"}` capture, `{"name":"webapp","port":5173}`
 forward, `{"name":"partner","url":"https://…"}` watch-only, each with
