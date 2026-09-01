@@ -61,7 +61,7 @@
 //
 
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, watchFile, writeFileSync } from 'node:fs';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -83,6 +83,7 @@ if (args.includes('--help') || args.includes('-h')) {
   superlog-alarm [--port 7336] [--tunnel cloudflare|ngrok|zrok|none]
                  [--hostname alarm.example.com] [--token SECRET]
                  [--notify desktop,telegram,...] [--renotify SECONDS] [--url HUB]
+                 [--provision endpoints.json]
 
 POST /alarm/<name>      {key?, level?, msg, fields?, recovered?} - deduped by
                         key with repeat counts; recovery closes the loop
@@ -91,8 +92,10 @@ POST /heartbeat/<name>  {interval?} - miss 3 intervals and the gateway raises
 GET  /healthz           tunnel, hub, firing keys, heartbeats, channel roster
 POST /selftest          loopback only: the whole public path, step by step
 
---hostname provisions a NAMED Cloudflare tunnel via the API. Severity:
-P0=CRITICAL, P1=ERROR, P2=WARN.`);
+--hostname provisions a NAMED Cloudflare tunnel via the API. --provision
+reads a declarative manifest of endpoints (see the manifest section in the
+source) and keeps it applied as the file changes. Severity: P0=CRITICAL,
+P1=ERROR, P2=WARN.`);
   process.exit(0);
 }
 
@@ -322,7 +325,9 @@ function startPingFor(name) {
   if (!w || w._looping) return;
   w._looping = true;
   const loop = () => {
-    if (stopping) return;
+    // The map is the roster: an entry deleted (or replaced) since this
+    // clock started means this clock is the stale one - let it die.
+    if (stopping || watched.get(name) !== w) return;
     void pingEndpoint(name, w).finally(() =>
       setTimeout(loop, w.intervalMs).unref?.());
   };
@@ -417,6 +422,84 @@ function provisionEndpoint(name, target, intervalS) {
       if (!settled) { settled = true; clearTimeout(timer); resolve(ep); }
     });
   });
+}
+
+function deleteEndpoint(name) {
+  const ep = provisioned.get(name);
+  if (!ep) return false;
+  try { ep.child?.kill('SIGTERM'); } catch { /* already gone */ }
+  provisioned.delete(name);
+  watched.delete(name.toUpperCase());
+  writeEndpointsFile();
+  return true;
+}
+
+// ------------------------------------------------ the endpoints manifest
+//
+// One button scales to one endpoint; a bench with many lives in a file.
+// --provision endpoints.json (or SUPER_LOG_PROVISION) is DECLARATIVE: the
+// file is applied at startup and re-applied whenever it changes - new
+// names appear, and names removed from the file are torn down, but only
+// names the file created; the button's endpoints are not the file's to
+// kill. Three shapes, one entry each, interval_s tuning the ping clock:
+//
+//   {"name":"stripe"}                        capture -> wh.stripe events
+//   {"name":"webapp","port":5173}            forward a local port
+//   {"name":"partner","url":"https://..."}   watch-only: just the light
+//
+// The file is config like alerts.json - gitignored, because names and
+// ports describe the bench.
+
+const provisionFile = opt('provision', env.SUPER_LOG_PROVISION ?? null);
+let applyingManifest = false;
+
+async function applyProvisionFile(path) {
+  if (applyingManifest) return;                 // a slow apply outlives a fast save
+  applyingManifest = true;
+  try {
+    let entries;
+    try {
+      const j = JSON.parse(readFileSync(path, 'utf8'));
+      entries = Array.isArray(j) ? j : j?.endpoints;
+      if (!Array.isArray(entries)) throw new Error('expected an array or {"endpoints":[...]}');
+    } catch (e) {
+      console.error(`superlog-alarm: ${path}: ${e.message}`);
+      return;
+    }
+    const wanted = new Set();
+    for (const e of entries) {
+      if (!e?.name) continue;
+      const name = sanitize(String(e.name)).toLowerCase();
+      wanted.add(name);
+      const iv = Number(e.interval_s) || 0;
+      if (e.url) {
+        const key = name.toUpperCase();
+        if (watched.get(key)?.url === String(e.url)) continue;
+        watched.set(key, { url: String(e.url), intervalMs: (iv || 120) * 1000,
+                           healthy: null, fails: 0, lastOk: null, lastMs: null,
+                           checks: 0, fromFile: true });
+        startPingFor(key);
+        writeEndpointsFile();
+      } else if (!provisioned.has(name)) {
+        const target = e.target ? String(e.target)
+                     : e.port ? `http://127.0.0.1:${Number(e.port)}` : null;
+        const ep = await provisionEndpoint(name, target, iv);
+        ep.fromFile = true;
+        if (!ep.url)
+          console.error(`superlog-alarm: ${path}: endpoint '${name}' failed (${ep.state})`);
+      }
+    }
+    // Declarative includes deletion - for the names this file created.
+    for (const [name, ep] of [...provisioned])
+      if (ep.fromFile && !wanted.has(name)) deleteEndpoint(name);
+    for (const [key, w] of [...watched])
+      if (w.fromFile && !wanted.has(key.toLowerCase())) {
+        watched.delete(key);
+        writeEndpointsFile();
+      }
+  } finally {
+    applyingManifest = false;
+  }
 }
 
 // ---------------------------------------------------------------- tunnels
@@ -622,6 +705,45 @@ async function publicFetch(method, urlStr, headers, bodyStr) {
   }
 }
 
+// One route, one verdict. What "tested" means depends on what the route
+// is FOR: a capture endpoint exists to land deliveries on the bench, so
+// only a probe that comes back as a wh.<name> event counts; a forward
+// endpoint exists to reach a local service, so a 502 from the tunnel edge
+// is the truth "tunnel up, your service is not"; a watch-only URL is
+// someone else's endpoint, where any HTTP answer proves the wire.
+async function checkRoute(name, w) {
+  const t0 = Date.now();
+  const ep = provisioned.get(name.toLowerCase());
+  const done = (ok, detail) => ({ name: `route ${name}`, ok, ms: Date.now() - t0, detail });
+  try {
+    if (ep?.kind === 'capture' && ep.url) {
+      const probe = `probe-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const got = await publicFetch('POST', ep.url,
+        { 'content-type': 'application/json' }, JSON.stringify({ _probe: probe }));
+      if (typeof got.status !== 'number')
+        throw new Error('no answer through the tunnel');
+      const topic = `wh.${name.toLowerCase()}`;
+      const deadline = Date.now() + 8000;
+      for (;;) {
+        const r = await fetch(`${hubUrl}/recent?topic=${topic}`,
+          { signal: AbortSignal.timeout(3000) }).then((x) => x.json()).catch(() => null);
+        if (r && JSON.stringify(r).includes(probe))
+          return done(true, `delivery captured on the bench as ${topic} (via ${got.via})`);
+        if (Date.now() > deadline)
+          throw new Error(`tunnel answered ${got.status} but no ${topic} event landed on the hub`);
+        await new Promise((r2) => setTimeout(r2, 500));
+      }
+    }
+    const got = await publicFetch('GET', w.url, {});
+    if (typeof got.status !== 'number') throw new Error('no answer');
+    if (ep?.kind === 'forward' && [502, 503, 504].includes(got.status))
+      throw new Error(`tunnel up, but nothing is answering on ${ep.target} - is the service running?`);
+    return done(true, `answered ${got.status} (via ${got.via})`);
+  } catch (e) {
+    return done(false, String(e.message ?? e));
+  }
+}
+
 async function selftest() {
   const steps = [];
   const step = async (name, fn) => {
@@ -679,6 +801,13 @@ async function selftest() {
       throw new Error(dead.map((c) => `${c.name}: ${c.why}`).join('; '));
     return `delivering to ${active.map((c) => c.name).join(', ') || '(none selected)'}`;
   });
+  // Every route answers for itself - the flagship tunnel proved the wire
+  // above; the rest run in parallel so one dead route cannot make the
+  // others wait. Capture endpoints get the only test that means anything
+  // for them: a delivery through the public URL that LANDS on the bench.
+  const routes = [...watched.entries()].filter(([n]) => n !== 'ALARM');
+  if (routes.length)
+    steps.push(...await Promise.all(routes.map(([n, w]) => checkRoute(n, w))));
   return { ok: steps.every((s) => s.ok), steps,
            tunnel: { kind: tunnel.kind, state: tunnel.state, url: tunnel.url },
            channels: channelRoster(channels) };
@@ -789,12 +918,8 @@ const server = createServer(async (req, res) => {
     if (!/^(::1|127\.|::ffff:127\.)/.test(from))
       return json(res, 403, { ok: false, error: 'loopback only' });
     const name = sanitize(url.pathname.slice('/provision/'.length));
-    const ep = provisioned.get(name);
-    if (!ep) return json(res, 404, { ok: false, error: `no endpoint '${name}'` });
-    try { ep.child?.kill('SIGTERM'); } catch { /* already gone */ }
-    provisioned.delete(name);
-    watched.delete(name.toUpperCase());
-    writeEndpointsFile();
+    if (!deleteEndpoint(name))
+      return json(res, 404, { ok: false, error: `no endpoint '${name}'` });
     return json(res, 200, { ok: true, removed: name });
   }
 
@@ -831,6 +956,12 @@ server.listen(port, '0.0.0.0', () => {
     console.error(`superlog-alarm: generated token ${token} - set SUPER_LOG_ALARM_TOKEN to keep it stable`);
   void startTunnel();
   startPings();
+  if (provisionFile) {
+    const apply = () => void applyProvisionFile(provisionFile);
+    apply();
+    watchFile(provisionFile, { interval: 2000 }, apply);
+    console.error(`superlog-alarm: provisioning from ${provisionFile} (declarative, watched)`);
+  }
   if (watched.size)
     console.error(`superlog-alarm: watching ${watched.size} endpoint(s): ` +
       [...watched.entries()].map(([n, w]) => `${n}=${w.url} every ${w.intervalMs / 1000}s`).join(', '));

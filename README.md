@@ -46,7 +46,7 @@ super-log converges all of it on one process and one screen:
 | **builds and repos** | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions |
 | **blockchain** | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract; operational key balances (gas or ERC-20) with edge-triggered fund-now alarms |
 | **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee` |
-| **alarms** | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated) |
+| **alarms** | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated); public endpoints provisioned one per click or many per manifest file, each with its own ping clock and health light, every route round-trip-tested by the test button, the live URLs written to `endpoints.env` |
 
 Every producer speaks one small wire protocol
 ([docs/PROTOCOL.md](docs/PROTOCOL.md): one JSON event per line, batched over
@@ -273,9 +273,29 @@ when a watcher goes silent — the alarm the dead watcher cannot send. Both
 viewers carry an **alarm blotter** — a sparse panel, deliberately unlike
 the firehose, one row per key — with a **test-alarm button** that proves
 the whole path step by step: hub, tunnel, a real round-trip from the
-internet back through the public URL, and the notification channels
-(including the diagnosis when your own router's DNS filters the tunnel's
-name while production's resolves it fine).
+internet back through the public URL, the notification channels (including
+the diagnosis when your own router's DNS filters the tunnel's name while
+production's resolves it fine), and then **every route on the books**, each
+with its own verdict — a capture endpoint passes only when a probe posted
+through its public URL lands back on the hub as a `wh.<name>` event, a
+forwarded port that answers 502 is reported as "tunnel up, your service is
+not", and a watch-only URL passes on any HTTP answer, because any answer
+proves the wire.
+
+The gateway is also an **endpoint factory**. Both blotters list every route
+as `NAME : url : ● : last seen · ping`, each pinged on its own configurable
+clock (down after two consecutive failures raises `tunnel_down:<name>`,
+recovery clears it), with a **`+ endpoint`** button — a name alone captures
+deliveries as `wh.<name>` events (paste the URL into a Stripe or GitHub
+webhook form and watch them arrive), a name plus port forwards a local
+service — and a delete button beside each. Many endpoints live better in a
+file: `npm run alarm -- --provision endpoints.json` applies a declarative
+manifest (`{"name":"stripe"}` capture, `{"name":"webapp","port":5173}`
+forward, `{"name":"partner","url":"https://…"}` watch-only, each with
+optional `interval_s`) and keeps it applied as the file changes — new names
+appear, removed names are torn down, though only names the file created.
+Every URL the gateway currently owns is rewritten to **`endpoints.env`**
+(gitignored) on every change, so scripts and agents can simply source it.
 
 **Producers never block.** Every SDK uses a bounded queue that drops oldest
 under burst — counted, never hidden. A logger that can stall the app it
@@ -672,6 +692,7 @@ npm run alert                               # rules from alerts.json
 npm run alert -- --test                     # prove delivery without waiting
 npm run alert -- --channels                 # the notification roster, and what is missing
 npm run alarm                               # production's webhook door, tunnelled + tested
+npm run alarm -- --provision endpoints.json # ...plus many public endpoints, from a manifest
 npm run build -- --label cxx -- cmake --build build -j
 npm run build -- --label asan -- ./build/tests   # sanitizer findings, whole
 npm run git                                 # this repo: commits, branches, conflicts

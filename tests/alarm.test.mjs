@@ -14,10 +14,12 @@
 
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-import { assertValidEvent, start, startHub, waitFor } from './harness.mjs';
+import { assertValidEvent, removeDir, start, startHub, tempDir, waitFor } from './harness.mjs';
 
-let hub, gw;
+let hub, gw, work, manifest;
 const PORT = 7391;
 const TOKEN = 'test-alarm-token';
 const T = { 'x-superlog-token': TOKEN, 'content-type': 'application/json' };
@@ -30,15 +32,24 @@ const post = async (path, body, headers = T) => {
 
 before(async () => {
   hub = await startHub();
+  work = tempDir('superlog-alarm-');
+  manifest = join(work, 'endpoints.json');
+  // A watch-only manifest entry and an env-declared route, both pointed at
+  // the hub itself - real URLs that answer, no cloudflared in the loop.
+  writeFileSync(manifest, JSON.stringify(
+    [{ name: 'partner', url: `${hub.url}/healthz`, interval_s: 60 }]));
   gw = start('superlog-alarm.mjs',
     ['--tunnel', 'none', '--port', String(PORT), '--token', TOKEN,
-     '--notify', '', '--url', hub.url], {});
+     '--notify', '', '--url', hub.url, '--provision', manifest,
+     '--endpoints-file', join(work, 'endpoints.env')],
+    { env: { SUPER_LOG_TUNNEL_FAKE: `${hub.url}/healthz|60` } });
   await gw.waitForStderr(/gateway on :7391/);
 });
 
 after(async () => {
   await gw?.stop();
   await hub?.stop();
+  removeDir(work);
 });
 
 describe('superlog-alarm', () => {
@@ -93,6 +104,38 @@ describe('superlog-alarm', () => {
       (rs) => rs.some((r) => /RECOVERED: monitor_dead:peg-checker/.test(r.event?.msg ?? '')),
       { topic: 'alert.inbound.monitor-dead', timeoutMs: 10000 });
     assert.ok(rec2.length);
+  });
+
+  it('every watched route gets its own selftest verdict, and the manifest is declarative', async () => {
+    // Both routes - env-declared and manifest-declared - are on the books.
+    const h = await fetch(gwUrl('/healthz')).then((r) => r.json());
+    const names = h.tunnels.map((t) => t.name);
+    assert.ok(names.includes('FAKE'), 'SUPER_LOG_TUNNEL_FAKE joins the roster');
+    assert.ok(names.includes('PARTNER'), 'a manifest url entry joins the roster');
+
+    // The test button tests ALL of them, not just the flagship tunnel.
+    const st = await fetch(gwUrl('/selftest'), { method: 'POST' }).then((r) => r.json());
+    for (const route of ['route FAKE', 'route PARTNER']) {
+      const s = st.steps.find((x) => x.name === route);
+      assert.ok(s, `selftest must include ${route}`);
+      assert.equal(s.ok, true, `${route}: ${s?.detail}`);
+    }
+
+    // Declarative means deletion: empty the file, the route disappears -
+    // but only the file's own entries; the env-declared one stays.
+    writeFileSync(manifest, '[]');
+    const gone = await (async () => {
+      const deadline = Date.now() + 10000;
+      for (;;) {
+        const now = await fetch(gwUrl('/healthz')).then((r) => r.json());
+        if (!now.tunnels.some((t) => t.name === 'PARTNER'))
+          return now.tunnels.map((t) => t.name);
+        if (Date.now() > deadline) return null;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    })();
+    assert.ok(gone, 'a manifest entry removed from the file must leave the roster');
+    assert.ok(gone.includes('FAKE'), 'env-declared routes are not the manifest\'s to kill');
   });
 
   it('selftest reports steps even with the tunnel off, and healthz lists channels', async () => {

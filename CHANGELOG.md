@@ -5,6 +5,30 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-alarm: every route tested, endpoints from a manifest** — the
+selftest now walks the whole roster, not just the flagship tunnel: one
+verdict per watched route, in parallel, where "tested" means what the route
+is for — a capture endpoint passes only when a probe POSTed through its
+public URL lands back on the hub as a `wh.<name>` event, a forwarded port
+answering 502 reports "tunnel up, your service is not", and a watch-only
+URL passes on any HTTP answer. `--provision endpoints.json` (or
+`SUPER_LOG_PROVISION`) applies a declarative manifest of many endpoints —
+`{"name":"stripe"}` capture, `{"name":"webapp","port":5173}` forward,
+`{"name":"partner","url":"https://…"}` watch-only, `interval_s` per entry —
+re-applied as the file changes, with removals torn down (only names the
+file created; the button's endpoints are not the file's to kill). A
+route deleted from the roster now also stops its ping clock (the loop
+checks it still owns its map entry), and the viewers' route deletion was
+extracted into one `deleteEndpoint` shared with the manifest.
+
+Verified: per-route selftest verdicts (env-declared and manifest-declared
+routes), manifest apply at startup, and declarative removal sparing
+env-declared routes, all against a real hub (`tests/alarm.test.mjs`);
+capture-probe round-trip and forward-502 diagnosis exercised live through
+real cloudflared quick tunnels on this bench. Written but unverified by
+tests: the manifest's forward/capture entries spawning real tunnels (the
+suite uses watch-only entries to keep cloudflared out of CI).
+
 **superlog-power** — CPU package watts, thermal pressure, SMC fan RPM and
 CPU/GPU die temperatures, aggregate CPU as a single number, and the top
 energy consumers attached to every sample (topic `power.<host>`, macOS,
