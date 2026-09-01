@@ -1,0 +1,17 @@
+[
+  { "name": "demo" },
+
+  { "name": "stripe-test",
+    "secret": "whsec_REPLACE_with_your_signing_secret",
+    "interval_s": 120 },
+
+  { "name": "checkout",
+    "relay": "http://127.0.0.1:5000/webhook",
+    "secret": "whsec_REPLACE_me_too" },
+
+  { "name": "webapp", "port": 5173 },
+
+  { "name": "partner-status",
+    "url": "https://hooks.partner.example/health",
+    "interval_s": 300 }
+]
