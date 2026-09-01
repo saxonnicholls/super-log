@@ -5,6 +5,26 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Perl, Lua and COBOL join the bench** — three more producers, three
+different bargains, all house rules kept. **Perl** (`sdk/perl/SuperLog.pm`)
+is core modules only — `HTTP::Tiny` has shipped with Perl since 5.14 and
+`JSON::PP` beside it — for the glue scripts and cron jobs that run half
+the world; `SUPERLOG_MODE` with no default, production an inert shell.
+**Lua** (`sdk/lua/superlog.lua`, any 5.1+, PUC or LuaJIT) makes the same
+honest curl bargain the shell SDK makes, because Lua never grew sockets;
+hand-rolled JSON escaping, same mode contract. **COBOL** deliberately gets
+no SDK: GnuCOBOL `CALL`s C by symbol, so `demo/cobol/shim.c` (~20 lines)
+exports the header-only C SDK and the oldest business language on the
+bench inherits it whole — including the provably-compiled-out production
+story, `strings`-check included.
+
+Verified on this bench: all three clocks delivering to a real hub
+(`scripts/verify-sdks.sh perl lua cobol` - 3 ok), production mode running
+inert for Perl and Lua, and the production COBOL binary containing zero
+hub URL/route strings while the development build contains them. CI runs
+all three on Ubuntu (perl is on the runner; lua5.4 and gnucobol are
+installed alongside gfortran/ocaml).
+
 **Viewers: production and development split, one menu.json** — both
 viewers separate the two webhook audiences into their own panels: **alarms
 (production)** is the sparse blotter with the alarm path beneath it (test

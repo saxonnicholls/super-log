@@ -105,7 +105,7 @@ until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
 done
 export SUPER_LOG_URL="$HUB"
 
-WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala lean}"
+WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala lean perl lua cobol}"
 echo "verify-sdks: hub on :$PORT, checking:$(printf ' %s' $WANT)"
 
 for lang in $WANT; do
@@ -174,6 +174,25 @@ c)
 ruby)
     if ! have ruby; then skipping ruby "no ruby"
     else check ruby ruby.clock env SUPERLOG_MODE=development ruby demo/ruby/clock.rb; fi ;;
+
+perl)
+    if ! have perl; then skipping perl "no perl"
+    else check perl perl.clock env SUPERLOG_MODE=development perl demo/perl/clock.pl; fi ;;
+
+lua)
+    if have lua; then LUA=lua
+    elif have luajit; then LUA=luajit
+    else skipping lua "no lua"; continue; fi
+    check lua lua.clock env SUPERLOG_MODE=development "$LUA" demo/lua/clock.lua ;;
+
+cobol)
+    # COBOL rides the C SDK through demo/cobol/shim.c - GnuCOBOL CALLs C
+    # by symbol, so this verifies the C ABI story as much as the clock.
+    if ! have cobc || ! have cc; then skipping cobol "no cobc"
+    elif cc -DSUPERLOG_DEVELOPMENT -I sdk/c -c demo/cobol/shim.c -o "$TMP/cobshim.o" >/dev/null 2>&1 &&
+         cobc -x -free -o "$TMP/clock_cob" demo/cobol/clock.cob "$TMP/cobshim.o" >/dev/null 2>&1; then
+        check cobol cobol.clock "$TMP/clock_cob"
+    else skipping cobol "cobc build failed"; fi ;;
 
 lean)
     if ! have lake; then skipping lean "no lake"

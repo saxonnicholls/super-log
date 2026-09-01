@@ -38,7 +38,7 @@ super-log converges all of it on one process and one screen:
 
 | Group | What is in it |
 |---|---|
-| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Lean 4, Ruby and Rails (a drop-in `::Logger`), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Lean 4, Ruby and Rails (a drop-in `::Logger`), Perl (core modules only), Lua (5.1+, PUC or LuaJIT), COBOL (riding the C SDK, yes really), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); filesystem changes down to the changed LINES, diffed in real time; big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
@@ -80,7 +80,10 @@ bridge (Kotlin and Scala ride it, one import, zero glue), Swift, Fortran
 over raw POSIX sockets, OCaml over the same raw sockets, Haskell needing
 only GHC's boot libraries and `curl`, Lean 4 for the proof jobs that run
 all night (core IO plus `curl` — Lean grew a kernel before it grew
-sockets), Ruby from the stdlib — with a
+sockets), Perl from core modules alone (`HTTP::Tiny` has shipped with
+Perl since 5.14), Lua making the same curl bargain as the shell SDK
+(Lua never grew sockets at all), COBOL through a 20-line C shim onto the
+header-only C SDK, Ruby from the stdlib — with a
 drop-in `::Logger` adapter, which makes the whole **Rails** story one
 `config.logger` assignment — a `sh` one-liner for scripts, and one JS
 client for React Native, the browser and Node — `patchConsole: true` and
@@ -721,6 +724,43 @@ def main : IO Unit := do
   Superlog.flush lg
 ```
 
+**Perl** (core modules only — `HTTP::Tiny` and `JSON::PP` ship with Perl;
+mode from `SUPERLOG_MODE`), for the glue scripts and cron jobs that run
+half the world:
+
+```perl
+use lib "sdk/perl";
+use SuperLog;
+my $log = SuperLog->new(topic => "perl.backup", app => "backup");
+$log->info("nightly backup starting", { host => "web1" });
+$log->metric("backup.bytes", 48_211_233_792);
+$log->flush;
+```
+
+**Lua** (any Lua 5.1+, PUC or LuaJIT; no sockets in Lua's stdlib, so it
+makes the same honest curl bargain the shell SDK makes):
+
+```lua
+package.path = "sdk/lua/?.lua;" .. package.path
+local superlog = require "superlog"
+local log = superlog.new{ topic = "lua.game", app = "game" }
+log:info("level loaded", { level = "e1m1" })
+log:metric("frame.ms", 6.9)
+log:flush()
+```
+
+**COBOL** (yes, really — GnuCOBOL `CALL`s the header-only C SDK through
+[demo/cobol/shim.c](demo/cobol/shim.c), ~20 lines, so the oldest business
+language on the bench inherits the C SDK whole, provably-compiled-out
+production included):
+
+```cobol
+CALL "cobol_superlog_init"
+    USING BY CONTENT Z"cobol.batch", Z"payroll"
+CALL "cobol_superlog_log"
+    USING BY CONTENT Z"INFO", Z"payroll run 4711 starting"
+```
+
 **Machines, services, containers, chains** (no app changes at all):
 
 ```sh
@@ -1100,6 +1140,9 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   **OCaml:** ≥ 4.14 (`ocamlc -I +unix unix.cma`). **Haskell:** GHC ≥ 9,
   boot libraries plus `curl`. **Scala:** ≥ 3, riding the Java SDK.
   **Lean:** 4.x via elan/lake, core IO plus `curl`.
+  **Perl:** ≥ 5.14, core modules only (`HTTP::Tiny`, `JSON::PP`).
+  **Lua:** any 5.1+ (PUC or LuaJIT) plus `curl`. **COBOL:** GnuCOBOL 3
+  and a C compiler, riding the C SDK via a 20-line shim.
   **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
   **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
   **Swift:** ≥ 5.9, SwiftPM. **Fortran:** gfortran or any compiler with

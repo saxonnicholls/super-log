@@ -235,10 +235,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: gfortran + ocaml (ruby and cc are already on the runner; ghc and
-              scala are not and are not worth their install time - the script
-              reports them as skipped rather than hiding them)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gfortran ocaml
+      - name: gfortran + ocaml + lua + gnucobol (ruby, perl and cc are already
+              on the runner; ghc and scala are not and are not worth their
+              install time - the script reports them as skipped rather than
+              hiding them)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gfortran ocaml lua5.4 gnucobol
       - name: build the hub
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
@@ -248,7 +249,7 @@ jobs:
       # swift is absent on this runner and is skipped, which the script
       # reports rather than hides; the macOS job below covers it.
       - name: every SDK actually delivers
-        run: ./scripts/verify-sdks.sh cpp c rust go python java fortran shell node ruby ocaml haskell scala lean
+        run: ./scripts/verify-sdks.sh cpp c rust go python java fortran shell node ruby ocaml haskell scala lean perl lua cobol
 
   sdk-runtime-macos:
     runs-on: macos-latest
