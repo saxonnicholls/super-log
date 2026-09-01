@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
+import { AlarmBlotter } from './AlarmBlotter';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
 
 // The hub lives on whichever machine served this page - true for the demo,
@@ -165,6 +166,7 @@ export default function App() {
         </span>
       </header>
 
+      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
       <main style={{ flex: 1, overflowY: 'auto', padding: '4px 12px' }}>
         {visible.map((r) => (
           <div key={r.hubSeq} className="row" style={{ display: 'flex', gap: 8, whiteSpace: 'pre-wrap' }}>
@@ -215,6 +217,10 @@ export default function App() {
         ))}
         <div ref={bottom} />
       </main>
+      {/* The blotter: alarms only, one row per key, deliberately sparse -
+          and the Test button that proves the whole public path. */}
+      <AlarmBlotter rows={rows} hub={HUB} />
+      </div>
     </div>
   );
 }

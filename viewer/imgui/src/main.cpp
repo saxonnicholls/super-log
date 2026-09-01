@@ -34,6 +34,7 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -270,6 +271,103 @@ bool write_file(const std::string& path, const std::string& text)
     return std::fclose(f) == 0 && ok;
 }
 
+// ---- the alarm blotter ------------------------------------------------
+//
+// The sparse window, deliberately unlike the firehose: one row per dedup
+// key, newest state wins, repeats counted, recovery greyed rather than
+// erased - resolved and forgotten must not look identical. Fed from the
+// same drain as the table; alert.* traffic is rare enough that re-parsing
+// the raw line here costs nothing.
+
+struct alarm_entry {
+    std::string key, msg, topic;
+    int level = 4;
+    int repeat = 1;
+    bool recovered = false;
+    double at = 0;                              // ImGui time of last update
+};
+
+void note_alarm(std::vector<alarm_entry>& blotter, const row& r, double now)
+{
+    if (r.topic.rfind("alert.", 0) != 0)
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    alarm_entry e;
+    e.topic = r.topic;
+    e.msg = r.msg;
+    e.level = r.level;
+    e.at = now;
+    e.key = r.topic;                            // keyless alerts dedup per topic
+    if (!j.is_discarded() && j.is_object() && j.contains("fields") && j["fields"].is_object()) {
+        const auto& f = j["fields"];
+        if (f.contains("key") && f["key"].is_string())
+            e.key = f["key"].get<std::string>();
+        if (f.contains("repeat") && f["repeat"].is_string())
+            e.repeat = std::atoi(f["repeat"].get<std::string>().c_str());
+        if (f.contains("kind") && f["kind"] == "recovered")
+            e.recovered = true;
+    }
+    if (r.msg.rfind("RECOVERED", 0) == 0)
+        e.recovered = true;
+    for (auto& existing : blotter)
+        if (existing.key == e.key) {
+            existing = std::move(e);
+            return;
+        }
+    blotter.push_back(std::move(e));
+}
+
+// The gateway's /selftest, via curl on a worker thread - the whole public
+// path (hub, tunnel, a round-trip from the internet, channels) with a
+// diagnosis per step. curl rather than a hand-rolled client: it is the
+// same honest bargain the shell and Haskell SDKs make, and TLS through a
+// tunnel is exactly the thing not to hand-roll.
+struct selftest_state {
+    std::mutex m;
+    bool running = false, done = false, ok = false;
+    struct step { bool ok; std::string name, detail; };
+    std::vector<step> steps;
+};
+
+void run_selftest(selftest_state& st, const std::string& gateway)
+{
+    {
+        std::lock_guard<std::mutex> g(st.m);
+        if (st.running)
+            return;
+        st.running = true;
+        st.done = false;
+        st.steps.clear();
+    }
+    std::thread([&st, gateway] {
+        const std::string cmd =
+            "curl -s -m 90 -X POST " + gateway + "/selftest 2>/dev/null";
+        std::string out;
+        if (std::FILE* p = ::popen(cmd.c_str(), "r")) {
+            std::array<char, 4096> buf;
+            std::size_t n;
+            while ((n = std::fread(buf.data(), 1, buf.size(), p)) > 0)
+                out.append(buf.data(), n);
+            ::pclose(p);
+        }
+        std::lock_guard<std::mutex> g(st.m);
+        st.running = false;
+        st.done = true;
+        st.ok = false;
+        st.steps.clear();
+        const auto j = nlohmann::json::parse(out, nullptr, false);
+        if (j.is_discarded() || !j.is_object() || !j.contains("steps")) {
+            st.steps.push_back({false, "reach the alarm gateway",
+                                gateway + " - no answer. Is superlog-alarm running? (npm run alarm)"});
+            return;
+        }
+        st.ok = j.value("ok", false);
+        for (const auto& sj : j["steps"])
+            st.steps.push_back({sj.value("ok", false), sj.value("name", ""),
+                                sj.value("detail", "")});
+    }).detach();
+}
+
 } // namespace
 
 int main()
@@ -349,6 +447,9 @@ int main()
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    // Docking: the table, the blotter, and whatever comes next tile the
+    // screen however the operator wants, and imgui.ini remembers.
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(win, true);
     ImGui_ImplOpenGL3_Init("#version 150");
@@ -367,6 +468,20 @@ int main()
     double copied_until = 0;                    // transient button/status text
     double status_until = 0;
     std::string status;
+    std::vector<alarm_entry> blotter;
+    // Static: the selftest runs on a detached thread that may still be
+    // writing when main() unwinds - state with static storage cannot be
+    // pulled out from under it.
+    static selftest_state selftest;
+    // The gateway lives beside the hub unless SUPER_LOG_ALARM_URL says not.
+    const std::string gateway = [&] {
+        if (const char* g = std::getenv("SUPER_LOG_ALARM_URL"))
+            return std::string(g);
+        const std::size_t colon = hub_label.rfind(':');
+        return "http://" +
+               (colon == std::string::npos ? hub_label : hub_label.substr(0, colon)) +
+               ":7336";
+    }();
 
     while (!glfwWindowShouldClose(win)) {
         glfwPollEvents();
@@ -380,6 +495,7 @@ int main()
                 const auto at = std::lower_bound(topics.begin(), topics.end(), t);
                 if (at == topics.end() || *at != t)
                     topics.insert(at, t);
+                note_alarm(blotter, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -396,10 +512,13 @@ int main()
         ImGui::NewFrame();
 
         const ImGuiViewport* vp = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(vp->WorkPos);
-        ImGui::SetNextWindowSize(vp->WorkSize);
-        ImGui::Begin("super-log", nullptr,
-                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+        // The dockspace claims the frame; every window below docks into it
+        // (or floats, the operator's call - imgui.ini keeps the layout).
+        ImGui::DockSpaceOverViewport(0, vp, ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::SetNextWindowPos(vp->WorkPos, ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x - 400, vp->WorkSize.y),
+                                 ImGuiCond_FirstUseEver);
+        ImGui::Begin("super-log");
 
         // Filter first, so copy/export see exactly what the table shows
         const std::string needle = filter;
@@ -538,6 +657,80 @@ int main()
             ImGui::EndTable();
         }
         ImGui::End();
+
+        // ---- the alarm blotter: its own window, sparse by construction
+        {
+            int firing = 0;
+            for (const auto& a : blotter)
+                if (!a.recovered && a.level >= 3)
+                    ++firing;
+            char title[64];
+            std::snprintf(title, sizeof title,
+                          firing ? "alarms - %d firing###alarms" : "alarms###alarms", firing);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkSize.x - 400, 40), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(380, 330), ImGuiCond_FirstUseEver);
+            ImGui::Begin(title);
+            {
+                // Snapshot under the lock, render from the copy, and NEVER
+                // call run_selftest while holding it - it takes the same
+                // mutex, and a recursive lock on a plain mutex is UB (it
+                // crashed the first person to press the button).
+                bool st_running, st_done, st_ok;
+                std::vector<selftest_state::step> st_steps;
+                {
+                    std::lock_guard<std::mutex> g(selftest.m);
+                    st_running = selftest.running;
+                    st_done = selftest.done;
+                    st_ok = selftest.ok;
+                    st_steps = selftest.steps;
+                }
+                const bool clicked =
+                    ImGui::Button(st_running ? "testing..." : "test alarm");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("prove the whole path: hub, tunnel,\n"
+                                      "a round-trip from the internet, channels");
+                if (st_done) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(st_ok ? ImVec4(0.4f, 0.8f, 0.4f, 1)
+                                             : ImVec4(0.9f, 0.4f, 0.3f, 1),
+                                       st_ok ? "path verified" : "test FAILED");
+                    for (const auto& sp : st_steps) {
+                        ImGui::TextColored(sp.ok ? ImVec4(0.4f, 0.8f, 0.4f, 1)
+                                                 : ImVec4(0.9f, 0.4f, 0.3f, 1),
+                                           "%s %s", sp.ok ? "ok" : "X", sp.name.c_str());
+                        if (!sp.detail.empty()) {
+                            ImGui::PushTextWrapPos();
+                            ImGui::TextDisabled("   %s", sp.detail.c_str());
+                            ImGui::PopTextWrapPos();
+                        }
+                    }
+                    ImGui::Separator();
+                }
+                if (clicked && !st_running)
+                    run_selftest(selftest, gateway);
+            }
+            if (blotter.empty())
+                ImGui::TextDisabled("no alarms - which is the idea.");
+            // Newest state at the top; a blotter is read from the top.
+            for (auto it = blotter.rbegin(); it != blotter.rend(); ++it) {
+                const alarm_entry& a = *it;
+                const ImVec4 col = a.recovered ? ImVec4(0.41f, 0.79f, 0.39f, 0.7f)
+                                               : level_color(a.level);
+                ImGui::TextColored(col, "%s %s", a.recovered ? "ok" : "!!", a.key.c_str());
+                if (a.repeat > 1) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.85f, 0.64f, 0.25f, 1), "x%d", a.repeat);
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("%ds ago", static_cast<int>(ImGui::GetTime() - a.at));
+                ImGui::PushTextWrapPos();
+                if (a.recovered) ImGui::TextDisabled("%s", a.msg.c_str());
+                else ImGui::TextUnformatted(a.msg.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::Separator();
+            }
+            ImGui::End();
+        }
 
         ImGui::Render();
         int w, h;
