@@ -826,12 +826,30 @@ int main()
             }
             // ---- routes: NAME: url : light : last seen, and the factory
             {
-                if (ImGui::GetTime() - gwstate.polled_at > 30.0) {
-                    gwstate.polled_at = ImGui::GetTime();
-                    poll_gateway(gwstate, gateway);
+                // Snapshot under the lock, render from the copy, invoke
+                // after release - run_gateway_cmd and poll_gateway take
+                // this same mutex, and a std::mutex relocked by its own
+                // thread is an abort, not a queue (the selftest button
+                // paid this lesson first).
+                std::vector<gateway_state::route> routes;
+                bool provisioning = false;
+                std::string provision_result;
+                bool poll_due = false;
+                {
+                    std::lock_guard<std::mutex> g(gwstate.m);
+                    if (ImGui::GetTime() - gwstate.polled_at > 30.0) {
+                        gwstate.polled_at = ImGui::GetTime();
+                        poll_due = true;
+                    }
+                    routes = gwstate.routes;
+                    provisioning = gwstate.provisioning;
+                    provision_result = gwstate.provision_result;
                 }
-                std::lock_guard<std::mutex> g(gwstate.m);
-                for (const auto& r : gwstate.routes) {
+                if (poll_due)
+                    poll_gateway(gwstate, gateway);
+                std::string pending_cmd;
+                const char* pending_label = nullptr;
+                for (const auto& r : routes) {
                     const ImVec4 light = r.healthy == 1 ? ImVec4(0.41f, 0.79f, 0.39f, 1)
                                        : r.healthy == 0 ? ImVec4(1.0f, 0.18f, 0.12f, 1)
                                                         : ImVec4(0.45f, 0.47f, 0.52f, 1);
@@ -860,9 +878,9 @@ int main()
                         if (ImGui::SmallButton("x")) {
                             std::string lower = r.name;
                             for (auto& c : lower) c = static_cast<char>(std::tolower(c));
-                            run_gateway_cmd(gwstate,
-                                "curl -s -m 10 -X DELETE " + gateway + "/provision/" + lower +
-                                " 2>/dev/null", "delete");
+                            pending_cmd = "curl -s -m 10 -X DELETE " + gateway +
+                                          "/provision/" + lower + " 2>/dev/null";
+                            pending_label = "delete";
                         }
                         ImGui::PopID();
                     }
@@ -873,32 +891,34 @@ int main()
                 ImGui::SetNextItemWidth(60);
                 ImGui::InputTextWithHint("##epport", "port", ep_port, sizeof ep_port);
                 ImGui::SameLine();
-                if (ImGui::Button(gwstate.provisioning ? "..." : "+ endpoint") &&
-                    !gwstate.provisioning) {
+                if (ImGui::Button(provisioning ? "..." : "+ endpoint") &&
+                    !provisioning) {
                     std::string body = "{";
                     if (ep_name[0]) body += std::string("\"name\":\"") + ep_name + "\"";
                     if (ep_port[0]) body += std::string(ep_name[0] ? "," : "") +
                                             "\"port\":" + ep_port;
                     body += "}";
-                    run_gateway_cmd(gwstate,
-                        "curl -s -m 60 -X POST " + gateway + "/provision -d '" + body +
-                        "' 2>/dev/null", "provision");
+                    pending_cmd = "curl -s -m 60 -X POST " + gateway +
+                                  "/provision -d '" + body + "' 2>/dev/null";
+                    pending_label = "provision";
                     ep_name[0] = ep_port[0] = '\0';
                 }
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("one click, one public URL: forward a\n"
                                       "local port, or capture deliveries\n"
                                       "(blank port) as wh.<name> events");
-                if (!gwstate.provision_result.empty()) {
+                if (!provision_result.empty()) {
                     ImGui::PushTextWrapPos();
-                    ImGui::TextDisabled("%s", gwstate.provision_result.c_str());
+                    ImGui::TextDisabled("%s", provision_result.c_str());
                     ImGui::PopTextWrapPos();
-                    if (gwstate.provision_result.rfind("https://", 0) == 0) {
+                    if (provision_result.rfind("https://", 0) == 0) {
                         ImGui::SameLine();
                         if (ImGui::SmallButton("copy url"))
-                            ImGui::SetClipboardText(gwstate.provision_result.c_str());
+                            ImGui::SetClipboardText(provision_result.c_str());
                     }
                 }
+                if (pending_label)
+                    run_gateway_cmd(gwstate, pending_cmd, pending_label);
                 ImGui::Separator();
             }
 
