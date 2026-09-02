@@ -99,6 +99,7 @@ host-side tailer scraping the same device:
 | `gas.<chain>`         | operational key balances (native coin or ERC-20): readings as `metric` events, edge-triggered CRITICAL below the fund-now line, WARN below the low line, recovery announced |
 | `usb.<host>`          | the machine's USB device tree: hotplug as snapshot-diffed INFO events ("plugged in: iPhone ..."), the whole tree riding `fields.tree` on every change for the viewers' Devices window |
 | `sql.<name>`          | SQL on the bench: Postgres `NOTIFY <channel>, '<payload>'` bridged as events (JSON payloads carry level/msg/fields), SQLite watched from outside the process (change counter, WAL growth, sizes as `metric` events), polled `--query` metrics for both |
+| `agent.<name>`        | an agent on the bench: LISTENING (MCP connect, announced by the server itself), REQUESTING (tool calls, DEBUG), and REPORTING (the agent_report contract: `fields.llm` names the model, `task`/`pct` the job, `interval_s` the promised cadence - the blotter greys an agent that misses 2x its own promise) |
 | `alert.<rule>`        | an alert rule that fired (level, rate, silence, or a combo of conditions in one window), so alerts sit beside their cause |
 | `alert.inbound.<name>`| a production system's webhook alarm through superlog-alarm: deduped by `fields.key` with `fields.repeat` counts, recovery as INFO, `monitor_dead:*` when a checker's heartbeat stops |
 

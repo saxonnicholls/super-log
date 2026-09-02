@@ -5,6 +5,28 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**The agents blotter: who is working the bench, and on which LLM** — a
+new window in both viewers (View → Agents) with one row per agent: name,
+the LLM it runs on, latest status, last seen. Three kinds feed it, one
+topic family (`agent.<name>`). LISTENING: the MCP server announces every
+consumer from its own initialize handshake, so agents appear the moment
+they connect, no cooperation needed. REQUESTING: each tool call as a
+DEBUG event. REPORTING: the new `agent_report` MCP tool (or one POST) -
+llm, status, task, percent, and `interval_s`, the cadence the agent
+promises; report every 15 minutes by default plus on events, which is
+how an 8-hour job stays visible. The freshness light is held to each
+agent's OWN promise - green inside 2x, late, then silent - so an agent
+that broke its word looks like it. This is the one deliberate write the
+otherwise read-only MCP server performs, and it can land only on
+`agent.*` topics; the README's read-only posture says so plainly.
+Identity fields are sticky in the viewers: a requesting DEBUG does not
+erase who an agent is.
+
+Verified over real stdio JSON-RPC against a real hub
+(`tests/agents.test.mjs`): the handshake alone landing a listening
+agent, a tool call landing a requesting event, and agent_report landing
+with `llm: claude-fable-5`, pct and cadence intact.
+
 **superlog-usb and the Devices window: is the phone connected?** — the
 question every device developer asks a terminal ("adb can't see it",
 "Xcode lost the phone") now has a window. superlog-usb watches the USB

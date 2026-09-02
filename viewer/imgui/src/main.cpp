@@ -406,6 +406,46 @@ void note_server(std::map<std::string, server_entry>& servers, const row& r, dou
     }
 }
 
+// ---- the agents blotter ------------------------------------------------
+//
+// Who is working the bench: every agent.<name> event is an agent
+// listening (MCP connect), requesting (tool calls), or reporting (the
+// agent_report contract: which LLM, what task, what cadence). Identity
+// fields are STICKY - a requesting DEBUG carries no llm, and forgetting
+// who an agent is because it asked a question would be absurd. The light
+// is the agent's own promised cadence: grey at 2x means it broke its
+// own word, which is exactly what an 8-hour job's watcher needs to see.
+
+struct agent_entry {
+    std::string llm, status, task, kind;
+    int level = 2;
+    int pct = -1;
+    double interval_s = 900;
+    double at = 0;
+};
+
+void note_agent(std::map<std::string, agent_entry>& agents, const row& r, double now)
+{
+    if (r.topic.rfind("agent.", 0) != 0)
+        return;
+    auto& e = agents[r.topic.substr(6)];
+    e.status = r.msg;
+    e.level = r.level;
+    e.at = now;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    const auto str = [&](const char* k) {
+        return f.contains(k) && f[k].is_string() ? f[k].get<std::string>() : std::string();
+    };
+    if (!str("llm").empty()) e.llm = str("llm");
+    if (!str("task").empty()) e.task = str("task");
+    if (!str("kind").empty()) e.kind = str("kind");
+    if (!str("pct").empty()) e.pct = std::atoi(str("pct").c_str());
+    if (!str("interval_s").empty()) e.interval_s = std::atof(str("interval_s").c_str());
+}
+
 // ---- the device trees --------------------------------------------------
 //
 // superlog-usb publishes each host's tree as fields.tree on usb.<host>;
@@ -610,6 +650,7 @@ constexpr const char* fallback_menu = R"MENU([
     {"key":"menu.view.log","label":"Log firehose","action":"toggle.log","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.servers","label":"Servers (health)","action":"toggle.servers","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.devices","label":"Devices (USB)","action":"toggle.devices","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.agents","label":"Agents (MCP)","action":"toggle.agents","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
@@ -1096,6 +1137,7 @@ int main()
     std::map<std::string, server_entry> servers;
     std::map<std::string, usb_state> usb_trees;
     std::map<std::string, phone_entry> phones;
+    std::map<std::string, agent_entry> agents;
     static menu_state menu;
     load_menu(menu);
     static viewer_config vcfg;
@@ -1133,6 +1175,7 @@ int main()
                 note_webhook(webhooks, fd.rows.front(), ImGui::GetTime());
                 note_server(servers, fd.rows.front(), ImGui::GetTime());
                 note_usb(usb_trees, phones, fd.rows.front(), ImGui::GetTime());
+                note_agent(agents, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -1697,6 +1740,73 @@ int main()
                         for (const auto& c : st.tree["children"])
                             draw_usb_node(c);
                 }
+            }
+            ImGui::End();
+        }
+
+        // ---- agents: who is working the bench - listening, requesting,
+        // reporting - with the LLM named and the light held to each
+        // agent's own promised cadence.
+        if (menu.toggles["toggle.agents"]) {
+            char atitle[64];
+            std::snprintf(atitle, sizeof atitle, "agents - %d###agents",
+                          static_cast<int>(agents.size()));
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 20, vp->WorkPos.y + 620),
+                                    ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(480, 240), ImGuiCond_FirstUseEver);
+            ImGui::Begin(atitle);
+            if (agents.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no agents yet. MCP consumers appear when they "
+                                    "connect; anything can report with the agent_report "
+                                    "tool or one POST to agent.<name>.");
+                ImGui::PopTextWrapPos();
+            }
+            if (ImGui::BeginTable("agentgrid", 5,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+                ImGui::TableSetupColumn("agent", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                ImGui::TableSetupColumn("llm", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+                ImGui::TableSetupColumn("status", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("seen", ImGuiTableColumnFlags_WidthFixed, 64.0f);
+                ImGui::TableHeadersRow();
+                const double now = ImGui::GetTime();
+                for (const auto& [name, a] : agents) {
+                    const double ago = now - a.at;
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    // The light is the agent's OWN promise: grey at 2x its
+                    // declared cadence means it broke its own word.
+                    if (a.level >= 3 && ago < a.interval_s)
+                        ImGui::TextColored(level_color(a.level), "%s", levels[a.level]);
+                    else if (ago < a.interval_s * 2)
+                        ImGui::TextColored(ImVec4(0.41f, 0.79f, 0.39f, 1), "up");
+                    else if (ago < a.interval_s * 4)
+                        ImGui::TextColored(ImVec4(0.85f, 0.64f, 0.25f, 1), "late");
+                    else
+                        ImGui::TextColored(ImVec4(0.45f, 0.47f, 0.52f, 1), "silent");
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(name.c_str());
+                    if (!a.task.empty() && ImGui::IsItemHovered())
+                        ImGui::SetTooltip("task: %s", a.task.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(ImVec4(0.48f, 0.64f, 0.97f, 1), "%s",
+                                       a.llm.empty() ? "-" : a.llm.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::PushTextWrapPos();
+                    if (a.pct >= 0) {
+                        ImGui::Text("[%d%%] %s", a.pct, a.status.c_str());
+                    } else {
+                        ImGui::TextUnformatted(a.status.c_str());
+                    }
+                    ImGui::PopTextWrapPos();
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled(ago < 90 ? "%ds ago" : "%dm ago",
+                                        ago < 90 ? static_cast<int>(ago)
+                                                 : static_cast<int>(ago / 60));
+                }
+                ImGui::EndTable();
             }
             ImGui::End();
         }

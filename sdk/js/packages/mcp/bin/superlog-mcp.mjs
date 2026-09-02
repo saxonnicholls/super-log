@@ -35,6 +35,41 @@ import { createGunzip } from 'node:zlib';
 const HUB = process.env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333';
 const JOURNAL = process.env.SUPER_LOG_JOURNAL ?? './superlog-journal';
 
+// ---- the agents blotter's feed -----------------------------------------
+//
+// This server is read-only by construction, with ONE deliberate, narrow
+// exception: telemetry about agents, landing only on agent.* topics. Two
+// sources feed it. The server itself announces its consumers - who
+// connected (the initialize handshake carries the client's name) and what
+// they request, so LISTENING agents appear on the blotter without lifting
+// a finger. And the agent_report tool below lets an agent say who it is
+// (which LLM it runs on), what it is doing, and how often to expect it -
+// the REPORTING half. Neither can write anywhere but agent.*.
+
+const AGENT_SESSION = Math.random().toString(16).slice(2, 10);
+let agentSeq = 0;
+let clientName = '';                 // from the initialize handshake
+
+const sanitizeAgent = (s) =>
+  String(s).toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 48) || 'agent';
+
+function agentPublish(name, level, msg, fields) {
+  const line = JSON.stringify({
+    v: 1, ts: new Date().toISOString(), seq: agentSeq++, session: AGENT_SESSION,
+    level, origin: { runtime: 'agent', app: name, platform: 'mcp', device: name },
+    tag: 'agent', msg,
+    ...(fields && Object.keys(fields).length
+      ? { fields: Object.fromEntries(Object.entries(fields)
+          .filter(([, v]) => v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => [k, String(v)])) }
+      : {}),
+  });
+  fetch(`${HUB}/ingest/agent.${name}`, {
+    method: 'POST', headers: { 'content-type': 'application/x-ndjson' }, body: line,
+    signal: AbortSignal.timeout(4000),
+  }).catch(() => { /* the blotter misses a beat; reading is unaffected */ });
+}
+
 // The bench explained to agents: one detailed entry per logging capability
 // plus step-by-step playbooks, maintained as data (guide.json) so the
 // documentation is queryable rather than baked into tool descriptions -
@@ -313,6 +348,41 @@ const TOOLS = [
           ? 'No frames yet: nothing has logged to this hub since it started.'
           : '')
       );
+    },
+  },
+  {
+    name: 'agent_report',
+    description:
+      "Put yourself on the bench's AGENTS blotter: say who you are, which " +
+      'LLM you run on, what you are doing, and how often to expect you. ' +
+      'For a long job (an 8-hour build, an overnight proof search), call ' +
+      'this on a schedule - every interval_s, default 900 (15 minutes) - ' +
+      'AND on events: milestones, errors (level WARN/ERROR), and done. The ' +
+      'blotter shows your last status and greys you when you miss your own ' +
+      'promised cadence, so a silent agent LOOKS silent. This is the single ' +
+      'deliberate write this otherwise read-only server performs, and it ' +
+      'can only land on agent.* status topics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Your name on the blotter (e.g. "proof-search", "nightly-builder")' },
+        llm: { type: 'string', description: 'The model you run on (e.g. "claude-fable-5") - the blotter displays it' },
+        status: { type: 'string', description: 'One line: what is happening right now' },
+        task: { type: 'string', description: 'The overall job (e.g. "8h proof search, mathlib bump")' },
+        pct: { type: 'number', description: 'Percent complete, when the job has a shape' },
+        level: { type: 'string', enum: ['INFO', 'WARN', 'ERROR'], description: 'Default INFO; WARN/ERROR when the status IS the problem' },
+        interval_s: { type: 'number', description: 'How often you promise to report (default 900); the blotter greys you at 2x' },
+      },
+      required: ['agent', 'llm', 'status'],
+      additionalProperties: false,
+    },
+    run: async ({ agent, llm, status, task, pct, level, interval_s }) => {
+      const name = sanitizeAgent(agent);
+      agentPublish(name, ['INFO', 'WARN', 'ERROR'].includes(level) ? level : 'INFO',
+        String(status).slice(0, 500),
+        { kind: 'reporting', llm, task, pct, interval_s: interval_s ?? 900 });
+      return `on the blotter as '${name}' (${llm}) - next report expected within ` +
+             `${interval_s ?? 900}s; report again on schedule and on events.`;
     },
   },
   {
@@ -643,6 +713,12 @@ async function handle(msg) {
 
   if (method === 'initialize') {
     const asked = params?.protocolVersion;
+    clientName = sanitizeAgent(params?.clientInfo?.name ?? 'mcp-client');
+    agentPublish(clientName, 'INFO',
+      `connected - listening on the bench over MCP` +
+      (params?.clientInfo?.version ? ` (${params.clientInfo.version})` : ''),
+      { kind: 'listening', client: params?.clientInfo?.name,
+        llm: process.env.SUPER_LOG_AGENT_LLM });
     return reply(id, {
       protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
       capabilities: { tools: {}, prompts: {} },
@@ -685,6 +761,10 @@ async function handle(msg) {
   if (method === 'tools/call') {
     const tool = TOOLS.find((t) => t.name === params?.name);
     if (!tool) return fail(id, -32602, `unknown tool: ${params?.name}`);
+    if (clientName && params.name !== 'agent_report')
+      agentPublish(clientName, 'DEBUG', `requesting ${params.name}`,
+        { kind: 'requesting', tool: params.name,
+          args: JSON.stringify(params.arguments ?? {}).slice(0, 180) });
     try {
       const text = await tool.run(params.arguments ?? {});
       return reply(id, { content: [{ type: 'text', text }] });
