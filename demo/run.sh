@@ -275,6 +275,13 @@ if have node; then
         # DiagnosticReports, and its last shutdown cause was -108.
         start "sys.$(hostname -s 2>/dev/null || echo local)" \
             node tailers/bin/superlog-sys.mjs
+        # The network's state - gateway, Wi-Fi, VPN, resolvers, ARP - because
+        # half of "everything just broke" is the network moving underneath
+        # the developer, and none of it says so anywhere else. This bench
+        # lost a live debugging round to a filtering resolver that a
+        # resolver-change event would have flagged instantly.
+        start "netstate.$(hostname -s 2>/dev/null || echo local)" \
+            node tailers/bin/superlog-netstate.mjs
     fi
 
     # Well-known app logs on THIS machine (postgres, nginx, redis, ...):

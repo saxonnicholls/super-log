@@ -5,6 +5,43 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-netstate: the network's state, watched; changes, announced** —
+half of "everything just broke" on a bench is the network moving
+underneath the developer, silently. Now it says so, once per change:
+interface addresses (DHCP renumber is WARN — every held connection just
+died), the default gateway, the Wi-Fi SSID, VPN tunnels up/down, the DNS
+resolver set (captive portals and filtering resolvers live here — this
+bench lost a live debugging round to one), and the ARP neighbourhood with
+judgment: a new LAN device is one INFO at first sight, cache expiry is
+silence, and the gateway's MAC changing is ERROR because that is a router
+swap or an ARP-spoofing MITM. `--ping` targets (the gateway rides free)
+publish RTT/loss as metric readings with edge-triggered degradation — and
+at the crossing, ONE traceroute runs and lands beside the alarm on the
+same `trace`, so the alarm arrives carrying its own diagnosis; a healthy
+path follows on recovery for comparison. Continuous traceroute was
+rejected on purpose: ECMP makes hop lists differ legitimately per flow,
+and diffing them teaches muting. The demo starts it unconditionally on
+macOS, beside power and sys.
+
+**superlog-dns --asn: the BGP question a bench can honestly ask** — a
+laptop has no BGP view, but RIPEstat does, and the one question that
+matters about your names is answerable: which AS originates the prefix
+your A records live in. The origin changing or the prefix vanishing is
+CRITICAL — from outside, that is what a hijack looks like, and it is
+otherwise invisible until customers phone. Polled politely (default
+300s). Local BGP daemons are out of scope on purpose; a router's own
+session events already have a road in via the syslog socket tailer.
+
+Verified on this bench: the real inventory (interfaces, gateway,
+resolvers, ARP) and the full degradation story — TEST-NET-1 pinged to a
+100%-loss ERROR edge with its traceroute landing on the same trace —
+against a real hub (`tests/netstate.test.mjs`); origin-AS live against
+RIPEstat (the bench's production domain resolves under its expected
+origin AS).
+Written but unverified: the Linux collectors (`ip -j`, `ip neigh`,
+resolv.conf) beyond CI's `--once` exercise, and Wi-Fi SSID on Linux
+(`iwgetid`).
+
 **superlog-sql: SQL gets a voice** — SQL runs inside an engine and cannot
 POST, so the engines are met where they live. Postgres: the tailer holds
 `LISTEN <channel>` open and any trigger, stored procedure or batch job

@@ -70,7 +70,8 @@
     "sys": "node tailers/bin/superlog-sys.mjs",
     "gas": "node tailers/bin/superlog-gas.mjs",
     "alarm": "node tailers/bin/superlog-alarm.mjs",
-    "sql": "node tailers/bin/superlog-sql.mjs"
+    "sql": "node tailers/bin/superlog-sql.mjs",
+    "netstate": "node tailers/bin/superlog-netstate.mjs"
   },
   "engines": {
     "node": ">=18"

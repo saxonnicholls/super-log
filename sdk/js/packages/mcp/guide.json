@@ -68,10 +68,10 @@
       "gotchas": "Absence of CRITICAL does not mean healthy-right-now - check the DEBUG readings' timestamps and values. Balances are telemetry precision, not accounting. Token keys read balanceOf with the config's decimals; a wrong decimals value is off by orders of magnitude."
     },
     "net": {
-      "topics": "net.<host>.<target>, grpc.<host>.<target>, net.<host>.listeners, dns.<domain>",
-      "what": "HTTP/S calls through the logging proxy (one event per request/response with status and latency), gRPC with status from trailers, listening-port changes, DNS records and TLS expiry watched for change.",
-      "read": "5xx is ERROR, 4xx WARN. New PUBLIC listener is WARN; NS/CAA changes are WARN (that is how domains get taken); certs WARN at 3 weeks out.",
-      "gotchas": "dns and ports diff snapshots - the first poll is a silent baseline, only changes are events."
+      "topics": "net.<host>.<target>, grpc.<host>.<target>, net.<host>.listeners, net.<host>.state, dns.<domain>",
+      "what": "HTTP/S calls through the logging proxy (one event per request/response with status and latency), gRPC with status from trailers, listening-port changes, DNS records and TLS expiry watched for change. net.<host>.state is the network's own state watched for change: interface addresses, default gateway, Wi-Fi SSID, VPN tunnels, DNS resolver set, new LAN devices, plus --ping targets with RTT/loss readings. superlog-dns --asn also watches which AS originates each domain's prefix (via RIPEstat).",
+      "read": "5xx is ERROR, 4xx WARN. New PUBLIC listener is WARN; NS/CAA changes are WARN (that is how domains get taken); certs WARN at 3 weeks out. netstate: VPN down / DHCP renumber / resolver change are WARN (the 'everything just broke' class); gateway MAC change is ERROR (router swap or ARP spoof); a dead ping target is an ERROR edge whose traceroute diagnosis arrives on the SAME trace id - query /recent?trace= to read alarm and diagnosis together. dns --asn: origin AS change or prefix withdrawal is CRITICAL - what a hijack looks like from outside.",
+      "gotchas": "dns and ports diff snapshots - the first poll is a silent baseline, only changes are events. netstate reports ARP first-sights once and never reports cache expiry (churn teaches muting); ping loss must persist two checks before the edge fires. RTT/loss are DEBUG metric readings every interval by design."
     },
     "history": {
       "topics": "(the journal on disk)",

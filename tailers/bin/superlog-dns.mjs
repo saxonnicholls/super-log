@@ -42,10 +42,13 @@ if (args.includes('--help') || args.includes('-h')) {
 
   superlog-dns [--domains a.com,b.com] [--interval SECONDS] [--url HUB]
                [--resolver 1.1.1.1] [--tls-warn DAYS] [--no-tls]
+               [--asn] [--asn-interval 300]
 
 Reads .env: SUPER_LOG_DOMAINS, SUPER_LOG_DNS_INTERVAL, SUPER_LOG_URL.
 Publishes to dns.<domain>. First poll is a silent baseline; after that only
-changes are reported.`);
+changes are reported. --asn also watches which AS originates each domain's
+prefix (via RIPEstat): the origin changing or the prefix vanishing is
+CRITICAL, because from outside that is what a hijack looks like.`);
   process.exit(0);
 }
 
@@ -209,6 +212,62 @@ async function checkRecords(domain, first) {
   }
 }
 
+// ----------------------------------------------------------------- BGP
+//
+// A bench has no BGP view - AS-path drama is invisible from a laptop -
+// but RIPEstat's public API sees the routing table, and the one question
+// that matters about YOUR names is answerable: which AS originates the
+// prefixes your A records live in. The origin changing is what a prefix
+// hijack looks like from outside, and it is otherwise invisible until
+// customers phone. Polled politely (--asn-interval, default 300s) and
+// edge-triggered like everything else: --asn turns it on.
+
+const asnPrev = new Map();       // domain -> "AS13335 Cloudflare, ..."
+const asnLast = new Map();       // domain -> ms of last poll
+const asnIntervalMs = (Number(opt('asn-interval', 300)) || 300) * 1000;
+
+async function originAsFor(ip) {
+  const r = await fetch(
+    `https://stat.ripe.net/data/prefix-overview/data.json?resource=${ip}`,
+    { signal: AbortSignal.timeout(10000) });
+  const j = await r.json();
+  const asns = (j?.data?.asns ?? [])
+    .map((a) => `AS${a.asn}${a.holder ? ` ${String(a.holder).split(' - ')[0]}` : ''}`)
+    .sort();
+  return { asns, prefix: j?.data?.resource ?? '' };
+}
+
+async function checkAsn(domain, first) {
+  const now = Date.now();
+  if (!first && now - (asnLast.get(domain) ?? 0) < asnIntervalMs) return;
+  asnLast.set(domain, now);
+  let ips;
+  try { ips = await resolver.resolve4(domain); } catch { return; }
+  if (!ips.length) return;
+  let got;
+  try { got = await originAsFor(ips[0]); }
+  catch { return; }              // RIPEstat unreachable is not a routing event
+  const cur = got.asns.join(', ');
+  const before = asnPrev.get(domain);
+  asnPrev.set(domain, cur);
+  if (once || first) {
+    publish(domain, 'INFO', `origin: ${cur || '(prefix not announced)'} for ${got.prefix}`,
+            { domain, origin: cur, prefix: got.prefix, ip: ips[0] });
+    return;
+  }
+  if (before === undefined || before === cur) return;
+  if (!cur)
+    publish(domain, 'CRITICAL',
+      `prefix WITHDRAWN: ${ips[0]} (${got.prefix}) is no longer announced ` +
+      `(was ${before}) - the name resolves but nothing routes to it`,
+      { domain, was: before, prefix: got.prefix, ip: ips[0] });
+  else
+    publish(domain, 'CRITICAL',
+      `origin AS changed: ${before} -> ${cur} for ${got.prefix} - ` +
+      'a routing change you did not make is what a prefix hijack looks like',
+      { domain, was: before, now: cur, prefix: got.prefix, ip: ips[0] });
+}
+
 // --------------------------------------------------------------- the cert
 //
 // Expiry is a scheduled outage. It is worth knowing weeks ahead, and worth
@@ -288,6 +347,7 @@ for (;;) {
   for (const d of domains) {
     await checkRecords(d, first);
     if (checkTls) await checkTlsFor(d, first);
+    if (args.includes('--asn')) await checkAsn(d, first);
   }
   await flushAll();
   if (once) {

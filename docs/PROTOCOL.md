@@ -77,6 +77,7 @@ host-side tailer scraping the same device:
 | `grpc.<host>.<target>`| gRPC calls through the logging proxy - one event per RPC, levelled by `grpc-status` from the trailers rather than the HTTP status; streaming RPCs are reported when the stream ends, with message counts each way |
 | `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
 | `net.<host>.listeners`| listening sockets and the processes that own them |
+| `net.<host>.state`    | the network's own state, diffed: interface addresses, default gateway, Wi-Fi SSID, VPN tunnels, DNS resolver set, ARP first-sights (gateway MAC change is ERROR); `--ping` targets as RTT/loss `metric` readings with edge-triggered degradation, the traceroute diagnosis sharing the edge's `trace` |
 | `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each; lake/ninja/make progress rides as a `build.progress_pct` metric |
 | `git.<host>.<repo>`   | a checkout: commits, branch switches, rewritten history, tags, conflicts |
 | `github.<owner>.<repo>`| a GitHub repository: pushes, CI runs, pull requests, issues, releases |

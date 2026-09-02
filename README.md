@@ -7,6 +7,12 @@
 **One hub for every log stream you have — devices, servers, containers,
 browsers, chains and apps.**
 
+This project is a consolidation of a patchwork of tools I have used, in
+one form or another, over the last fifteen years — the log mergers, port
+watchers, build wrappers, ad-hoc proxies and one-off scripts every
+long-running bench accumulates — rebuilt here as one coherent thing, on
+one wire protocol, with one screen.
+
 ![Twelve streams interleaved on one screen](assets/bench-overview.png)
 
 *Twelve producers on one screen, interleaved by arrival: C++ through both
@@ -796,6 +802,10 @@ npm run gas                                 # operational key balances, alarmed 
 npm run gas -- --once                       # every key, one reading, right now
 npm run sql -- --pg "postgres:///mydb"      # LISTEN superlog: NOTIFY from any trigger lands here
 npm run sql -- --sqlite var/app.db          # an SQLite file, watched from outside the process
+npm run netstate                            # gateway, Wi-Fi, VPN, resolvers, ARP - changes only
+npm run netstate -- --ping 1.1.1.1 --ping api.example.com|30   # path quality, traceroute on failure
+npm run netstate -- --once                  # what does the network look like right now
+npm run dns -- example.com --asn            # ...and which AS originates it (hijack watch)
 npm run dns -- example.com --once           # every DNS record + cert, then exit
 npm run dns -- example.com mail.example.com # ...or watch them for change
 npm run ports -- --once                     # what is listening, and which process
@@ -855,6 +865,7 @@ edge-triggered crossings.
 | `watch`  | `fs.<host>.<dir>` — files created (INFO), modified (INFO), deleted (WARN); bursts collapse to one summary; with `--diff`, the changed **lines** as one event per hunk | Hunks carry the removed and added lines together, and every hunk of one save shares a `trace` with its "modified" anchor — `/recent?trace=` returns the whole edit as one story. **Idempotent by content hash**: an editor's mtime touch or an atomic re-save of identical bytes publishes nothing at all. The diff anchors on lines unique to both sides, so a moved brace does not smear a one-line config edit across the file; binaries and files over `--diff-max` are tracked by hash alone and say so (`undiffable`), never pretended about. |
 | `power`  | `power.<host>` — CPU package watts, thermal pressure, fan RPM, CPU/GPU die temperatures, aggregate CPU as one number, and the top energy consumers attached to every sample; macOS | Exists because this machine sat at **1258% aggregate CPU** — eleven saturated cores, one VS Code extension — unnoticed until the fans got loud and kernel_task began throttling, and has crashed under runaway draw. "Too much" is machine-relative, so three detectors: absolute watt caps if you set them, sustained draw above the machine's own learned baseline, and the machine's own verdict (thermal pressure / CPU speed limit), which needs no tuning at all. Watts require root — `sudo scripts/install-power-tailer.sh` grants exactly one pinned powermetrics invocation, nothing else — and without root it still publishes thermals, aggregate CPU and top processes, each reading marked `power_unavailable: not root`. **The demo starts it unconditionally on macOS.** |
 | `dl`     | `dl.<host>.<label>` — a download in flight: percent, bytes and rate as `metric` events, plus one verdict when it ends                                              |
+| `netstate` | `net.<host>.state` — the network's own state, diffed: interface addresses, default gateway, Wi-Fi SSID, VPN tunnels, the DNS resolver set, and the ARP neighbourhood **with judgment** — a new LAN device is one INFO at first sight, cache expiry is silence, and the **gateway's MAC changing is ERROR**, because that is a router swap or an ARP-spoofing MITM. `--ping` targets (the gateway rides free) publish RTT and loss as `metric` readings with edge-triggered degradation alarms — and at the moment a target crosses the edge, **one traceroute runs and lands beside the alarm on the same `trace`**: the alarm arrives carrying its own diagnosis. | Half of "everything just broke" on a dev bench is the network moving underneath the developer — VPN dropped, DHCP renumbered, captive portal swapped the resolvers — and none of it says so anywhere. This bench lost a live debugging round to a router quietly filtering a tunnel's DNS name; a resolver-change event would have flagged it instantly. **The demo starts it unconditionally on macOS.** |
 | `sql`    | `sql.<name>` — SQL on the bench, two engines. **Postgres**: the tailer holds `LISTEN` open, so any trigger, stored procedure or batch job logs with **one built-in statement** — `NOTIFY superlog, '{"level":"ERROR","msg":"reconciliation drift"}'` — no extensions, no privileges beyond NOTIFY; JSON payloads carry level/msg/fields, plain text arrives INFO verbatim. **SQLite**: the database *file* watched from outside the process — the header's own change counter, page count and `-wal` growth, read without taking a lock — because in-process code already has a language SDK, and the outside observer is what was missing. Both poll `--query "name=SELECT …"` into `metric` readings; a failing query is ONE WARN until it recovers. Batch jobs and triggers are exactly the code that fails silently at 3am; the NOTIFY bridge gives them a voice for the cost of one statement. Delivery latency is bounded by the heartbeat interval (default 1s), and notifications are not queued for absent listeners — the tailer brackets any gap with WARN/RECOVERED so absence is never mistaken for health. | Built for the multi-hundred-gigabyte **Hugging Face** era: tqdm bars are `\r`-rewritten, mute themselves in pipes, and reset per shard, so beside reading the bar it can `--watch` the destination itself, which no tool can mute. A **stall** — no movement for 30s — is an edge-triggered WARN hours before the fetch's own patience runs out, and recovery says so too. A wrapper as transparent as `build`: same output, same stdin, same exit status. |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
