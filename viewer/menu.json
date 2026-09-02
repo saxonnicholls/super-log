@@ -5,6 +5,7 @@
     "attributes": ["SUBMENU"],
     "children": [
       { "key": "menu.view.log", "label": "Log firehose", "action": "toggle.log", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.servers", "label": "Servers (health)", "action": "toggle.servers", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.alarms", "label": "Alarms (production)", "action": "toggle.alarms", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.webhooks", "label": "Webhooks (development)", "action": "toggle.webhooks", "attributes": ["CHECKBOX"], "checked": true }
     ]

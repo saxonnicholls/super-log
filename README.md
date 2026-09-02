@@ -304,7 +304,15 @@ path's own routes — and **webhooks (development)** — the endpoint grid and
 a live feed of every captured delivery with its payload, signature verdict
 and relay status. Both are toggled from a menu bar that the ImGui and
 React viewers render from the same declarative
-[viewer/menu.json](viewer/menu.json). Every route is a grid row —
+[viewer/menu.json](viewer/menu.json) — alongside a **servers board**:
+every event carries `origin.device`, so the hub's traffic *is* the server
+list — one row per machine with a recency light (`up` / `quiet` /
+`silent`), **last seen**, and the loudest level of the last minute,
+whatever the mechanism that produced the events (a vitals reading, a ping
+metric, an app's own SDK). "Is the build box fine" becomes one glance;
+when the answer is grey, the detailed logs are one topic filter away in
+the firehose — and a `silence` rule in alerts.json is what turns grey
+into an alarm. Every route is a grid row —
 `status : route : url : seen : ping` — expandable into full diagnostics,
 with **ping** (measure this route now, on the same watchdog books),
 **copy** (the full public URL) and delete buttons, each route pinged on

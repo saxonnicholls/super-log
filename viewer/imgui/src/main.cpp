@@ -371,6 +371,40 @@ void note_webhook(std::vector<wh_entry>& feed, const row& r, double now)
         feed.erase(feed.begin(), feed.begin() + static_cast<std::ptrdiff_t>(feed.size() - 100));
 }
 
+// ---- the servers board -------------------------------------------------
+//
+// Every event carries origin.device, so the hub's traffic IS the server
+// list: who has spoken, how recently, and how loudly. No new probes, no
+// configuration - a machine joins the board by logging once, whatever
+// the mechanism (a vitals reading, a ping metric, an app's own SDK).
+// "Last seen" is the last event; silence is grey, not a verdict - an
+// alert silence rule is what turns silence into an alarm.
+
+struct server_entry {
+    double last_at = 0;                         // ImGui time of last event
+    int last_level = 2;
+    int worst = 0;                              // loudest level, decaying
+    double worst_at = 0;
+};
+
+void note_server(std::map<std::string, server_entry>& servers, const row& r, double now)
+{
+    const std::size_t at = r.raw.find("\"device\":\"");
+    if (at == std::string::npos)
+        return;
+    const std::size_t from = at + 10;
+    const std::size_t end = r.raw.find('"', from);
+    if (end == std::string::npos || end == from || end - from > 63)
+        return;
+    auto& e = servers[r.raw.substr(from, end - from)];
+    e.last_at = now;
+    e.last_level = r.level;
+    if (r.level >= e.worst || now - e.worst_at > 60) {
+        e.worst = r.level;
+        e.worst_at = now;
+    }
+}
+
 // ---- the menu ----------------------------------------------------------
 //
 // One menu, two renderers: viewer/menu.json is the definition (asoOne's
@@ -389,6 +423,7 @@ struct menu_state {
 constexpr const char* fallback_menu = R"MENU([
   {"key":"menu.view","label":"View","attributes":["SUBMENU"],"children":[
     {"key":"menu.view.log","label":"Log firehose","action":"toggle.log","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.servers","label":"Servers (health)","action":"toggle.servers","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
@@ -872,6 +907,7 @@ int main()
     std::string status;
     std::vector<alarm_entry> blotter;
     std::vector<wh_entry> webhooks;
+    std::map<std::string, server_entry> servers;
     static menu_state menu;
     load_menu(menu);
     // Static: the selftest runs on a detached thread that may still be
@@ -905,6 +941,7 @@ int main()
                     topics.insert(at, t);
                 note_alarm(blotter, fd.rows.front(), ImGui::GetTime());
                 note_webhook(webhooks, fd.rows.front(), ImGui::GetTime());
+                note_server(servers, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -1346,6 +1383,67 @@ int main()
                 ImGui::TextDisabled("%zu deliveries hidden by the filters above",
                                     webhooks.size());
             ImGui::EndChild();
+            ImGui::End();
+        }
+
+        // ---- servers: who has spoken, how recently, how loudly. The
+        // question this window answers is "is the build box fine" without
+        // opening a single log - and when the answer is grey, the logs
+        // are one topic filter away in the firehose.
+        if (menu.toggles["toggle.servers"]) {
+            char stitle[64];
+            std::snprintf(stitle, sizeof stitle, "servers - %d###servers",
+                          static_cast<int>(servers.size()));
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 20, vp->WorkPos.y + 20),
+                                    ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(400, 240), ImGuiCond_FirstUseEver);
+            ImGui::Begin(stitle);
+            if (servers.empty())
+                ImGui::TextDisabled("nobody has spoken yet.");
+            if (ImGui::BeginTable("srvgrid", 4,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 44.0f);
+                ImGui::TableSetupColumn("server", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("last seen", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn("loudest (1m)", ImGuiTableColumnFlags_WidthFixed, 86.0f);
+                ImGui::TableHeadersRow();
+                const double now = ImGui::GetTime();
+                for (const auto& [name, e] : servers) {
+                    const double ago = now - e.last_at;
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    // Recency is the health: fresh is green, hesitant is
+                    // amber, silence is grey - a verdict this window does
+                    // not have the evidence to call "down".
+                    if (ago < 120)
+                        ImGui::TextColored(ImVec4(0.41f, 0.79f, 0.39f, 1), "up");
+                    else if (ago < 600)
+                        ImGui::TextColored(ImVec4(0.85f, 0.64f, 0.25f, 1), "quiet");
+                    else
+                        ImGui::TextColored(ImVec4(0.45f, 0.47f, 0.52f, 1), "silent");
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(name.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextDisabled(ago < 90 ? "%ds ago" : "%dm ago",
+                                        ago < 90 ? static_cast<int>(ago)
+                                                 : static_cast<int>(ago / 60));
+                    ImGui::TableNextColumn();
+                    if (now - e.worst_at <= 60 && e.worst >= 3)
+                        ImGui::TextColored(level_color(e.worst), "%s", levels[e.worst]);
+                    else if (ago < 120)
+                        ImGui::TextColored(level_color(e.last_level), "%s",
+                                           levels[e.last_level]);
+                    else
+                        ImGui::TextDisabled("-");
+                }
+                ImGui::EndTable();
+            }
+            ImGui::PushTextWrapPos();
+            ImGui::TextDisabled("last seen is the last event heard, whatever the "
+                                "mechanism; silence is grey, not a verdict - a "
+                                "silence rule in alerts.json turns it into an alarm.");
+            ImGui::PopTextWrapPos();
             ImGui::End();
         }
 

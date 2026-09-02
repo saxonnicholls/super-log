@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
 import { AlarmBlotter } from './AlarmBlotter';
 import { WebhookPanel } from './WebhookPanel';
+import { ServerPanel } from './ServerPanel';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
@@ -249,6 +250,7 @@ export default function App() {
       {/* Production and development, separated: the alarm blotter (sparse,
           one row per key) and the webhook workbench (endpoints, deliveries,
           signature verdicts). Both toggle from the View menu. */}
+      {toggles['toggle.servers'] !== false && <ServerPanel rows={rows} />}
       {toggles['toggle.alarms'] !== false &&
         <AlarmBlotter rows={rows} hub={HUB} test={test}
                       onTest={() => void runTest()} verdictFor={verdictFor} />}

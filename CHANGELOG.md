@@ -5,6 +5,17 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Viewers: the servers board** — a new window in both viewers (View →
+Servers), answering "is that box fine" without opening a log. Every event
+carries `origin.device`, so the hub's traffic IS the server list: one row
+per machine with a recency light (`up` under 2 minutes, `quiet` under 10,
+`silent` beyond), last seen, and the loudest level of the last minute -
+mechanism-agnostic by design, because a vitals reading, a ping metric and
+an app's own SDK all count as the machine speaking. Silence renders grey,
+deliberately not "down": the board lacks the evidence for that verdict,
+and the footer says which tool has it (a `silence` rule in alerts.json).
+No probes, no configuration - a machine joins the board by logging once.
+
 **superlog-netstate: the network's state, watched; changes, announced** —
 half of "everything just broke" on a bench is the network moving
 underneath the developer, silently. Now it says so, once per change:
