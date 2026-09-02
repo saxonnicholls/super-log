@@ -1656,7 +1656,15 @@ int main()
                 const double now = ImGui::GetTime();
                 for (const auto& [name, e] : servers) {
                     const double ago = now - e.last_at;
+                    const bool loud = now - e.worst_at <= 60 && e.worst >= 3;
                     ImGui::TableNextRow();
+                    // A machine that shouted recently tints its whole row -
+                    // faint enough to read through, loud enough to catch
+                    // from across the room.
+                    if (loud)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                            e.worst >= 4 ? IM_COL32(224, 91, 79, 34)
+                                         : IM_COL32(217, 164, 65, 26));
                     ImGui::TableNextColumn();
                     // Recency is the health: fresh is green, hesitant is
                     // amber, silence is grey - a verdict this window does
@@ -1668,13 +1676,21 @@ int main()
                     else
                         ImGui::TextColored(ImVec4(0.45f, 0.47f, 0.52f, 1), "silent");
                     ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(name.c_str());
+                    // The same stable hue the firehose gives this machine's
+                    // topics, so a server is recognisable across windows.
+                    ImGui::TextColored(topic_color(name), "%s", name.c_str());
                     ImGui::TableNextColumn();
-                    ImGui::TextDisabled(ago < 90 ? "%ds ago" : "%dm ago",
-                                        ago < 90 ? static_cast<int>(ago)
-                                                 : static_cast<int>(ago / 60));
+                    {
+                        const ImVec4 seen = ago < 120
+                            ? ImVec4(0.41f, 0.79f, 0.39f, 0.85f)
+                            : ago < 600 ? ImVec4(0.85f, 0.64f, 0.25f, 0.85f)
+                                        : ImVec4(0.45f, 0.47f, 0.52f, 1);
+                        ImGui::TextColored(seen, ago < 90 ? "%ds ago" : "%dm ago",
+                                           ago < 90 ? static_cast<int>(ago)
+                                                    : static_cast<int>(ago / 60));
+                    }
                     ImGui::TableNextColumn();
-                    if (now - e.worst_at <= 60 && e.worst >= 3)
+                    if (loud)
                         ImGui::TextColored(level_color(e.worst), "%s", levels[e.worst]);
                     else if (ago < 120)
                         ImGui::TextColored(level_color(e.last_level), "%s",
@@ -1797,7 +1813,7 @@ int main()
                     else
                         ImGui::TextColored(ImVec4(0.45f, 0.47f, 0.52f, 1), "silent");
                     ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(name.c_str());
+                    ImGui::TextColored(topic_color(name), "%s", name.c_str());
                     if (!a.task.empty() && ImGui::IsItemHovered())
                         ImGui::SetTooltip("task: %s", a.task.c_str());
                     ImGui::TableNextColumn();

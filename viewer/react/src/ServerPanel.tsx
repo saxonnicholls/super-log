@@ -26,6 +26,15 @@ const age = (ms: number): string => {
   return `${(s / 86400).toFixed(1)}d ago`;
 };
 
+// The same stable hue the firehose gives this machine's topics, so a
+// server is recognisable across panels.
+const NAME_COLORS = ['#7aa2f7', '#bb9af7', '#e0af68', '#9ece6a', '#f7768e', '#2ac3de'];
+const nameColor = (name: string): string => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return NAME_COLORS[h % NAME_COLORS.length] as string;
+};
+
 interface Server { last: number; lastLevel: string; worst: string; worstAt: number }
 
 export function ServerPanel({ rows }: { rows: LogRow[] }) {
@@ -76,16 +85,23 @@ export function ServerPanel({ rows }: { rows: LogRow[] }) {
               const [word, color] = ago < 120000 ? ['up', '#68c964']
                                   : ago < 600000 ? ['quiet', '#d9a441']
                                                  : ['silent', '#5c6470'];
-              const loud = now - e.worstAt <= 60000 &&
-                           LEVELS.indexOf(e.worst as typeof LEVELS[number]) >= 3
-                ? e.worst : ago < 120000 ? e.lastLevel : null;
+              const isLoud = now - e.worstAt <= 60000 &&
+                             LEVELS.indexOf(e.worst as typeof LEVELS[number]) >= 3;
+              const loud = isLoud ? e.worst : ago < 120000 ? e.lastLevel : null;
+              // A machine that shouted recently tints its whole row.
+              const rowBg = !isLoud ? undefined
+                : LEVELS.indexOf(e.worst as typeof LEVELS[number]) >= 4
+                  ? 'rgba(224,91,79,0.13)' : 'rgba(217,164,65,0.10)';
               return (
-                <tr key={name} style={{ borderTop: '1px solid #1b2027' }}>
+                <tr key={name} style={{ borderTop: '1px solid #1b2027',
+                                        backgroundColor: rowBg }}>
                   <td style={{ ...td, color, fontWeight: word === 'up' ? 'normal' : 'bold' }}>
                     {word}
                   </td>
-                  <td style={{ ...td, color: '#c3c9d4' }}>{name}</td>
-                  <td style={{ ...td, color: '#5c6470', whiteSpace: 'nowrap' }}>
+                  <td style={{ ...td, color: nameColor(name) }}>{name}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap',
+                               color: ago < 120000 ? '#68c964'
+                                    : ago < 600000 ? '#d9a441' : '#5c6470' }}>
                     {age(ago)}
                   </td>
                   <td style={{ ...td, color: loud ? (LEVEL_COLOR[loud] ?? '#5c6470') : '#3d434d' }}>
