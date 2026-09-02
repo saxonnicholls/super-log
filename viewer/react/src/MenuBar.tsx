@@ -6,8 +6,9 @@
 // here and by the ImGui viewer, so both screens carry the same bar.
 // Checkbox state lives in the app, keyed by action; the file only seeds it.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import menuSpec from '../../menu.json';
+import viewerConfig from '../../config.json';
 
 export interface MenuItem {
   key: string; label?: string; action?: string;
@@ -27,12 +28,41 @@ export function menuDefaults(): Record<string, boolean> {
   return out;
 }
 
-export function MenuBar({ toggles, onToggle, onAction }: {
+// Where you are, and when - from viewer/config.json, shared with the
+// ImGui viewer. environment '' auto-detects: this viewer runs in a
+// browser, so "where" is the hub it watches. TAI is UTC + tai_offset_s
+// (37 until the next leap second - the config's problem, not this code's).
+function envClockText(hub: string, now: Date): string {
+  const cfg = viewerConfig as { environment?: string; clocks?: string[]; tai_offset_s?: number };
+  const envName = cfg.environment ||
+    hub.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+  const two = (n: number) => String(n).padStart(2, '0');
+  const parts: string[] = [envName];
+  for (const c of cfg.clocks ?? ['local', 'utc']) {
+    if (c === 'local')
+      parts.push(`${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`);
+    else if (c === 'utc')
+      parts.push(`${two(now.getUTCHours())}:${two(now.getUTCMinutes())}:${two(now.getUTCSeconds())}Z`);
+    else if (c === 'tai') {
+      const t = new Date(now.getTime() + (cfg.tai_offset_s ?? 37) * 1000);
+      parts.push(`${two(t.getUTCHours())}:${two(t.getUTCMinutes())}:${two(t.getUTCSeconds())} TAI`);
+    }
+  }
+  return parts.join('  ·  ');
+}
+
+export function MenuBar({ toggles, onToggle, onAction, hub }: {
   toggles: Record<string, boolean>;
   onToggle: (action: string) => void;
   onAction: (action: string) => void;
+  hub: string;
 }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const items = menuSpec as MenuItem[];
   return (
     <nav style={{ display: 'flex', gap: 2, padding: '2px 8px',
@@ -79,6 +109,10 @@ export function MenuBar({ toggles, onToggle, onAction }: {
           </div>
         );
       })}
+      <span style={{ marginLeft: 'auto', color: '#5c6470', padding: '3px 4px',
+                     fontSize: 13, whiteSpace: 'nowrap' }}>
+        {envClockText(hub, now)}
+      </span>
     </nav>
   );
 }

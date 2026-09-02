@@ -5,6 +5,38 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-usb and the Devices window: is the phone connected?** — the
+question every device developer asks a terminal ("adb can't see it",
+"Xcode lost the phone") now has a window. superlog-usb watches the USB
+device tree — the IORegistry's USB plane on macOS, because
+system_profiler's USB reporter returns nothing at all on some builds
+(this bench's included) while ioreg always answers; `lsusb` flat on
+Linux — publishing hotplug as snapshot-diffed INFO events and the whole
+normalized tree on every change. Both viewers grew a Devices window
+(View → Devices) rendering every host's tree live, with **handsets
+headlined**: recognised by name, remembered for the session, shown
+`connected` green or `UNPLUGGED Ns ago` amber — absence as visible as
+presence. Plugging a phone in redraws within one 5s poll through the
+normal hub/WebSocket path; a refresh button pokes the local tailer
+(loopback POST :7338/poll) to measure now. The demo starts it
+unconditionally on macOS.
+
+**Viewers: environment and clocks in the menu bar, viewer/config.json** —
+both viewers now carry a right-aligned strip: where you are (the
+environment label, auto-detected — the machine's hostname for the native
+viewer, the hub's host for the browser one) and when — local, UTC, and
+optionally TAI, configured in `viewer/config.json` (shared between the
+viewers like menu.json; TAI is UTC + tai_offset_s, 37 until the next
+leap second, which is the config's problem to update, not the code's to
+guess).
+
+Verified on this bench: the real tree captured and parsed (14 devices,
+an actual iPhone among them, headlined connected), the tree event
+landing on a real hub (`tests/usb.test.mjs`), and the clock strip in
+both viewers. Written but unverified: the Linux lsusb path beyond CI's
+--once exercise, and hotplug diffing (needs a hand plugging things in -
+live-verified informally, not by test).
+
 **Viewers: the servers board** — a new window in both viewers (View →
 Servers), answering "is that box fine" without opening a log. Every event
 carries `origin.device`, so the hub's traffic IS the server list: one row

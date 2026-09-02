@@ -11,6 +11,7 @@ import { useLogFeed, type LogRow } from './useLogFeed';
 import { AlarmBlotter } from './AlarmBlotter';
 import { WebhookPanel } from './WebhookPanel';
 import { ServerPanel } from './ServerPanel';
+import { DevicePanel } from './DevicePanel';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
@@ -105,7 +106,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <MenuBar toggles={toggles}
+      <MenuBar toggles={toggles} hub={HUB}
                onToggle={(a) => setToggles((t) => ({ ...t, [a]: !t[a] }))}
                onAction={(a) => { if (a === 'selftest') void runTest(); }} />
       <header style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 12px',
@@ -251,6 +252,7 @@ export default function App() {
           one row per key) and the webhook workbench (endpoints, deliveries,
           signature verdicts). Both toggle from the View menu. */}
       {toggles['toggle.servers'] !== false && <ServerPanel rows={rows} />}
+      {toggles['toggle.devices'] !== false && <DevicePanel rows={rows} />}
       {toggles['toggle.alarms'] !== false &&
         <AlarmBlotter rows={rows} hub={HUB} test={test}
                       onTest={() => void runTest()} verdictFor={verdictFor} />}

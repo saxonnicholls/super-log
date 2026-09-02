@@ -71,7 +71,8 @@
     "gas": "node tailers/bin/superlog-gas.mjs",
     "alarm": "node tailers/bin/superlog-alarm.mjs",
     "sql": "node tailers/bin/superlog-sql.mjs",
-    "netstate": "node tailers/bin/superlog-netstate.mjs"
+    "netstate": "node tailers/bin/superlog-netstate.mjs",
+    "usb": "node tailers/bin/superlog-usb.mjs"
   },
   "engines": {
     "node": ">=18"

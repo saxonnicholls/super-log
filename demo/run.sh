@@ -282,6 +282,10 @@ if have node; then
         # resolver-change event would have flagged instantly.
         start "netstate.$(hostname -s 2>/dev/null || echo local)" \
             node tailers/bin/superlog-netstate.mjs
+        # The device tree - is the iPhone/Android actually connected? The
+        # viewers' Devices window renders this, handsets headlined.
+        start "usb.$(hostname -s 2>/dev/null || echo local)" \
+            node tailers/bin/superlog-usb.mjs
     fi
 
     # Well-known app logs on THIS machine (postgres, nginx, redis, ...):

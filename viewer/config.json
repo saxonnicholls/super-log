@@ -1,0 +1,6 @@
+{
+  "//": "Shared viewer configuration - the ImGui and React viewers both read this file, like menu.json. environment: '' auto-detects (the viewer machine's hostname; the React viewer uses the hub's host). clocks: any of local, utc, tai - TAI is UTC plus tai_offset_s, which is 37 until the next leap second (none announced; check IERS Bulletin C if you care at that level).",
+  "environment": "",
+  "clocks": ["local", "utc"],
+  "tai_offset_s": 37
+}

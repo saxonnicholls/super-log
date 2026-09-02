@@ -46,6 +46,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -405,6 +406,190 @@ void note_server(std::map<std::string, server_entry>& servers, const row& r, dou
     }
 }
 
+// ---- the device trees --------------------------------------------------
+//
+// superlog-usb publishes each host's tree as fields.tree on usb.<host>;
+// the Devices window renders the latest one per host. Parsed at capture
+// (tree events are rare), rendered every frame from the parsed form.
+
+struct usb_state {
+    nlohmann::json tree;                        // {name, children[...]}
+    double at = 0;                              // ImGui time of last tree
+};
+
+// The question the window exists to answer: is my PHONE connected. A
+// handset is recognised by name (the tree below is ground truth for
+// everything the heuristic misses), remembered for the whole session,
+// and shown connected or unplugged - absence must be as visible as
+// presence, because "adb can't see the device" starts here.
+struct phone_entry {
+    std::string label, host, serial;
+    bool connected = false;
+    double at = 0;                              // when the state last changed
+};
+
+bool phone_like(const std::string& name)
+{
+    static const char* marks[] = {"iphone", "ipad", "ipod", "android", "pixel",
+                                  "galaxy", "oneplus", "xiaomi", "huawei", "oppo"};
+    std::string l = name;
+    for (auto& c : l) c = static_cast<char>(std::tolower(c));
+    for (const char* m : marks)
+        if (l.find(m) != std::string::npos) return true;
+    return false;
+}
+
+void scan_phones(std::map<std::string, phone_entry>& phones,
+                 const nlohmann::json& node, const std::string& host,
+                 std::set<std::string>& present, double now)
+{
+    if (node.contains("children"))
+        for (const auto& c : node["children"]) {
+            const std::string name = c.value("name", "");
+            if (phone_like(name)) {
+                const std::string key = host + "/" + name + "#" + c.value("serial", "");
+                present.insert(key);
+                auto& p = phones[key];
+                if (p.label.empty() || !p.connected) p.at = now;
+                p.label = name;
+                p.host = host;
+                p.serial = c.value("serial", "");
+                p.connected = true;
+            }
+            scan_phones(phones, c, host, present, now);
+        }
+}
+
+void note_usb(std::map<std::string, usb_state>& trees,
+              std::map<std::string, phone_entry>& phones, const row& r, double now)
+{
+    if (r.topic.rfind("usb.", 0) != 0)
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    if (!f.contains("tree") || !f["tree"].is_string())
+        return;
+    const auto t = nlohmann::json::parse(f["tree"].get<std::string>(), nullptr, false);
+    if (t.is_discarded() || !t.is_object())
+        return;
+    const std::string host = r.topic.substr(4);
+    auto& e = trees[host];
+    e.tree = t;
+    e.at = now;
+    std::set<std::string> present;
+    scan_phones(phones, t, host, present, now);
+    for (auto& [key, p] : phones)
+        if (p.host == host && p.connected && !present.count(key)) {
+            p.connected = false;
+            p.at = now;
+        }
+}
+
+void draw_usb_node(const nlohmann::json& node)
+{
+    const std::string name = node.value("name", "device");
+    std::string detail;
+    if (node.contains("vendor") && node["vendor"].is_string())
+        detail += node["vendor"].get<std::string>();
+    if (node.contains("speed") && node["speed"].is_string())
+        detail += (detail.empty() ? "" : ", ") + node["speed"].get<std::string>();
+    if (node.contains("serial") && node["serial"].is_string())
+        detail += (detail.empty() ? "" : ", sn ") + node["serial"].get<std::string>();
+    const bool leaf = !node.contains("children") || node["children"].empty();
+    if (leaf) {
+        ImGui::BulletText("%s", name.c_str());
+        if (!detail.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s)", detail.c_str());
+        }
+        return;
+    }
+    if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen |
+                                        ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        if (!detail.empty())
+            ImGui::TextDisabled("%s", detail.c_str());
+        for (const auto& c : node["children"])
+            draw_usb_node(c);
+        ImGui::TreePop();
+    }
+}
+
+// ---- viewer config -----------------------------------------------------
+//
+// viewer/config.json, shared with the React viewer like menu.json: the
+// environment label (auto-detected from the hostname when empty) and
+// which clocks ride the menu bar. TAI is UTC + tai_offset_s - 37 since
+// 2017, honest until the next leap second, which is the config's problem
+// to update, not this code's to guess.
+
+struct viewer_config {
+    std::string environment;
+    std::vector<std::string> clocks{"local", "utc"};
+    int tai_offset = 37;
+};
+
+void load_config(viewer_config& vc)
+{
+    const char* candidates[] = {std::getenv("SUPER_LOG_VIEWER_CONFIG"),
+                                "viewer/config.json", "config.json"};
+    for (const char* path : candidates) {
+        if (!path)
+            continue;
+        std::ifstream f(path);
+        if (!f)
+            continue;
+        std::stringstream buf;
+        buf << f.rdbuf();
+        const auto j = nlohmann::json::parse(buf.str(), nullptr, false);
+        if (j.is_discarded() || !j.is_object())
+            continue;
+        vc.environment = j.value("environment", "");
+        vc.tai_offset = j.value("tai_offset_s", 37);
+        if (j.contains("clocks") && j["clocks"].is_array()) {
+            vc.clocks.clear();
+            for (const auto& c : j["clocks"])
+                if (c.is_string()) vc.clocks.push_back(c.get<std::string>());
+        }
+        break;
+    }
+    if (vc.environment.empty()) {
+        char hn[256] = "";
+        gethostname(hn, sizeof hn - 1);
+        vc.environment = hn;
+        const auto dot = vc.environment.find('.');
+        if (dot != std::string::npos) vc.environment.resize(dot);
+        for (auto& c : vc.environment) c = static_cast<char>(std::tolower(c));
+    }
+}
+
+// The strip on the right of the menu bar: where you are, and when.
+std::string env_clock_text(const viewer_config& vc)
+{
+    const std::time_t now = std::time(nullptr);
+    char part[48];
+    std::string s = vc.environment;
+    for (const auto& c : vc.clocks) {
+        std::tm tm{};
+        if (c == "local") {
+            localtime_r(&now, &tm);
+            std::strftime(part, sizeof part, "%H:%M:%S %Z", &tm);
+        } else if (c == "utc") {
+            gmtime_r(&now, &tm);
+            std::strftime(part, sizeof part, "%H:%M:%SZ", &tm);
+        } else if (c == "tai") {
+            const std::time_t tai = now + vc.tai_offset;
+            gmtime_r(&tai, &tm);
+            std::strftime(part, sizeof part, "%H:%M:%S TAI", &tm);
+        } else {
+            continue;
+        }
+        s += std::string("  \xc2\xb7  ") + part;
+    }
+    return s;
+}
+
 // ---- the menu ----------------------------------------------------------
 //
 // One menu, two renderers: viewer/menu.json is the definition (asoOne's
@@ -424,6 +609,7 @@ constexpr const char* fallback_menu = R"MENU([
   {"key":"menu.view","label":"View","attributes":["SUBMENU"],"children":[
     {"key":"menu.view.log","label":"Log firehose","action":"toggle.log","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.servers","label":"Servers (health)","action":"toggle.servers","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.devices","label":"Devices (USB)","action":"toggle.devices","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
@@ -908,8 +1094,12 @@ int main()
     std::vector<alarm_entry> blotter;
     std::vector<wh_entry> webhooks;
     std::map<std::string, server_entry> servers;
+    std::map<std::string, usb_state> usb_trees;
+    std::map<std::string, phone_entry> phones;
     static menu_state menu;
     load_menu(menu);
+    static viewer_config vcfg;
+    load_config(vcfg);
     // Static: the selftest runs on a detached thread that may still be
     // writing when main() unwinds - state with static storage cannot be
     // pulled out from under it.
@@ -942,6 +1132,7 @@ int main()
                 note_alarm(blotter, fd.rows.front(), ImGui::GetTime());
                 note_webhook(webhooks, fd.rows.front(), ImGui::GetTime());
                 note_server(servers, fd.rows.front(), ImGui::GetTime());
+                note_usb(usb_trees, phones, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -1009,6 +1200,11 @@ int main()
         };
         if (ImGui::BeginMainMenuBar()) {
             render_menu_array(menu.spec, menu, menu_actions);
+            // Where you are, and when - right-aligned, from viewer/config.json.
+            const std::string ec = env_clock_text(vcfg);
+            const float w = ImGui::CalcTextSize(ec.c_str()).x;
+            ImGui::SameLine(ImGui::GetWindowWidth() - w - 16.0f);
+            ImGui::TextDisabled("%s", ec.c_str());
             ImGui::EndMainMenuBar();
         }
 
@@ -1444,6 +1640,64 @@ int main()
                                 "mechanism; silence is grey, not a verdict - a "
                                 "silence rule in alerts.json turns it into an alarm.");
             ImGui::PopTextWrapPos();
+            ImGui::End();
+        }
+
+        // ---- devices: each host's USB tree, live. superlog-usb publishes
+        // the tree on every change, so plugging a phone in redraws this
+        // within one poll; refresh pokes the LOCAL tailer to measure now.
+        if (menu.toggles["toggle.devices"]) {
+            char dtitle[64];
+            std::snprintf(dtitle, sizeof dtitle, "devices - %d host(s)###devices",
+                          static_cast<int>(usb_trees.size()));
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 20, vp->WorkPos.y + 280),
+                                    ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(420, 320), ImGuiCond_FirstUseEver);
+            ImGui::Begin(dtitle);
+            if (ImGui::SmallButton("refresh")) {
+                // Fire-and-forget poke to the local tailer; remote hosts
+                // republish on their own 5s clocks, which is refresh enough.
+                std::thread([] {
+                    if (std::FILE* p = ::popen(
+                            "curl -s -m 20 -X POST http://127.0.0.1:7338/poll >/dev/null 2>&1", "r"))
+                        ::pclose(p);
+                }).detach();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("measure this machine's tree NOW\n(remote hosts republish on their own clocks)");
+            ImGui::Separator();
+            // The headline: handsets, connected or NOT - absence as
+            // visible as presence, because "adb can't see the device"
+            // and "Xcode lost the phone" both start here.
+            for (const auto& [key, p] : phones) {
+                if (p.connected)
+                    ImGui::TextColored(ImVec4(0.41f, 0.79f, 0.39f, 1),
+                        "# %s - connected (%s)", p.label.c_str(), p.host.c_str());
+                else
+                    ImGui::TextColored(ImVec4(0.85f, 0.64f, 0.25f, 1),
+                        "# %s - UNPLUGGED %ds ago (was on %s)", p.label.c_str(),
+                        static_cast<int>(ImGui::GetTime() - p.at), p.host.c_str());
+                if (!p.serial.empty() && ImGui::IsItemHovered())
+                    ImGui::SetTooltip("serial %s", p.serial.c_str());
+            }
+            if (!phones.empty())
+                ImGui::Separator();
+            if (usb_trees.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no device trees yet - superlog-usb publishes "
+                                    "them (npm run usb; the demo starts it on macOS).");
+                ImGui::PopTextWrapPos();
+            }
+            for (const auto& [host, st] : usb_trees) {
+                char hdr[96];
+                std::snprintf(hdr, sizeof hdr, "%s  (%ds ago)###usb_%s", host.c_str(),
+                              static_cast<int>(ImGui::GetTime() - st.at), host.c_str());
+                if (ImGui::CollapsingHeader(hdr, ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (st.tree.contains("children"))
+                        for (const auto& c : st.tree["children"])
+                            draw_usb_node(c);
+                }
+            }
             ImGui::End();
         }
 
