@@ -249,7 +249,7 @@ jobs:
       # swift is absent on this runner and is skipped, which the script
       # reports rather than hides; the macOS job below covers it.
       - name: every SDK actually delivers
-        run: ./scripts/verify-sdks.sh cpp c rust go python java fortran shell node ruby ocaml haskell scala lean perl lua cobol
+        run: ./scripts/verify-sdks.sh cpp c rust go python java fortran shell node ruby ocaml haskell scala lean perl lua cobol csharp zig
 
   sdk-runtime-macos:
     runs-on: macos-latest

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The SDK is one source file compiled in - no package, no reference,
+       which is the whole zero-dependency point. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>clock</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Target the LTS runtime, run on whatever newer one is installed -
+         this bench has .NET 10 only, CI runners have 8. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../sdk/csharp/SuperLog.cs" />
+  </ItemGroup>
+</Project>

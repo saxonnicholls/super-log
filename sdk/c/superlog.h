@@ -60,19 +60,31 @@ typedef struct superlog {
     char buf[32768];            /* the batch; one POST when it fills or on flush */
 } superlog_t;
 
+/* Linkage for the five public functions: static by default - the header
+ * stays header-only for every C consumer - but overridable, so one object
+ * file can export the SDK to ANY language with a C FFI:
+ *
+ *     echo '#include <superlog.h>' > impl.c
+ *     cc -DSUPERLOG_API= -DSUPERLOG_DEVELOPMENT -I sdk/c -c impl.c
+ *
+ * and impl.o links from Zig, COBOL, assembly, anything. */
+#ifndef SUPERLOG_API
+#define SUPERLOG_API static
+#endif
+
 #ifdef SUPERLOG_PRODUCTION
 
 /* The inert shell. Every call collapses to nothing at any optimisation
  * level - there is no wire code in the translation unit at all. */
-static inline void superlog_init(superlog_t *lg, const char *topic, const char *app)
+SUPERLOG_API void superlog_init(superlog_t *lg, const char *topic, const char *app)
 { (void)lg; (void)topic; (void)app; }
-static inline void superlog_logf(superlog_t *lg, const char *level, const char *fmt, ...)
+SUPERLOG_API void superlog_logf(superlog_t *lg, const char *level, const char *fmt, ...)
 { (void)lg; (void)level; (void)fmt; }
-static inline void superlog_kv(superlog_t *lg, const char *level, const char *msg, ...)
+SUPERLOG_API void superlog_kv(superlog_t *lg, const char *level, const char *msg, ...)
 { (void)lg; (void)level; (void)msg; }
-static inline void superlog_metric(superlog_t *lg, const char *name, double value)
+SUPERLOG_API void superlog_metric(superlog_t *lg, const char *name, double value)
 { (void)lg; (void)name; (void)value; }
-static inline void superlog_flush(superlog_t *lg) { (void)lg; }
+SUPERLOG_API void superlog_flush(superlog_t *lg) { (void)lg; }
 
 #else /* SUPERLOG_DEVELOPMENT */
 
@@ -127,7 +139,7 @@ static void superlog__esc(char *dst, size_t n, const char *src)
 /* One TCP connect per flush, the OCaml client's bargain: at logging rates
  * a held socket buys nothing, and every error path lands in "drop the
  * batch, the next one counts again". */
-static void superlog_flush(superlog_t *lg)
+SUPERLOG_API void superlog_flush(superlog_t *lg)
 {
     struct addrinfo hints, *res = NULL;
     char portstr[16], header[512];
@@ -189,7 +201,7 @@ static void superlog__event(superlog_t *lg, const char *level, const char *msg,
 
 /* ---- the API --------------------------------------------------------- */
 
-static void superlog_init(superlog_t *lg, const char *topic, const char *app)
+SUPERLOG_API void superlog_init(superlog_t *lg, const char *topic, const char *app)
 {
     const char *url = getenv("SUPER_LOG_URL");
     const char *h;
@@ -219,7 +231,7 @@ static void superlog_init(superlog_t *lg, const char *topic, const char *app)
 }
 
 /* printf-shaped, because that is the C idiom for a message. */
-static void superlog_logf(superlog_t *lg, const char *level, const char *fmt, ...)
+SUPERLOG_API void superlog_logf(superlog_t *lg, const char *level, const char *fmt, ...)
 {
     char msg[2048];
     va_list ap;
@@ -232,7 +244,7 @@ static void superlog_logf(superlog_t *lg, const char *level, const char *fmt, ..
 
 /* Fields as NULL-terminated key/value pairs:
  *   superlog_kv(&lg, "ERROR", "no rate", "symbol", "DOGE", "tick", "7", NULL); */
-static void superlog_kv(superlog_t *lg, const char *level, const char *msg, ...)
+SUPERLOG_API void superlog_kv(superlog_t *lg, const char *level, const char *msg, ...)
 {
     char extra[4096], k[256], v[1024];
     size_t o = 0;
@@ -255,7 +267,7 @@ static void superlog_kv(superlog_t *lg, const char *level, const char *msg, ...)
 }
 
 /* A reading for the chart: DEBUG, with the metric riding the event. */
-static void superlog_metric(superlog_t *lg, const char *name, double value)
+SUPERLOG_API void superlog_metric(superlog_t *lg, const char *name, double value)
 {
     char en[256], extra[512], msg[300];
     if (!lg->active) return;

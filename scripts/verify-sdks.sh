@@ -105,7 +105,7 @@ until curl -sf "${HUB}/healthz" >/dev/null 2>&1; do
 done
 export SUPER_LOG_URL="$HUB"
 
-WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala lean perl lua cobol}"
+WANT="${*:-cpp c rust go python java swift fortran shell node ruby ocaml haskell scala lean perl lua cobol csharp zig}"
 echo "verify-sdks: hub on :$PORT, checking:$(printf ' %s' $WANT)"
 
 for lang in $WANT; do
@@ -193,6 +193,27 @@ cobol)
          cobc -x -free -o "$TMP/clock_cob" demo/cobol/clock.cob "$TMP/cobshim.o" >/dev/null 2>&1; then
         check cobol cobol.clock "$TMP/clock_cob"
     else skipping cobol "cobc build failed"; fi ;;
+
+csharp)
+    # Build first, run the binary: `dotnet run` restores and compiles
+    # inside check()'s event window and would flake on a cold cache.
+    if ! have dotnet; then skipping csharp "no dotnet"
+    elif dotnet build demo/csharp -c Release -o "$TMP/cs" >/dev/null 2>&1; then
+        check csharp csharp.clock env SUPERLOG_MODE=development "$TMP/cs/clock"
+    else skipping csharp "dotnet build failed"; fi ;;
+
+zig)
+    # Zig rides the C SDK through @cImport - no shim, no SDK, the header
+    # itself, with -DSUPERLOG_API= compiling it once for the linker.
+    # Built from $TMP so zig's cache directory lands there too.
+    if ! have zig || ! have cc; then skipping zig "no zig"
+    elif printf '#include <superlog.h>\n' > "$TMP/zigimpl.c" &&
+         cc -DSUPERLOG_API= -DSUPERLOG_DEVELOPMENT -I sdk/c \
+            -c "$TMP/zigimpl.c" -o "$TMP/zigimpl.o" >/dev/null 2>&1 &&
+         (cd "$TMP" && zig build-exe "$OLDPWD/demo/zig/clock.zig" "$TMP/zigimpl.o" \
+            -I "$OLDPWD/sdk/c" -lc -femit-bin="$TMP/clock_zig") >/dev/null 2>&1; then
+        check zig zig.clock "$TMP/clock_zig"
+    else skipping zig "zig build failed"; fi ;;
 
 lean)
     if ! have lake; then skipping lean "no lake"

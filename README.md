@@ -38,7 +38,7 @@ super-log converges all of it on one process and one screen:
 
 | Group | What is in it |
 |---|---|
-| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Lean 4, Ruby and Rails (a drop-in `::Logger`), Perl (core modules only), Lua (5.1+, PUC or LuaJIT), COBOL (riding the C SDK, yes really), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too |
+| **apps** | C++ (spdlog sink and native `SN_LOG`), plain C (one header), C# / .NET (BCL only — console, ASP.NET, Unity profiles, Xbox Dev Mode), Rust (`tracing`), Python (`logging`), Go (`log/slog`), Java, Kotlin and Scala (`java.util.logging`), Swift, Fortran, OCaml, Haskell, Lean 4, Ruby and Rails (a drop-in `::Logger`), Perl (core modules only), Lua (5.1+, PUC or LuaJIT), Zig (`@cImport` of the C header), COBOL (riding the C SDK, yes really), POSIX `sh`, and JS for Node, the browser and React Native — where `console`, `fetch` and WebGL are captured too. Anything else with a C FFI links one object: `cc -DSUPERLOG_API= -c impl.c` |
 | **GPU and graphics** | Metal and CUDA kernel timings, WebGL context loss and shader failures, and the card itself through `nvidia-smi`, `rocm-smi` or `ioreg` |
 | **devices and boards** | iOS and Android over USB, serial consoles reading ESP-IDF, Zephyr and bracketed formats, and ROS 2 `/rosout` |
 | **machines, services** | OS logs on macOS, Linux and Windows; ~20 known services (postgres, nginx, redis, kafka…); Unity and Unreal Engine editor logs, level-parsed (Blender and AutoCAD by recipe); Docker containers; any remote host over ssh; power draw, thermals and top energy consumers (macOS); crash reports, kernel panics, shutdown causes, volume and sleep/wake events (macOS); filesystem changes down to the changed LINES, diffed in real time; big downloads — a Hugging Face model, shard by shard — with stall alarms; other hubs, bridged whole |
@@ -82,7 +82,9 @@ only GHC's boot libraries and `curl`, Lean 4 for the proof jobs that run
 all night (core IO plus `curl` — Lean grew a kernel before it grew
 sockets), Perl from core modules alone (`HTTP::Tiny` has shipped with
 Perl since 5.14), Lua making the same curl bargain as the shell SDK
-(Lua never grew sockets at all), COBOL through a 20-line C shim onto the
+(Lua never grew sockets at all), C# from the BCL alone — everywhere .NET
+goes, including Unity profiles and Xbox Dev Mode — Zig through `@cImport`
+of the C header itself, COBOL through a 20-line C shim onto the
 header-only C SDK, Ruby from the stdlib — with a
 drop-in `::Logger` adapter, which makes the whole **Rails** story one
 `config.logger` assignment — a `sh` one-liner for scripts, and one JS
@@ -724,6 +726,17 @@ def main : IO Unit := do
   Superlog.flush lg
 ```
 
+**C#** (BCL only — `HttpClient` and `System.Text.Json` ship with .NET;
+mode from `SUPERLOG_MODE`). One file into any project: a console app,
+ASP.NET, a Unity project on a .NET profile, an Xbox Dev Mode build:
+
+```csharp
+var log = new SuperLog(topic: "csharp.myapp", app: "myapp");
+log.Info("up", new() { ["port"] = "3000" });
+log.Metric("queue.depth", 17);
+log.Flush();
+```
+
 **Perl** (core modules only — `HTTP::Tiny` and `JSON::PP` ship with Perl;
 mode from `SUPERLOG_MODE`), for the glue scripts and cron jobs that run
 half the world:
@@ -761,6 +774,11 @@ CALL "cobol_superlog_log"
     USING BY CONTENT Z"INFO", Z"payroll run 4711 starting"
 ```
 
+**Zig** needs even less: `@cImport` reads `sdk/c/superlog.h` directly
+(see [demo/zig/clock.zig](demo/zig/clock.zig)), with the header compiled
+once for the linker — `cc -DSUPERLOG_API= -c impl.c` — which is the same
+one-object route **any language with a C FFI** can take.
+
 **Machines, services, containers, chains** (no app changes at all):
 
 ```sh
@@ -776,6 +794,8 @@ npm run grpc -- --listen 50052 --target localhost:50051  # every RPC, status fro
 npm run chain                               # watched addresses (see .env)
 npm run gas                                 # operational key balances, alarmed (gas.json)
 npm run gas -- --once                       # every key, one reading, right now
+npm run sql -- --pg "postgres:///mydb"      # LISTEN superlog: NOTIFY from any trigger lands here
+npm run sql -- --sqlite var/app.db          # an SQLite file, watched from outside the process
 npm run dns -- example.com --once           # every DNS record + cert, then exit
 npm run dns -- example.com mail.example.com # ...or watch them for change
 npm run ports -- --once                     # what is listening, and which process
@@ -834,7 +854,8 @@ edge-triggered crossings.
 | `build`  | `build.<host>.<label>` — one event per diagnostic, one verdict                                | Compiler errors are ERROR with`file:line`; a build that **exits 0 while reporting errors** is WARN, not success, because that usually means a `;` where `&&` was meant — and a build that reports errors and calls itself fine is how a broken artefact ships.                                                                                                              |
 | `watch`  | `fs.<host>.<dir>` — files created (INFO), modified (INFO), deleted (WARN); bursts collapse to one summary; with `--diff`, the changed **lines** as one event per hunk | Hunks carry the removed and added lines together, and every hunk of one save shares a `trace` with its "modified" anchor — `/recent?trace=` returns the whole edit as one story. **Idempotent by content hash**: an editor's mtime touch or an atomic re-save of identical bytes publishes nothing at all. The diff anchors on lines unique to both sides, so a moved brace does not smear a one-line config edit across the file; binaries and files over `--diff-max` are tracked by hash alone and say so (`undiffable`), never pretended about. |
 | `power`  | `power.<host>` — CPU package watts, thermal pressure, fan RPM, CPU/GPU die temperatures, aggregate CPU as one number, and the top energy consumers attached to every sample; macOS | Exists because this machine sat at **1258% aggregate CPU** — eleven saturated cores, one VS Code extension — unnoticed until the fans got loud and kernel_task began throttling, and has crashed under runaway draw. "Too much" is machine-relative, so three detectors: absolute watt caps if you set them, sustained draw above the machine's own learned baseline, and the machine's own verdict (thermal pressure / CPU speed limit), which needs no tuning at all. Watts require root — `sudo scripts/install-power-tailer.sh` grants exactly one pinned powermetrics invocation, nothing else — and without root it still publishes thermals, aggregate CPU and top processes, each reading marked `power_unavailable: not root`. **The demo starts it unconditionally on macOS.** |
-| `dl`     | `dl.<host>.<label>` — a download in flight: percent, bytes and rate as `metric` events, plus one verdict when it ends                                              | Built for the multi-hundred-gigabyte **Hugging Face** era: tqdm bars are `\r`-rewritten, mute themselves in pipes, and reset per shard, so beside reading the bar it can `--watch` the destination itself, which no tool can mute. A **stall** — no movement for 30s — is an edge-triggered WARN hours before the fetch's own patience runs out, and recovery says so too. A wrapper as transparent as `build`: same output, same stdin, same exit status. |
+| `dl`     | `dl.<host>.<label>` — a download in flight: percent, bytes and rate as `metric` events, plus one verdict when it ends                                              |
+| `sql`    | `sql.<name>` — SQL on the bench, two engines. **Postgres**: the tailer holds `LISTEN` open, so any trigger, stored procedure or batch job logs with **one built-in statement** — `NOTIFY superlog, '{"level":"ERROR","msg":"reconciliation drift"}'` — no extensions, no privileges beyond NOTIFY; JSON payloads carry level/msg/fields, plain text arrives INFO verbatim. **SQLite**: the database *file* watched from outside the process — the header's own change counter, page count and `-wal` growth, read without taking a lock — because in-process code already has a language SDK, and the outside observer is what was missing. Both poll `--query "name=SELECT …"` into `metric` readings; a failing query is ONE WARN until it recovers. Batch jobs and triggers are exactly the code that fails silently at 3am; the NOTIFY bridge gives them a voice for the cost of one statement. Delivery latency is bounded by the heartbeat interval (default 1s), and notifications are not queued for absent listeners — the tailer brackets any gap with WARN/RECOVERED so absence is never mistaken for health. | Built for the multi-hundred-gigabyte **Hugging Face** era: tqdm bars are `\r`-rewritten, mute themselves in pipes, and reset per shard, so beside reading the bar it can `--watch` the destination itself, which no tool can mute. A **stall** — no movement for 30s — is an edge-triggered WARN hours before the fetch's own patience runs out, and recovery says so too. A wrapper as transparent as `build`: same output, same stdin, same exit status. |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
 record changed, not that a laptop moved networks and hit a different cache.
@@ -1143,6 +1164,9 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
   **Perl:** ≥ 5.14, core modules only (`HTTP::Tiny`, `JSON::PP`).
   **Lua:** any 5.1+ (PUC or LuaJIT) plus `curl`. **COBOL:** GnuCOBOL 3
   and a C compiler, riding the C SDK via a 20-line shim.
+  **C#:** .NET ≥ 8 (`RollForward` runs it on newer), BCL only.
+  **Zig:** a recent Zig (verified on 0.16) and a C compiler, riding the
+  C SDK via `@cImport`. **SQL:** the `psql` or `sqlite3` CLI.
   **Rust:** any recent stable. **Python:** ≥ 3.8, standard library only.
   **Go:** ≥ 1.21 (`log/slog`). **Java:** ≥ 17, plain `javac`, no build tool.
   **Swift:** ≥ 5.9, SwiftPM. **Fortran:** gfortran or any compiler with

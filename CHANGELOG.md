@@ -5,6 +5,40 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-sql: SQL gets a voice** — SQL runs inside an engine and cannot
+POST, so the engines are met where they live. Postgres: the tailer holds
+`LISTEN <channel>` open and any trigger, stored procedure or batch job
+logs to the bench with one built-in statement — `NOTIFY superlog,
+'{"level":"ERROR","msg":"..."}'` — no extensions, no privileges beyond
+NOTIFY; JSON payloads carry level/msg/fields, plain text arrives INFO
+verbatim, and the watch is only claimed after a sentinel row proves the
+LISTEN is committed (claiming earlier is a race: postgres does not queue
+notifications for future listeners). psql carries the wire, the shell
+SDK's curl bargain again. SQLite: the database *file* watched from
+outside the process — the header's own change counter (offset 24), page
+count and `-wal` growth, read without taking a lock — because in-process
+code already has a language SDK and the outside observer was the missing
+piece. Both engines poll `--query "name=SELECT ..."` into metric
+readings, a failing query being ONE WARN until recovery.
+
+**C#, Zig, and one object file for everything else** — the C# SDK
+(`sdk/csharp/SuperLog.cs`) is BCL-only — `HttpClient` and
+`System.Text.Json` — one file into any console app, ASP.NET service,
+Unity profile or Xbox Dev Mode build; `SUPERLOG_MODE` with no default,
+production inert. Zig gets no SDK because it needs none: `@cImport` reads
+`sdk/c/superlog.h` directly. That exposed a general truth, so the C SDK
+grew `SUPERLOG_API` — static by default (header-only consumers see no
+change), external with `-DSUPERLOG_API=`, so ONE compiled object exports
+the SDK to any language with a C FFI.
+
+Verified on this bench: Postgres NOTIFY (real server via initdb/pg_ctl,
+JSON and plain payloads) and SQLite change detection with polled metrics
+(`tests/sql.test.mjs`, real engines, nothing mocked); the C#, Zig, C and
+COBOL clocks all delivering to a real hub (`verify-sdks.sh` — 6 ok
+including regression checks after the SUPERLOG_API change). CI runs
+csharp (dotnet is on the runner) and lists zig honestly as a skip where
+absent.
+
 **Perl, Lua and COBOL join the bench** — three more producers, three
 different bargains, all house rules kept. **Perl** (`sdk/perl/SuperLog.pm`)
 is core modules only — `HTTP::Tiny` has shipped with Perl since 5.14 and

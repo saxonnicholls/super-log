@@ -64,6 +64,12 @@ host-side tailer scraping the same device:
 | `swift.<app>`         | a Swift process                 |
 | `fortran.<app>`       | a Fortran program               |
 | `shell.<app>`         | a shell script                  |
+| `ruby.<app>`          | a Ruby process (Rails via the `::Logger` adapter) |
+| `perl.<app>`          | a Perl script (core modules only) |
+| `lua.<app>`           | a Lua script (curl carries the bytes) |
+| `csharp.<app>`        | a .NET process (C#, Unity profiles, Xbox Dev Mode) |
+| `zig.<app>`           | a Zig program (the C SDK via `@cImport`) |
+| `cobol.<app>`         | a GnuCOBOL program (the C SDK via a 20-line shim) |
 | `web.<app>`           | a browser app                   |
 | `os.<host>`           | a machine's own OS logs (macOS unified log, journald, Windows event log) - one topic per machine, tailed locally, from the LAN, or over ssh |
 | `app.<host>.<name>`   | a service's log file on that machine (postgres, nginx, redis, ...); `.<file>` suffix when one service writes several |
@@ -90,6 +96,7 @@ host-side tailer scraping the same device:
 | `dl.<host>.<label>`   | a download in flight: percent, bytes and rate as `metric` events, an edge-triggered WARN on stall, and one verdict when it ends |
 | `sys.<host>`          | the machine's own life events: crash reports (ERROR) and kernel panics (CRITICAL) parsed from DiagnosticReports, the previous shutdown cause once per boot, volume mounts/unmounts/renames, sleep/wake; macOS |
 | `gas.<chain>`         | operational key balances (native coin or ERC-20): readings as `metric` events, edge-triggered CRITICAL below the fund-now line, WARN below the low line, recovery announced |
+| `sql.<name>`          | SQL on the bench: Postgres `NOTIFY <channel>, '<payload>'` bridged as events (JSON payloads carry level/msg/fields), SQLite watched from outside the process (change counter, WAL growth, sizes as `metric` events), polled `--query` metrics for both |
 | `alert.<rule>`        | an alert rule that fired (level, rate, silence, or a combo of conditions in one window), so alerts sit beside their cause |
 | `alert.inbound.<name>`| a production system's webhook alarm through superlog-alarm: deduped by `fields.key` with `fields.repeat` counts, recovery as INFO, `monitor_dead:*` when a checker's heartbeat stops |
 
