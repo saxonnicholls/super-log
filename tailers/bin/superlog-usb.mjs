@@ -156,8 +156,9 @@ function flatten(node, path, into) {
 
 let prev = null;      // Map of key -> node
 let lastTreeJson = '';
+let pollsSinceTree = 0;
 
-async function poll(first) {
+async function poll(first, force = false) {
   let tree;
   try {
     tree = await collect();
@@ -183,8 +184,15 @@ async function poll(first) {
   }
 
   const treeJson = JSON.stringify(tree);
-  if (first || once || treeJson !== lastTreeJson) {
+  pollsSinceTree += 1;
+  // Publish on change - but also periodically (once a minute) and on a
+  // poke, because a viewer opened AFTER the last change would otherwise
+  // stare at an empty Devices window until something replugs: the hub's
+  // replay ring is minutes deep and a chatty bench pushes rare events out.
+  if (first || once || force || treeJson !== lastTreeJson ||
+      pollsSinceTree * intervalS >= 60) {
     lastTreeJson = treeJson;
+    pollsSinceTree = 0;
     publish(first || once ? 'INFO' : 'DEBUG',
       `usb tree: ${cur.size} device(s)`,
       { count: cur.size, tree: treeJson.slice(0, 16000) });
@@ -203,7 +211,7 @@ const main = async () => {
   if (pokePort > 0) {
     const srv = createServer(async (req, res) => {
       if (req.method === 'POST' && req.url === '/poll') {
-        await poll(false);
+        await poll(false, true);
         res.writeHead(200, { 'content-type': 'application/json',
                              'access-control-allow-origin': '*' });
         return res.end('{"ok":true}');

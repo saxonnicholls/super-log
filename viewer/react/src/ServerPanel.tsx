@@ -32,6 +32,9 @@ export function ServerPanel({ rows }: { rows: LogRow[] }) {
   const servers = useMemo(() => {
     const out = new Map<string, Server>();
     for (const r of rows) {
+      // Agents carry a device too, but an agent is not a server - it has
+      // its own blotter, held to its own cadence.
+      if (r.topic.startsWith('agent.')) continue;
       const dev = r.origin?.device;
       if (!dev) continue;
       const e = out.get(dev) ?? { last: 0, lastLevel: 'INFO', worst: 'TRACE', worstAt: 0 };

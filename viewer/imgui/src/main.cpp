@@ -390,6 +390,10 @@ struct server_entry {
 
 void note_server(std::map<std::string, server_entry>& servers, const row& r, double now)
 {
+    // Agents carry a device too, but an agent is not a server - it has
+    // its own blotter, held to its own cadence.
+    if (r.topic.rfind("agent.", 0) == 0)
+        return;
     const std::size_t at = r.raw.find("\"device\":\"");
     if (at == std::string::npos)
         return;
@@ -1254,11 +1258,13 @@ int main()
         // The dockspace claims the frame; every window below docks into it
         // (or floats, the operator's call - imgui.ini keeps the layout).
         ImGui::DockSpaceOverViewport(0, vp, ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGuiID main_dock = 0;
         if (menu.toggles["toggle.log"]) {
         ImGui::SetNextWindowPos(vp->WorkPos, ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(vp->WorkSize.x - 400, vp->WorkSize.y),
                                  ImGuiCond_FirstUseEver);
         ImGui::Begin("super-log");
+        main_dock = ImGui::GetWindowDockID();
 
         // Filter first, so copy/export see exactly what the table shows
         const std::string needle = filter;
@@ -1751,6 +1757,10 @@ int main()
             char atitle[64];
             std::snprintf(atitle, sizeof atitle, "agents - %d###agents",
                           static_cast<int>(agents.size()));
+            // Join the main dock node on first appearance - a new window
+            // should arrive as a findable tab, not a floating orphan.
+            if (main_dock)
+                ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 20, vp->WorkPos.y + 620),
                                     ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(480, 240), ImGuiCond_FirstUseEver);
