@@ -163,9 +163,13 @@ async function poll(first, force = false) {
   try {
     tree = await collect();
   } catch (e) {
-    if (prev !== null)
+    // Say so on the FIRST failure too - a watcher that exits silently
+    // when the collector is broken looks identical to one that found an
+    // empty bench, and that ambiguity cost a CI run 30 silent seconds.
+    if (prev !== null || first || once)
       publish('WARN', `cannot read the device tree: ${String(e.message ?? e).slice(0, 200)}`);
     await flush();
+    if (once) process.exit(1);
     return;
   }
   const cur = flatten(tree, '', new Map());

@@ -17,8 +17,14 @@ import { hostname, platform } from 'node:os';
 
 import { assertValidEvent, start, startHub, waitFor } from './harness.mjs';
 
+// The skip check runs the collector, not merely finds it: a CI runner VM
+// has lsusb on PATH and no USB subsystem behind it, which is a machine
+// without the toolchain, not a failing test.
+const probe = platform() === 'darwin'
+  ? spawnSync('ioreg', ['-p', 'IOUSB', '-w0'], { encoding: 'utf8' })
+  : spawnSync('lsusb', [], { encoding: 'utf8' });
 const collector = platform() === 'darwin' ? 'ioreg' : 'lsusb';
-const have = spawnSync('which', [collector]).status === 0;
+const have = probe.status === 0 && (probe.stdout ?? '').trim().length > 0;
 
 let hub;
 const topic = `usb.${hostname().split('.')[0].toLowerCase()}`;
