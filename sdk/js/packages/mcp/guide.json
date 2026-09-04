@@ -63,7 +63,7 @@
     },
     "gas": {
       "topics": "gas.<chain>",
-      "what": "Operational key balances on chain - native gas coin or ERC-20 - polled per key from a gitignored config with per-key thresholds. Readings are DEBUG metric events (gas.<label>).",
+      "what": "Operational key balances on chain - native gas coin or ERC-20 - polled per key from a gitignored config with per-key thresholds. Readings are DEBUG metric events (gas.<label>). Four wire dialects behind one discipline: EVM JSON-RPC (native + ERC-20), Solana JSON-RPC (native + SPL via getTokenAccountsByOwner, several token accounts summed), TronGrid REST (native + TRC-20 balanceOf; an account Tron has never seen reads as zero, honestly - unactivated pays for gas as badly as empty), and Esplora REST for Bitcoin (funded minus spent).",
       "read": "CRITICAL means a key is below its fund-now line - a production keeper/oracle is about to stop; it is said ONCE per crossing. WARN is below the low line. 'recovered: ... funded' INFO closes the incident. 'rpc-down' WARN means the chain endpoint is unreachable, not that keys are empty.",
       "gotchas": "Absence of CRITICAL does not mean healthy-right-now - check the DEBUG readings' timestamps and values. Balances are telemetry precision, not accounting. Token keys read balanceOf with the config's decimals; a wrong decimals value is off by orders of magnitude."
     },

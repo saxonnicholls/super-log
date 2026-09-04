@@ -5,6 +5,27 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-gas: Solana, Tron and Bitcoin join the fund-now discipline** —
+the gas watcher grew three wire dialects behind the one threshold
+machinery (a chain entry's `kind` picks it; EVM stays the default and
+untouched). Solana JSON-RPC: native SOL via getBalance, SPL tokens via
+getTokenAccountsByOwner with several token accounts for one mint summed.
+TronGrid-style REST: native TRX, and TRC-20 (USDT included) via
+triggerconstantcontract with the base58 alphabet hand-rolled in twenty
+lines - one dependency for one alphabet is not a bargain; an account
+Tron has never seen reads as zero, honestly, because unactivated pays
+for gas exactly as badly as empty. Bitcoin: any Esplora-style REST
+(mempool.space default, blockstream.info or your own electrs), funded
+minus spent. Public defaults for all three, overridable per chain or
+bench-wide (SOLANA_RPC_URL, TRON_API_URL/_KEY, BITCOIN_API_URL).
+
+Verified twice over: live against the real chains (the Bitcoin genesis
+address at 57.43 BTC, a Solana mint authority's SOL, a Tron whale's TRX
+and 1.9B TRC-20 USDT through the base58 path), and in the suite against
+stand-in nodes speaking all three dialects (`tests/gas.test.mjs`) -
+readings, decimals, SPL summing, and the CRITICAL/WARN edges all
+asserted.
+
 **superlog-starlink: the dish, watched** — Starlink's dish speaks gRPC on
 its LAN address with server reflection, and grpcurl carries the wire (the
 same bargain curl, psql and gh make elsewhere). Readings each poll: pop

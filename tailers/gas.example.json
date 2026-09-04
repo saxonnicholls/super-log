@@ -7,19 +7,74 @@
       "rpc": "https://arbitrum-one-rpc.publicnode.com",
       "coin": "ETH",
       "keys": [
-        { "label": "oracle-pusher", "address": "0x0000000000000000000000000000000000000001",
-          "crit": 0.002, "warn": 0.01 },
-        { "label": "settlement-usdc", "address": "0x0000000000000000000000000000000000000002",
-          "token": { "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", "decimals": 6, "symbol": "USDC" },
-          "crit": 100, "warn": 1000 }
+        {
+          "label": "oracle-pusher",
+          "address": "0x0000000000000000000000000000000000000001",
+          "crit": 0.002,
+          "warn": 0.01
+        },
+        {
+          "label": "settlement-usdc",
+          "address": "0x0000000000000000000000000000000000000002",
+          "token": {
+            "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+            "decimals": 6,
+            "symbol": "USDC"
+          },
+          "crit": 100,
+          "warn": 1000
+        }
       ]
     },
     "base": {
       "rpc": "https://base-rpc.publicnode.com",
       "coin": "ETH",
       "keys": [
-        { "label": "keeper", "address": "0x0000000000000000000000000000000000000003",
-          "crit": 0.002, "warn": 0.01 }
+        {
+          "label": "keeper",
+          "address": "0x0000000000000000000000000000000000000003",
+          "crit": 0.002,
+          "warn": 0.01
+        }
+      ]
+    },
+    "solana": {
+      "kind": "solana",
+      "coin": "SOL",
+      "//": "rpc optional - SOLANA_RPC_URL or the public mainnet endpoint; token {mint, symbol} watches an SPL balance",
+      "keys": [
+        {
+          "label": "fee-payer",
+          "address": "11111111111111111111111111111111",
+          "crit": 0.05,
+          "warn": 0.2
+        }
+      ]
+    },
+    "tron": {
+      "kind": "tron",
+      "coin": "TRX",
+      "//": "rpc optional - TRON_API_URL or api.trongrid.io (TRON_API_KEY raises rate limits); token {address, decimals, symbol} watches a TRC-20 balance, e.g. USDT at TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+      "keys": [
+        {
+          "label": "energy-account",
+          "address": "T0000000000000000000000000000000000",
+          "crit": 50,
+          "warn": 200
+        }
+      ]
+    },
+    "bitcoin": {
+      "kind": "bitcoin",
+      "coin": "BTC",
+      "//": "rpc optional - BITCOIN_API_URL, mempool.space by default, any Esplora-compatible API incl. your own electrs",
+      "keys": [
+        {
+          "label": "settlement",
+          "address": "bc1q0000000000000000000000000000000000000000",
+          "crit": 0.01,
+          "warn": 0.05
+        }
       ]
     }
   }
