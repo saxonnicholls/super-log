@@ -5,6 +5,28 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-prs and the PRs board: silence on a pull request is now an
+alarm** — born from a real failure: a reviewer requested changes, the
+request sat unanswered for 51 days, and the PR was closed as stale.
+Nobody rejected it; it aged out, invisibly. superlog-prs watches every
+open PR by your configured GitHub logins anywhere on GitHub (your PR in
+someone else's repo - the case that actually bit), open PRs on repos you
+tend, and your recently closed ones; `gh` carries the wire, auth
+included. Whose move it is comes from the record - the last non-bot word
+- so replying without addressing flips it honestly. One DEBUG row per PR
+per poll keeps the viewers' PRs board current (sorted ours-and-oldest
+first: the sort order is the to-do list); crossings are edges - WARN at
+--warn-days (default 3), ERROR at 3x, recovery on reply - and each
+crossing ALSO fires the alarm gateway with dedup key pr:<repo>#<n>, so a
+week of nagging is one alarm with a repeat count and a desktop
+notification, recovery closing the loop. Closed without merge is ERROR:
+that is what "closed as stale" looks like from outside.
+
+Verified live on the day it was built: the first pass found a SECOND PR
+in the same reviewer's org waiting on us 48 days - same pattern, still
+open, still savable - and fired ERROR through the gateway to the blotter
+and desktop. The watcher paid for itself before it was committed.
+
 **The agents blotter: who is working the bench, and on which LLM** — a
 new window in both viewers (View → Agents) with one row per agent: name,
 the LLM it runs on, latest status, last seen. Three kinds feed it, one

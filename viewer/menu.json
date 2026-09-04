@@ -8,6 +8,7 @@
       { "key": "menu.view.servers", "label": "Servers (health)", "action": "toggle.servers", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.devices", "label": "Devices (USB)", "action": "toggle.devices", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.agents", "label": "Agents (MCP)", "action": "toggle.agents", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.prs", "label": "PRs (GitHub)", "action": "toggle.prs", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.alarms", "label": "Alarms (production)", "action": "toggle.alarms", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.webhooks", "label": "Webhooks (development)", "action": "toggle.webhooks", "attributes": ["CHECKBOX"], "checked": true }
     ]

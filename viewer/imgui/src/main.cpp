@@ -450,6 +450,46 @@ void note_agent(std::map<std::string, agent_entry>& agents, const row& r, double
     if (!str("interval_s").empty()) e.interval_s = std::atof(str("interval_s").c_str());
 }
 
+// ---- the PRs board -----------------------------------------------------
+//
+// superlog-prs publishes one DEBUG row per PR per poll; the board keeps
+// the latest per repo#number. Whose move it is - and for how long - is
+// the whole point: a PR waiting on US ages amber then red, because 51
+// silent days once turned a review request into a stale-close.
+
+struct pr_entry {
+    std::string repo, number, title, url, waiting_on, state, last_actor;
+    double days = 0;
+    bool changes_requested = false;
+    double at = 0;
+};
+
+void note_pr(std::map<std::string, pr_entry>& prs, const row& r, double now)
+{
+    if (r.topic.rfind("pr.", 0) != 0)
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    const auto str = [&](const char* k) {
+        return f.contains(k) && f[k].is_string() ? f[k].get<std::string>() : std::string();
+    };
+    if (str("repo").empty() || str("number").empty())
+        return;
+    auto& e = prs[str("repo") + "#" + str("number")];
+    e.repo = str("repo");
+    e.number = str("number");
+    if (!str("title").empty()) e.title = str("title");
+    if (!str("url").empty()) e.url = str("url");
+    if (!str("state").empty()) e.state = str("state");
+    if (!str("waiting_on").empty()) e.waiting_on = str("waiting_on");
+    if (!str("last_actor").empty()) e.last_actor = str("last_actor");
+    if (!str("days_waiting").empty()) e.days = std::atof(str("days_waiting").c_str());
+    e.changes_requested = str("changes_requested") == "yes";
+    e.at = now;
+}
+
 // ---- the device trees --------------------------------------------------
 //
 // superlog-usb publishes each host's tree as fields.tree on usb.<host>;
@@ -655,6 +695,7 @@ constexpr const char* fallback_menu = R"MENU([
     {"key":"menu.view.servers","label":"Servers (health)","action":"toggle.servers","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.devices","label":"Devices (USB)","action":"toggle.devices","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.agents","label":"Agents (MCP)","action":"toggle.agents","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.prs","label":"PRs (GitHub)","action":"toggle.prs","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
@@ -1142,6 +1183,7 @@ int main()
     std::map<std::string, usb_state> usb_trees;
     std::map<std::string, phone_entry> phones;
     std::map<std::string, agent_entry> agents;
+    std::map<std::string, pr_entry> prs;
     static menu_state menu;
     load_menu(menu);
     static viewer_config vcfg;
@@ -1180,6 +1222,7 @@ int main()
                 note_server(servers, fd.rows.front(), ImGui::GetTime());
                 note_usb(usb_trees, phones, fd.rows.front(), ImGui::GetTime());
                 note_agent(agents, fd.rows.front(), ImGui::GetTime());
+                note_pr(prs, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -1834,6 +1877,101 @@ int main()
                 }
                 ImGui::EndTable();
             }
+            ImGui::End();
+        }
+
+        // ---- PRs: whose move is it, and for how long. Waiting on US
+        // ages amber then red; closed-without-merge stays red, because
+        // that is what "closed as stale" looks like from outside.
+        if (menu.toggles["toggle.prs"]) {
+            char ptitle[64];
+            int waiting_us = 0;
+            for (const auto& [k, p] : prs)
+                if (p.state == "open" && p.waiting_on == "us") ++waiting_us;
+            std::snprintf(ptitle, sizeof ptitle,
+                          waiting_us ? "PRs - %d waiting on us###prs" : "PRs - %d###prs",
+                          waiting_us ? waiting_us : static_cast<int>(prs.size()));
+            if (main_dock)
+                ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(560, 260), ImGuiCond_FirstUseEver);
+            ImGui::Begin(ptitle);
+            if (prs.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no PRs on the books - superlog-prs watches them "
+                                    "(npm run prs -- --author you --repo owner/name).");
+                ImGui::PopTextWrapPos();
+            }
+            if (ImGui::BeginTable("prgrid", 5,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 52.0f);
+                ImGui::TableSetupColumn("pr", ImGuiTableColumnFlags_WidthFixed, 210.0f);
+                ImGui::TableSetupColumn("title", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("days", ImGuiTableColumnFlags_WidthFixed, 46.0f);
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 44.0f);
+                ImGui::TableHeadersRow();
+                // Ours-and-oldest first: the sort order IS the to-do list.
+                std::vector<const std::pair<const std::string, pr_entry>*> order;
+                for (const auto& kv : prs) order.push_back(&kv);
+                std::sort(order.begin(), order.end(), [](const auto* a, const auto* b) {
+                    const bool au = a->second.waiting_on == "us" && a->second.state == "open";
+                    const bool bu = b->second.waiting_on == "us" && b->second.state == "open";
+                    if (au != bu) return au;
+                    return a->second.days > b->second.days;
+                });
+                for (const auto* kv : order) {
+                    const auto& p = kv->second;
+                    ImGui::PushID(kv->first.c_str());
+                    ImGui::TableNextRow();
+                    const bool ours = p.waiting_on == "us" && p.state == "open";
+                    const bool late = ours && p.days >= 3;
+                    const bool dead = p.state == "closed";
+                    if (dead)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                                               IM_COL32(224, 91, 79, 34));
+                    else if (late)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                            p.days >= 9 ? IM_COL32(224, 91, 79, 30)
+                                        : IM_COL32(217, 164, 65, 24));
+                    ImGui::TableNextColumn();
+                    if (dead)
+                        ImGui::TextColored(ImVec4(1.0f, 0.18f, 0.12f, 1), "closed");
+                    else if (p.state == "merged")
+                        ImGui::TextColored(ImVec4(0.48f, 0.64f, 0.97f, 1), "merged");
+                    else if (ours)
+                        ImGui::TextColored(late ? (p.days >= 9 ? ImVec4(1.0f, 0.18f, 0.12f, 1)
+                                                               : ImVec4(0.85f, 0.64f, 0.25f, 1))
+                                                : ImVec4(0.41f, 0.79f, 0.39f, 1), "OURS");
+                    else
+                        ImGui::TextColored(ImVec4(0.45f, 0.47f, 0.52f, 1), "theirs");
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(topic_color(p.repo), "%s#%s",
+                                       p.repo.c_str(), p.number.c_str());
+                    if (ImGui::IsItemHovered() && !p.last_actor.empty())
+                        ImGui::SetTooltip("last word: %s%s", p.last_actor.c_str(),
+                                          p.changes_requested ? "\n(changes requested)" : "");
+                    ImGui::TableNextColumn();
+                    ImGui::PushTextWrapPos();
+                    ImGui::TextUnformatted(p.title.c_str());
+                    ImGui::PopTextWrapPos();
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(late ? ImVec4(0.85f, 0.64f, 0.25f, 1)
+                                            : ImVec4(0.45f, 0.47f, 0.52f, 1),
+                                       "%.1f", p.days);
+                    ImGui::TableNextColumn();
+                    if (ImGui::SmallButton("copy"))
+                        ImGui::SetClipboardText(p.url.c_str());
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", p.url.c_str());
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            ImGui::PushTextWrapPos();
+            ImGui::TextDisabled("waiting on US ages amber at 3d, red at 9d, and "
+                                "fires the alarm gateway - 51 silent days once "
+                                "turned a review request into a stale-close.");
+            ImGui::PopTextWrapPos();
             ImGui::End();
         }
 
