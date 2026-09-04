@@ -114,6 +114,12 @@
       "what": "Pull requests watched by superlog-prs (gh carries the wire, auth included): every open PR by the configured --author logins anywhere on GitHub, plus open PRs on --repo repos, plus the author's recently closed PRs. Whose move it is - waiting_on us or them - is computed from the record: the last non-bot word. Born from a 51-day silence that turned a changes-requested review into a stale-close.",
       "read": "One DEBUG row per PR per poll: fields.waiting_on, days_waiting (also a metric for charting), changes_requested, last_actor, url. Crossings are edges: WARN when waiting-on-us passes --warn-days (default 3), ERROR at 3x, INFO recovery on reply; MERGED is INFO, CLOSED WITHOUT MERGE is ERROR. Crossings also fire the alarm gateway with dedup key pr:<repo>#<n> - one alarm with repeat counts, recovery closing the loop, notification channels included.",
       "gotchas": "Waiting-on-us is the last-word rule: replying without addressing the review flips it to 'them' honestly - the clock measures conversation, not completion. The author search only sees the logins you configured; a PR authored by an unconfigured account is invisible (add every working account). gh must be authenticated; rate limits are generous at the default 300s poll but shorten intervals with care."
+    },
+    "starlink": {
+      "topics": "starlink.dishy",
+      "what": "The Starlink dish, watched over its LAN gRPC API (192.168.100.1:9200, grpcurl with server reflection carries the wire). Readings each poll: starlink.pop_latency_ms, pop_drop_rate, down_mbps/up_mbps, obstruction_pct, gps_sats, uptime_s. Edges: each alert flag (thermal throttle, motors stuck, ...) is WARN when it appears and recovered when it clears; currently-obstructed likewise; dish unreachable is ERROR after two misses; firmware updates and reboots are one INFO each.",
+      "read": "Chart the readings; trust the edges. pop_drop_rate is often ABSENT - the dish did not report it, which is not zero. Pair with net.<host>.state: dish unreachable + gateway unreachable = the router; dish unreachable alone = the dish; both fine but latency climbing = the path.",
+      "gotchas": "The dish must be reachable: Starlink router in bypass mode or a route to 192.168.100.1. The API is unauthenticated LAN-only by design. Field names ride firmware releases - grpcurl's reflection heals drift that baked protobuf field numbers would not."
     }
   },
   "playbooks": {

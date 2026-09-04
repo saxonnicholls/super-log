@@ -5,6 +5,28 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-starlink: the dish, watched** — Starlink's dish speaks gRPC on
+its LAN address with server reflection, and grpcurl carries the wire (the
+same bargain curl, psql and gh make elsewhere). Readings each poll: pop
+latency, drop rate, up/down throughput, obstruction fraction, GPS sats,
+uptime. Edges with recovery: every alert flag (thermal throttle, motors
+stuck...), currently-obstructed, dish-unreachable after two misses;
+firmware updates and reboots get one INFO each. Paired with netstate's
+gateway watch, "the dish is down", "the router is down" and "the path is
+degraded" finally separate. Rolling our own gRPC was weighed on request
+(a unary call over libcurl or node:http2 is ~150 lines) and declined for
+now: the transport is easy, but hand-decoding the deep get_status
+protobuf is the real weight and it drifts across firmware — reflection
+heals what baked field numbers cannot. The narrow client remains the
+road if the grpcurl dependency ever chafes.
+
+Verified against the real dish on this bench: reflection-described
+schema (get_status = 1004, dish_get_status = 2004), live readings on a
+real hub (19ms pop latency, obstruction fraction, 16 GPS sats), the
+active-alert baseline honestly listed, and the absent-stays-absent rule
+proven in production: the dish omitted pop_ping_drop_rate and no zero
+was invented (`tests/starlink.test.mjs`, skipped where no dish answers).
+
 **superlog-prs and the PRs board: silence on a pull request is now an
 alarm** — born from a real failure: a reviewer requested changes, the
 request sat unanswered for 51 days, and the PR was closed as stale.

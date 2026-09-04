@@ -73,7 +73,8 @@
     "sql": "node tailers/bin/superlog-sql.mjs",
     "netstate": "node tailers/bin/superlog-netstate.mjs",
     "usb": "node tailers/bin/superlog-usb.mjs",
-    "prs": "node tailers/bin/superlog-prs.mjs"
+    "prs": "node tailers/bin/superlog-prs.mjs",
+    "starlink": "node tailers/bin/superlog-starlink.mjs"
   },
   "engines": {
     "node": ">=18"
