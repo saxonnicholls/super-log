@@ -5,6 +5,39 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-otlp: the OpenTelemetry inlet** — anything OTel-instrumented
+joins the bench with no new SDK, just one exporter stanza pointed at
+127.0.0.1:4318 (the standard OTLP/HTTP port, so zero endpoint config).
+POST /v1/logs (first-class), /v1/metrics and /v1/traces, in both
+OTLP/JSON and OTLP/protobuf - the protobuf path is a hand-rolled bounded
+decoder (varint + length-delimited walking, unknown fields skipped, hard
+caps on payload/nesting/string length, content never evaluated) rather
+than a protobuf dependency in a repo whose whole point is not having one,
+because most SDKs default to http/protobuf and JSON-only would gut the
+value. severityNumber maps to bench levels (1-4 TRACE ... 21-24
+CRITICAL, severityText the fallback, absent INFO); resource service.name
+becomes the otlp.<service> topic; log attributes become fields with size
+caps and droppedAttributesCount surfaced. The detail that earns it:
+trace_id becomes the event's `trace`, so an OTel span and a withTrace()
+line share one id and /recent?trace= returns both. Metrics: gauge and
+sum points are DEBUG metric readings, histograms summarized to count and
+sum (never invented percentiles). Spans are trace-carrying DEBUG events -
+an inlet, not a span store. Correct empty-message success responses so
+exporters never retry; malformed 400, oversized 413, never a crash. This
+is the INLET; the README's future-directions forwarder (bench -> a
+collector) stays a separate, later thing.
+
+Verified against a real hub as subprocesses (`tests/otlp.test.mjs`): the
+full severity table, topic sanitization, trace propagation, metric
+mapping and histogram summarizing over OTLP/JSON, the oversize/malformed
+rejections, both success-response shapes, AND OTLP/protobuf payloads
+HAND-ENCODED byte by byte in the test - so the bounded decoder is proven
+without adding a dependency (a log record with trace/span/attributes and
+a nanosecond timestamp, a gauge, and a histogram all decoded correctly).
+Written but unverified: a real OTel SDK exporter driven end-to-end - no
+OTel toolchain is on this bench, so that leg is left for the first bench
+that has one, per the house habit.
+
 **superlog-gas: Solana, Tron and Bitcoin join the fund-now discipline** —
 the gas watcher grew three wire dialects behind the one threshold
 machinery (a chain entry's `kind` picks it; EVM stays the default and

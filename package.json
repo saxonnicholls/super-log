@@ -74,7 +74,8 @@
     "netstate": "node tailers/bin/superlog-netstate.mjs",
     "usb": "node tailers/bin/superlog-usb.mjs",
     "prs": "node tailers/bin/superlog-prs.mjs",
-    "starlink": "node tailers/bin/superlog-starlink.mjs"
+    "starlink": "node tailers/bin/superlog-starlink.mjs",
+    "otlp": "node tailers/bin/superlog-otlp.mjs"
   },
   "engines": {
     "node": ">=18"
@@ -101,7 +102,8 @@
     "superlog-dl": "tailers/bin/superlog-dl.mjs",
     "superlog-sys": "tailers/bin/superlog-sys.mjs",
     "superlog-gas": "tailers/bin/superlog-gas.mjs",
-    "superlog-alarm": "tailers/bin/superlog-alarm.mjs"
+    "superlog-alarm": "tailers/bin/superlog-alarm.mjs",
+    "superlog-otlp": "tailers/bin/superlog-otlp.mjs"
   },
   "license": "MIT"
 }
