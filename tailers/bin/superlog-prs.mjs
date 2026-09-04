@@ -34,7 +34,7 @@
 //  gh carries the wire (auth included) - the same bargain as curl in the
 //  shell SDK. Zero node dependencies.
 //
-//    superlog-prs --author bankcoincapital --author saxonnicholls
+//    superlog-prs --author your-login --author your-work-login
 //    superlog-prs --repo DefiLlama/DefiLlama-Adapters --once
 //
 
