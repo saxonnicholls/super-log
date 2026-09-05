@@ -63,3 +63,6 @@ __pycache__/
 # The alarm gateway's live URL roster - ephemeral, semi-sensitive
 endpoints.env
 endpoints.json
+
+# working docs, not for the public repo
+INSTALLERS.md
