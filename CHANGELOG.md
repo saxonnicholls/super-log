@@ -5,6 +5,50 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Security hardening: the absent machinery, now enforced** — the
+security posture's central claim is that log content is data, never
+instructions, because the machinery that could evaluate it does not
+exist here. Four additions keep that claim honest:
+
+- `SECURITY.md` — the disclosure policy: security@super-log.com,
+  coordinated disclosure with a 90-day default, credit given, and fixes
+  landing in this repo the same day they land anywhere else. It also
+  draws the scope line in writing: the hub's documented no-auth loopback
+  posture is design, the code contradicting that posture is a bug, and
+  any way log content changes any component's behaviour is the
+  highest-severity report there is.
+- `tests/forbidden-apis.test.mjs` — VERIFIED, in `npm test`: greps the
+  shipped source for the forbidden machinery (eval / Function / vm /
+  string-timer eval, template engines, HTML sinks in viewers and SDKs,
+  child_process outside the tailers, system/popen/dlopen/exec in the
+  C/C++ beyond a count-pinned allowlist) and fails the suite when any
+  appears. Also asserts the zero-dependency packages still declare zero
+  runtime dependencies — the one-file SBOM, as a test. The imgui
+  viewer's four config-driven popen calls are the entire allowlist,
+  each with its justification in the file.
+- `tests/hostile-corpus.test.mjs` + `tests/fixtures/hostile-corpus.ndjson`
+  — VERIFIED, in `npm test`, against a real superlogd: 29 checked-in
+  hostile lines (JNDI lookups and the obfuscated variant, spreadsheet
+  formulas, prototype-pollution probes, ANSI/BIDI abuse, format
+  directives, prompt injection, broken JSON, escaped NULs) POSTed line
+  by line and as one batch, asserted to come back inert and
+  byte-faithful — JSON objects verbatim, everything else degraded to
+  text per the tolerant-reader rule — plus generated cases: 96-deep
+  nesting (wrapped, not relayed), a 256 KB line round-tripped intact, a
+  2 MB line survived, seeded binary junk kept parseable, hostile topic
+  names shrugged at. New attack classes become new corpus lines, not
+  new code.
+- `tests/fuzz/fuzz_hub_scan.cpp` — WRITTEN, NOT WIRED: a libFuzzer
+  target over the hub's four scanners (the only code applying logic to
+  hostile bytes), including the real translation unit rather than a
+  copy. Syntax-verified against the ts-moveables headers;
+  `tests/fuzz/README.md` records the exact CMake/CI wiring left to do
+  and why it is a separate reviewed change.
+- `.github/workflows/release.yml` — WRITTEN, NOT VERIFIED, manual
+  trigger only: source archive, SHA-256 checksums, build-provenance
+  attestation. Signing is deliberately absent until the key ceremony
+  has happened; the header says how to finish it.
+
 **superlog-gas: Solana, Tron and Bitcoin join the fund-now discipline** —
 the gas watcher grew three wire dialects behind the one threshold
 machinery (a chain entry's `kind` picks it; EVM stays the default and

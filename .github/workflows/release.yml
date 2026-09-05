@@ -1,0 +1,76 @@
+# Release with checksums and provenance - SKELETON, WRITTEN AND NOT VERIFIED.
+#
+# This workflow has never run. It exists so the release shape is reviewed
+# code rather than a wish: source archive, SHA-256 checksums, and a build
+# provenance attestation binding the artifacts to the exact commit and
+# workflow that produced them. What it does NOT yet do is sign - signing
+# needs the maintainer's key, which does not belong in a first draft, and a
+# workflow that pretends to sign is worse than one that says it cannot.
+#
+# Manual trigger only, and it stays that way even once verified: a release
+# is a decision, not a side effect of a push.
+#
+# To finish this (in order):
+#   1. Run it against a throwaway tag; mark it VERIFIED in the changelog.
+#   2. Add signing (minisign or cosign) once the key ceremony has happened;
+#      publish the public key in the README and SECURITY.md.
+#   3. Wire the checksums + attestation URLs into the release notes.
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to release (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+  # Required by the provenance attestation step.
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
+          submodules: true
+
+      # The source archive IS the release artifact for now: the supported
+      # distribution is build-from-source, and an archive of the tag plus a
+      # checksum plus provenance is the minimum honest release. Binaries
+      # (hub, viewers) join this list only with per-platform signing.
+      - name: source archive
+        run: |
+          git archive --format=tar.gz --prefix="super-log-${{ inputs.tag }}/" \
+            -o "super-log-${{ inputs.tag }}.tar.gz" "${{ inputs.tag }}"
+
+      - name: checksums
+        run: |
+          sha256sum "super-log-${{ inputs.tag }}.tar.gz" > SHA256SUMS
+          cat SHA256SUMS
+
+      # SLSA-style provenance: who built it, from what commit, with which
+      # workflow. Verifiable with `gh attestation verify`.
+      - name: provenance attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            super-log-${{ inputs.tag }}.tar.gz
+            SHA256SUMS
+
+      # Signing lands here once the key exists. Deliberately absent rather
+      # than stubbed with a placeholder key - see the header.
+
+      - name: draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" --draft --verify-tag \
+            --title "super-log ${{ inputs.tag }}" \
+            --notes "Checksums in SHA256SUMS; provenance attested (gh attestation verify)." \
+            "super-log-${{ inputs.tag }}.tar.gz" SHA256SUMS
