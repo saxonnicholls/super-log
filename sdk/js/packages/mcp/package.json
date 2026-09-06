@@ -1,7 +1,6 @@
 {
   "name": "@super-log/mcp",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
   "description": "MCP server: let a coding agent query the super-log bench",
   "author": "Saxon Herschel Nicholls",
   "type": "module",
@@ -9,10 +8,25 @@
     "superlog-mcp": "bin/superlog-mcp.mjs"
   },
   "files": [
-    "bin"
+    "bin",
+    "guide.json"
   ],
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saxonnicholls/super-log.git",
+    "directory": "sdk/js/packages/mcp"
+  },
+  "homepage": "https://github.com/saxonnicholls/super-log#readme",
+  "keywords": [
+    "mcp",
+    "logging",
+    "observability",
+    "super-log",
+    "agent",
+    "model-context-protocol"
+  ]
 }

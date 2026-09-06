@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(super_log
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "One hub for every log stream on the dev bench"
     LANGUAGES CXX)
 
@@ -145,4 +145,52 @@ option(SUPER_LOG_BUILD_IMGUI_VIEWER
     "Build the Dear ImGui viewer" ${SUPER_LOG_HAS_VENDORED_IMGUI})
 if(SUPER_LOG_BUILD_IMGUI_VIEWER)
     add_subdirectory(viewer/imgui)
+endif()
+
+# ---- install & export -------------------------------------------------
+#
+# Everything a native packager (Homebrew, apt/.deb, vcpkg) needs to land
+# files in a prefix with `cmake --install`. Guarded by an option so a
+# plain in-repo dev build is untouched: the bench builds in place and
+# never installs, packagers turn this on.
+option(SUPER_LOG_INSTALL "Generate install & export rules" OFF)
+if(SUPER_LOG_INSTALL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    # The hub binary - what brew/apt ship as the runnable `superlogd`.
+    install(TARGETS superlogd RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+    # The SDKs consumers compile against: the C header and the C++ headers.
+    install(FILES sdk/c/superlog.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY sdk/cpp/include/super_log
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+    # find_package(superlog) support. The config defines superlog::cpp as
+    # an imported INTERFACE pointing at the installed headers - deliberately
+    # NOT re-exporting this repo's build-time ts-moveables target (that is
+    # the SDK's transport dependency, brought by a downstream that wants the
+    # full sink exactly as this repo brings it, and irrelevant to one that
+    # only wants the C header). Self-contained, so the config has no
+    # dangling target references.
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/superlogConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/superlogConfig.cmake"
+"# superlog SDK - installed package config.\n\
+include(CMakeFindDependencyMacro)\n\
+# The C++ SDK's headers include ts-moveables directly, so it is a genuine\n\
+# compile dependency: it installed its own config to this same prefix.\n\
+find_dependency(ts_moveables)\n\
+if(NOT TARGET superlog::cpp)\n\
+  add_library(superlog::cpp INTERFACE IMPORTED)\n\
+  set_target_properties(superlog::cpp PROPERTIES\n\
+    INTERFACE_INCLUDE_DIRECTORIES \"\${CMAKE_CURRENT_LIST_DIR}/../../../${CMAKE_INSTALL_INCLUDEDIR}\"\n\
+    INTERFACE_LINK_LIBRARIES \"snicholls::ts_moveables\")\n\
+endif()\n")
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/superlogConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/superlogConfigVersion.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/superlog)
 endif()

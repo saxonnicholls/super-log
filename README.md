@@ -253,7 +253,10 @@ to guess what a topic means.
 
 ```sh
 npm run demo:mcp        # drives all six over stdio and prints what an agent sees
+# from a clone:
 claude mcp add super-log --scope user -- node $PWD/sdk/js/packages/mcp/bin/superlog-mcp.mjs
+# or, once published, with no clone at all:
+claude mcp add super-log --scope user -- npx -y @super-log/mcp
 ```
 
 Registered once per machine, not per project: one hub serves every project

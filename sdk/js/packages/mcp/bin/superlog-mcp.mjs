@@ -20,7 +20,7 @@
 //  over stdio is newline-delimited JSON-RPC 2.0, which is small enough to
 //  own outright rather than pin a toolchain for.
 //
-//    claude mcp add super-log -- npx -y superlog-mcp
+//    claude mcp add super-log -- npx -y @super-log/mcp
 //    SUPER_LOG_URL=http://127.0.0.1:7333 superlog-mcp
 //
 //  Wire contract: ../../../../docs/PROTOCOL.md

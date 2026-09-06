@@ -1,14 +1,68 @@
 {
   "name": "@super-log/tailers",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Host-side tailers: adb logcat and simctl log stream onto the super-log hub",
+  "version": "0.2.0",
+  "description": "super-log tailers: 40+ zero-dependency log sources for one hub - devices, services, chains, network, OpenTelemetry and more",
   "author": "Saxon Herschel Nicholls",
   "type": "module",
   "bin": {
-    "superlog-tail": "bin/superlog-tail.mjs"
+    "superlog": "bin/superlog-tee.mjs",
+    "superlog-alarm": "bin/superlog-alarm.mjs",
+    "superlog-alert": "bin/superlog-alert.mjs",
+    "superlog-bridge": "bin/superlog-bridge.mjs",
+    "superlog-build": "bin/superlog-build.mjs",
+    "superlog-cf": "bin/superlog-cf.mjs",
+    "superlog-chain": "bin/superlog-chain.mjs",
+    "superlog-dl": "bin/superlog-dl.mjs",
+    "superlog-dns": "bin/superlog-dns.mjs",
+    "superlog-fleet": "bin/superlog-fleet.mjs",
+    "superlog-gas": "bin/superlog-gas.mjs",
+    "superlog-git": "bin/superlog-git.mjs",
+    "superlog-github": "bin/superlog-github.mjs",
+    "superlog-gpu": "bin/superlog-gpu.mjs",
+    "superlog-grpc": "bin/superlog-grpc.mjs",
+    "superlog-journal": "bin/superlog-journal.mjs",
+    "superlog-log": "bin/superlog-log",
+    "superlog-net": "bin/superlog-net.mjs",
+    "superlog-netstate": "bin/superlog-netstate.mjs",
+    "superlog-otlp": "bin/superlog-otlp.mjs",
+    "superlog-ports": "bin/superlog-ports.mjs",
+    "superlog-power": "bin/superlog-power.mjs",
+    "superlog-prs": "bin/superlog-prs.mjs",
+    "superlog-replay": "bin/superlog-replay.mjs",
+    "superlog-ros": "bin/superlog-ros.mjs",
+    "superlog-search": "bin/superlog-search.mjs",
+    "superlog-serial": "bin/superlog-serial.mjs",
+    "superlog-socket": "bin/superlog-socket.mjs",
+    "superlog-sql": "bin/superlog-sql.mjs",
+    "superlog-starlink": "bin/superlog-starlink.mjs",
+    "superlog-stripe": "bin/superlog-stripe.mjs",
+    "superlog-sys": "bin/superlog-sys.mjs",
+    "superlog-tail": "bin/superlog-tail.mjs",
+    "superlog-tee": "bin/superlog-tee.mjs",
+    "superlog-usb": "bin/superlog-usb.mjs",
+    "superlog-vitals": "bin/superlog-vitals.mjs",
+    "superlog-watch": "bin/superlog-watch.mjs",
+    "superlog-ws": "bin/superlog-ws.mjs"
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "files": [
+    "bin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saxonnicholls/super-log.git",
+    "directory": "tailers"
+  },
+  "homepage": "https://github.com/saxonnicholls/super-log#readme",
+  "license": "MIT",
+  "keywords": [
+    "logging",
+    "observability",
+    "super-log",
+    "tailer",
+    "opentelemetry",
+    "syslog"
+  ]
 }
