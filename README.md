@@ -517,12 +517,26 @@ bench.
 
 ## Install
 
-Pick the one that fits — each lands the hub, the viewer, and the tailers.
+The fastest way onto the bench — **Homebrew** — and a runnable example in
+the same breath:
 
 ```sh
-# Homebrew (macOS / Linux) — the hub as a brew service, tailers on PATH
-brew install saxonnicholls/tap/super-log
+brew install saxonnicholls/tap/super-log     # the hub + all the tailers
 
+# See it work in three lines:
+brew services start super-log                        # hub on :7333
+echo "the bench is live" | superlog --topic hello    # a line of your own
+curl -s "http://127.0.0.1:7333/recent?topic=hello"   # read it back
+
+# Then put your machine on the bench — any of these, immediately:
+superlog-netstate      # gateway, Wi-Fi, VPN, resolvers — changes only
+superlog-otlp          # OpenTelemetry inlet on :4318
+your-build 2>&1 | superlog --topic build    # anything that prints
+```
+
+Other channels, each landing the hub and the tailers:
+
+```sh
 # npm — the tailers and the MCP server as commands, anywhere Node ≥18 runs
 npm install -g @super-log/tailers @super-log/mcp
 
@@ -534,7 +548,8 @@ vcpkg install super-log
 ```
 
 The MCP server also runs straight from npx, no install:
-`claude mcp add super-log -- npx -y @super-log/mcp`. Packaging sources and
+`claude mcp add super-log -- npx -y @super-log/mcp`. The **viewers** (native
+and web) come with a clone — see Quick start below. Packaging sources and
 the maintainer publish steps live in [packaging/](packaging/).
 
 ## Quick start (from a clone)

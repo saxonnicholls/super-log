@@ -63,6 +63,24 @@ class SuperLog < Formula
     error_log_path var/"log/superlog.log"
   end
 
+  def caveats
+    <<~EOS
+      Start the hub, then see it work in three lines:
+
+        brew services start super-log                       # hub on :7333
+        echo "the bench is live" | superlog --topic hello   # a line of your own
+        curl -s "http://127.0.0.1:7333/recent?topic=hello"  # read it back
+
+      Put your machine on the bench (any of these, immediately):
+
+        superlog-netstate      # gateway, Wi-Fi, VPN, resolvers - changes only
+        superlog-otlp          # OpenTelemetry inlet on :4318
+        your-build 2>&1 | superlog --topic build   # anything that prints
+
+      The viewers (native + web) live in the repo: github.com/saxonnicholls/super-log
+    EOS
+  end
+
   test do
     # The hub answers /healthz, and a tailer speaks its help - the two
     # halves a package must actually deliver.

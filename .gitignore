@@ -72,3 +72,6 @@ rpc.json
 packaging/deb/*.deb
 build-deb/
 build-inst/
+
+# the Homebrew tap is its own repo, cloned here for convenience
+homebrew-tap/
