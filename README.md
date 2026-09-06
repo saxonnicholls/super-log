@@ -453,6 +453,13 @@ git clone --recurse-submodules --shallow-submodules <this repo>
 cd super-log
 cp .env.example .env             # optional: chain endpoints, hub defaults
 
+# The one-command install: preflight the toolchain, build the hub and
+# viewer, and verify every SDK actually delivers to a real hub before
+# calling itself done. Add --persist to start the hub and the default-on
+# tailers at login and keep them running across reboots.
+./scripts/install.sh             # build + verify
+./scripts/install.sh --persist   # ...and run at login, forever
+
 # The whole demo: hub, C++/Rust/iOS/Android/browser/container clocks,
 # OS-log streams, both viewers - one command
 npm run demo                     # see demo/README.md for the tour

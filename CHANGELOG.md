@@ -5,6 +5,37 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Distribution: the local installer, and the packaging unblockers.**
+`scripts/install.sh` is the one-command install: preflight (Node ≥18,
+cmake, a C++ compiler — prints the one line to fix a gap and stops, never
+installs a toolchain behind your back), build the hub and viewer, then run
+`verify-sdks.sh` as the acceptance gate — a bench that builds but delivers
+nothing is the exact failure this project prevents, so the install refuses
+to call itself done without it. `--persist` installs the hub and the
+default-on tailers as login services (launchd on macOS, systemd --user on
+Linux, both generated from one list so they cannot drift) that start at
+login and survive a reboot — the "who tails the tailers" answer.
+`--uninstall` removes exactly what it wrote. Under it, two unblockers the
+package managers need: the npm packages `@super-log/tailers` (all 40
+tailers as commands) and `@super-log/mcp` are now publish-ready (public,
+versioned, correct `files` — the MCP package was missing `guide.json`,
+which it reads at runtime), and CMake grew guarded `install()`/export
+rules (`-DSUPER_LOG_INSTALL=ON`) so `find_package(superlog)` works and
+`cmake --install` lands the hub binary and SDK headers in a prefix.
+
+Verified on this bench: both npm packages packed with `npm pack` and
+installed from the tarball into a clean project — an installed
+`superlog-otlp` delivered to the real hub and the installed MCP server
+served its guide over stdio; the CMake install to a temp prefix, a
+downstream `find_package(superlog)` project compiling against
+`superlog::cpp` (ts-moveables pulled transitively); the installer's
+preflight, build plan and login-service writers, with the generated
+launchd plist validated by `plutil`. Written but unverified: a full
+`./scripts/install.sh --persist` run end-to-end (it rebuilds and installs
+system services, left for a fresh machine rather than run against the live
+bench); actual npm publish and the Homebrew/apt/vcpkg lanes (need the
+npm org and tap repo created — see the plan).
+
 **superlog-otlp: the OpenTelemetry inlet** — anything OTel-instrumented
 joins the bench with no new SDK, just one exporter stanza pointed at
 127.0.0.1:4318 (the standard OTLP/HTTP port, so zero endpoint config).
