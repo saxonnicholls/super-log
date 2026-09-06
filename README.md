@@ -478,6 +478,29 @@ The demo binds to loopback. Real phones need the hub on the LAN:
 viewer finds the hub from the host that served the page, so opening it from
 another machine needs no configuration.
 
+## Configuration files
+
+Most streams need no config — you just run them. A handful that carry
+**secrets** (API keys, RPC URLs with keys, wallet addresses, tokens) read
+a file that is **gitignored**, so your credentials never reach a commit.
+Every one ships a `.example` twin beside it: copy, then edit. That's the
+whole ritual — `cp <name>.example <name>`, fill in your values, run.
+
+| Copy this → to this | For | What goes in it |
+| ------------------- | --- | --------------- |
+| `.env.example` → `.env` | the hub, chains, alarms, and every API-keyed tailer | Hub URL/bind, chain RPC endpoints, Cloudflare/Stripe/Twilio/Telegram creds, PR logins, Starlink dish, notification channels — each block is commented, and anything left blank is simply not watched. |
+| `rpc.json.example` → `rpc.json` | `npm run rpc` — RPC node health | Per chain, **per provider**, a `{chain, provider, url, kind?}`. Two providers per chain (a QuickNode *and* an Alchemy) is the point — the board shows which one died. The URL shapes are pre-filled; paste your key. |
+| `gas.json.example` → `gas.json` | `npm run gas` — key balance / fund-now alarms | Per chain, the operational keys to watch with `crit`/`warn` thresholds. EVM, Solana, Tron, Bitcoin (`kind`). A labelled key list is a map for an attacker even when the addresses are public — hence gitignored. |
+| `alerts.json.example` → `alerts.json` | `npm run alert` — rules over the bench | Rules: something bad logged, too much logged, a stream went silent, or a combo of conditions in one window — plus the notification channels to fire. |
+| `endpoints.json.example` → `endpoints.json` | `npm run alarm` — the webhook endpoint factory | The public endpoints to provision declaratively: capture, relay, forward, or watch-only — Stripe/GitHub webhook testing included. |
+| `fleet.json.example` → `fleet.json` | `npm run fleet` — many machines at once | Describe a fleet of hosts (ssh, OS logs, docker, files) once; one supervisor starts every stream and restarts any that die. |
+
+Config-free by design — nothing to create: the **servers**, **devices
+(USB)**, **agents** and **PRs** boards derive from the hub's own traffic or
+a `gh`/env setting, and the OS/app/network tailers take command-line flags.
+If a tailer needs a file it can't find, it tells you the exact `cp` line
+and stops — it never runs half-configured.
+
 ## Installing it in a project
 
 **Clone it once, use it from every project.** super-log is not a dependency
@@ -950,7 +973,7 @@ process owns, and exits when the size is reached.
 ## Whole fleets
 
 Eight servers with containers each is thirty tailers, and nobody runs thirty
-commands twice. Describe them once ([tailers/fleet.example.json](tailers/fleet.example.json)):
+commands twice. Describe them once ([fleet.json.example](fleet.json.example)):
 
 ```json
 { "url": "http://127.0.0.1:7333",

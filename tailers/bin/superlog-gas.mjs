@@ -19,7 +19,7 @@
 //    superlog-gas --config /path/gas.json
 //
 //  Publishes to gas.<chain>. The config is JSON (copy
-//  tailers/gas.example.json to gas.json - GITIGNORED, because a labelled
+//  gas.json.example to gas.json - GITIGNORED, because a labelled
 //  list of your operational keys is a map for an attacker even when every
 //  address is public on chain):
 //
@@ -71,7 +71,7 @@ if (args.includes('--help') || args.includes('-h')) {
 
 Publishes to gas.<chain>. Readings are DEBUG metric events (gas.<label>);
 below a key's \`crit\` is CRITICAL said once, below \`warn\` is WARN said
-once, recovery is INFO. Config: copy tailers/gas.example.json to gas.json
+once, recovery is INFO. Config: copy gas.json.example to gas.json
 (gitignored - a labelled key list is a map for an attacker).`);
   process.exit(0);
 }
@@ -79,7 +79,7 @@ once, recovery is INFO. Config: copy tailers/gas.example.json to gas.json
 const env = loadEnv();
 const configPath = opt('config', env.SUPER_LOG_GAS_CONFIG ?? 'gas.json');
 if (!existsSync(configPath)) {
-  console.error(`superlog-gas: no ${configPath}. Copy tailers/gas.example.json there and edit -`);
+  console.error(`superlog-gas: no ${configPath}. Copy gas.json.example there and edit -`);
   console.error('it is gitignored on purpose: a labelled list of operational keys does not belong in a repo.');
   process.exit(2);
 }

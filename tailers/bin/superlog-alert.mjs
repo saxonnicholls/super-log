@@ -52,7 +52,7 @@ if (args.includes('--help') || args.includes('-h')) {
 Rule shapes: level (something bad happened), rate (too much of it),
 silence (a stream stopped - the one that catches a dead server), and
 combo (several conditions all inside one window - the correlation the
-other shapes cannot say). See tailers/alerts.example.json.`);
+other shapes cannot say). See alerts.json.example.`);
   process.exit(0);
 }
 
@@ -65,7 +65,7 @@ try {
   cfg = JSON.parse(readFileSync(configPath, 'utf8'));
 } catch (e) {
   console.error(`superlog-alert: cannot read ${configPath}: ${e.message}`);
-  console.error('Copy tailers/alerts.example.json to alerts.json and edit it.');
+  console.error('Copy alerts.json.example to alerts.json and edit it.');
   process.exit(2);
 }
 

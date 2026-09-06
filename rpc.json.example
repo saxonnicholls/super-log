@@ -1,0 +1,103 @@
+{
+  "//": "Copy to rpc.json (GITIGNORED - RPC URLs carry provider keys). Two providers per chain is the point: DOWN or STALLED shows which one to fail away from. Replace each REPLACE with your key/subdomain; delete providers you do not use. kind defaults to evm; solana/tron/bitcoin set explicitly. The publicnode/mempool/trongrid rows work with no key.",
+  "url": "http://127.0.0.1:7333",
+  "interval": 60,
+  "stall": 120,
+  "endpoints": [
+    {
+      "chain": "ethereum",
+      "provider": "quicknode",
+      "url": "https://REPLACE.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "ethereum",
+      "provider": "alchemy",
+      "url": "https://eth-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "base",
+      "provider": "quicknode",
+      "url": "https://REPLACE.base-mainnet.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "base",
+      "provider": "alchemy",
+      "url": "https://base-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "arbitrum",
+      "provider": "quicknode",
+      "url": "https://REPLACE.arbitrum-mainnet.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "arbitrum",
+      "provider": "alchemy",
+      "url": "https://arb-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "optimism",
+      "provider": "quicknode",
+      "url": "https://REPLACE.optimism.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "optimism",
+      "provider": "alchemy",
+      "url": "https://opt-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "polygon",
+      "provider": "quicknode",
+      "url": "https://REPLACE.matic.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "polygon",
+      "provider": "alchemy",
+      "url": "https://polygon-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "bsc",
+      "provider": "quicknode",
+      "url": "https://REPLACE.bsc.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "bsc",
+      "provider": "publicnode",
+      "url": "https://bsc-rpc.publicnode.com"
+    },
+    {
+      "chain": "avalanche",
+      "provider": "quicknode",
+      "url": "https://REPLACE.avalanche-mainnet.quiknode.pro/REPLACE/ext/bc/C/rpc"
+    },
+    {
+      "chain": "solana",
+      "provider": "quicknode",
+      "kind": "solana",
+      "url": "https://REPLACE.solana-mainnet.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "solana",
+      "provider": "alchemy",
+      "kind": "solana",
+      "url": "https://solana-mainnet.g.alchemy.com/v2/REPLACE"
+    },
+    {
+      "chain": "tron",
+      "provider": "trongrid",
+      "kind": "tron",
+      "url": "https://api.trongrid.io"
+    },
+    {
+      "chain": "bitcoin",
+      "provider": "quicknode",
+      "kind": "bitcoin",
+      "url": "https://REPLACE.btc.quiknode.pro/REPLACE/"
+    },
+    {
+      "chain": "bitcoin",
+      "provider": "mempool",
+      "kind": "bitcoin",
+      "url": "https://mempool.space/api"
+    }
+  ]
+}

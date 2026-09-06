@@ -72,7 +72,7 @@ Config rpc.json (gitignored - RPC URLs carry provider keys): endpoints
 const env = loadEnv();
 const configPath = opt('config', env.SUPER_LOG_RPC_CONFIG ?? 'rpc.json');
 if (!existsSync(configPath)) {
-  console.error(`superlog-rpc: no ${configPath}. Copy tailers/rpc.example.json there and edit -`);
+  console.error(`superlog-rpc: no ${configPath}. Copy rpc.json.example there and edit -`);
   console.error('it is gitignored on purpose: an RPC URL usually carries a provider key.');
   process.exit(2);
 }
