@@ -67,3 +67,8 @@ endpoints.json
 # working docs, not for the public repo
 INSTALLERS.md
 rpc.json
+
+# built packages
+packaging/deb/*.deb
+build-deb/
+build-inst/

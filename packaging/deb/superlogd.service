@@ -1,0 +1,13 @@
+[Unit]
+Description=super-log hub
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/superlogd
+Restart=always
+RestartSec=3
+# The hub has no auth; keep it on loopback unless a trusted LAN is intended.
+Environment=SUPER_LOG_BIND=127.0.0.1
+
+[Install]
+WantedBy=multi-user.target
