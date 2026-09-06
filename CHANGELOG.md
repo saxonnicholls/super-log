@@ -5,6 +5,23 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Packaging lanes and the README's story.** Three distribution channels
+authored and verified: a Homebrew formula (`packaging/homebrew` — `brew
+style` clean, builds the hub + tailers with a `brew services` block), a
+`.deb` (`packaging/deb` — build-deb.sh VERIFIED building a valid package
+in the Ubuntu Docker image, with systemd unit and maintainer scripts),
+and a vcpkg port scoped to the standalone zero-dependency C SDK
+(`packaging/vcpkg`; the C++ SDK waits on ts-moveables becoming a vcpkg
+port, documented). The publish steps that need external accounts (npm
+org, homebrew-tap repo, apt host) are handed off in `packaging/README.md`.
+The main README gained an **Install** section (Homebrew/npm/apt/vcpkg
+one-liners), a **"Collection is not analysis"** section framing the
+security posture against the log4j lesson (logging outside the app,
+content-as-data never evaluated, production-ships-nothing), and a
+**super-log.com** section for the commercial analysis layer (real-time
+LLM analysis of the consolidated stream, team features) — all built on
+the same NDJSON wire, keeping collection and analysis cleanly separate.
+
 **superlog-rpc and the RPC board: is the node endpoint healthy?** A chain
 watcher, a gas checker, an oracle are only as alive as the RPC provider
 behind them, and a provider fails quietly - errors, or worse, keeps

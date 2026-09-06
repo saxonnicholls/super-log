@@ -13,6 +13,12 @@ watchers, build wrappers, ad-hoc proxies and one-off scripts every
 long-running bench accumulates — rebuilt here as one coherent thing, on
 one wire protocol, with one screen.
 
+Free and self-hosted, forever. It **collects and consolidates**; analysis
+is a separate, cleaner concern — hand the consolidated stream to
+[super-log.com](https://super-log.com) for real-time LLM analysis and team
+features, or to your own store. See
+[Collection is not analysis](#collection-is-not-analysis--and-that-is-the-whole-design).
+
 ![Twelve streams interleaved on one screen](assets/bench-overview.png)
 
 *Twelve producers on one screen, interleaved by arrival: C++ through both
@@ -446,7 +452,92 @@ questions and it is reasonable to run both: this one for "what is happening
 right now while I am looking", that one for "what happened last Tuesday at
 three in the morning".
 
-## Quick start
+## Collection is not analysis — and that is the whole design
+
+super-log does one thing: it **collects and consolidates**. Every stream a
+bench produces, on one wire, in one order, on one screen. It deliberately
+does **not** analyse — no query language, no dashboards to build, no rules
+engine you must program before the first insight. That separation is not a
+missing feature; it is the point. Collection should be dumb, fast, and
+trustworthy; analysis is a different job with different tools, and coupling
+the two is how logging stacks become the thing you have to operate instead
+of the thing that helps you operate.
+
+**This is the opposite of the log4j lesson.** The Java logging world put a
+large, powerful, *evaluating* framework **inside** every application — and
+in 2021 the world learned what that costs, when a string in a log message
+became remote code execution (log4shell) across half the internet. The
+framework that was supposed to observe the app could compromise it.
+super-log inverts every part of that:
+
+- **Logging lives outside the app.** A super-log producer is a thin,
+  zero-dependency SDK — often just one file, or no code at all: point an
+  existing OpenTelemetry exporter at it, or tail a file. There is no heavy
+  framework in your process to be a liability.
+- **Content is data, never code.** Every parser on the collection side is
+  bounded and treats input as bytes to be stored, never expressions to be
+  evaluated — the log4shell class of bug is structurally impossible here.
+- **Production ships nothing by default.** Every SDK is DEVELOPMENT-xor-
+  PRODUCTION, and PRODUCTION is an inert shell that sends nothing until you
+  opt a level in — the compiled languages compile the wire code out
+  entirely, provably (`strings` finds no endpoint in the binary).
+
+So the app stays simple and safe, the bench stays a bench, and **what you
+do with the consolidated stream is a clean, separate choice** — eyeball it,
+forward it to your long-term store, or hand it to something that reasons
+about it.
+
+## super-log.com — analysis and AI, for teams
+
+The open-source bench is the collection and consolidation layer, free and
+self-hosted, forever. [**super-log.com**](https://super-log.com) is the
+analysis layer built on top of it — the commercial service for when a
+consolidated stream is more than one person can watch:
+
+- **Real-time LLM analysis of the consolidated log.** An AI reads the whole
+  interleaved firehose as it happens — every service, device and chain at
+  once — and tells you what changed, what correlates, and what is about to
+  break, in the plain-language a teammate would use. The thing a human does
+  in the ten seconds after something breaks, done continuously across
+  streams no human can watch all of.
+- **Built for teams.** One consolidated view of everyone's benches and
+  services, shared context, history that outlives a laptop, and alerting
+  that reaches the person who can fix it. The servers, agents and PR boards
+  in the open-source viewers hint at the shape; the hosted service makes
+  them a shared, durable, analysed surface.
+- **Same clean boundary.** super-log.com consumes the exact same NDJSON
+  wire the open-source hub speaks — nothing new to instrument. Your
+  collection stays yours and self-hosted; you choose to send a stream up
+  for analysis, and you can stop at any time. Collection and analysis stay
+  separate all the way through.
+
+The open-source project is complete and useful on its own — the commercial
+service is analysis you would otherwise build, not a paywall around the
+bench.
+
+## Install
+
+Pick the one that fits — each lands the hub, the viewer, and the tailers.
+
+```sh
+# Homebrew (macOS / Linux) — the hub as a brew service, tailers on PATH
+brew install saxonnicholls/tap/super-log
+
+# npm — the tailers and the MCP server as commands, anywhere Node ≥18 runs
+npm install -g @super-log/tailers @super-log/mcp
+
+# Debian / Ubuntu — the hub as a systemd unit, tailers on PATH
+sudo dpkg -i super-log_0.2.0_amd64.deb        # from the GitHub release
+
+# vcpkg — the zero-dependency C SDK, to log to a hub from C or C++
+vcpkg install super-log
+```
+
+The MCP server also runs straight from npx, no install:
+`claude mcp add super-log -- npx -y @super-log/mcp`. Packaging sources and
+the maintainer publish steps live in [packaging/](packaging/).
+
+## Quick start (from a clone)
 
 ```sh
 git clone --recurse-submodules --shallow-submodules <this repo>

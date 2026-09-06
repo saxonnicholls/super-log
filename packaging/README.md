@@ -41,6 +41,13 @@ is a clean port. The C++ SDK depends on ts-moveables (not a vcpkg port),
 so it ships via `find_package(superlog)` from a source/brew install
 instead — the portfile's usage note says so.
 
+**To ship the full C++ SDK through vcpkg**, ts-moveables needs its own
+vcpkg port first (it is the maintainer's own library, so this is
+tractable): a `ts-moveables` port, then a second `super-log-cpp` port that
+declares `"dependencies": ["ts-moveables"]` and installs the C++ headers
+via the same `-DSUPER_LOG_INSTALL=ON` export. Until then the C header is
+the honest vcpkg deliverable and the C++ SDK stays a source/brew install.
+
 - Verify: `vcpkg install super-log --overlay-ports=packaging/vcpkg/ports`
   (fill the real `SHA512` first — vcpkg prints it on the initial run).
 - **PUBLISH (maintainer):** submit the port to the vcpkg registry, or keep
