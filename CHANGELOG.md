@@ -5,6 +5,35 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-rpc and the RPC board: is the node endpoint healthy?** A chain
+watcher, a gas checker, an oracle are only as alive as the RPC provider
+behind them, and a provider fails quietly - errors, or worse, keeps
+answering with a block height that stopped advancing. superlog-rpc polls
+each endpoint on its own clock and turns health into an edge: block height
+and latency per (chain, provider) as metric readings, DOWN (ERROR) after
+two misses, STALLED (WARN) when the block freezes while the endpoint still
+answers - the failure a naive up/down check misses entirely - recovery
+announced. Four dialects behind one discipline, matching gas: evm
+(eth_blockNumber), solana (getSlot), tron (getnowblock), bitcoin (Esplora
+tip height). You run more than one provider per chain (a QuickNode and an
+Alchemy) so one can die without taking you with it; both viewers carry an
+RPC board with a row per endpoint - health, chain, provider, block,
+latency, url, last-seen - so you see which one died. Config is rpc.json
+(gitignored - RPC URLs carry provider keys).
+
+Verified: live against public nodes (Ethereum 25.9M, Base 51.0M, Solana
+slot 444.9M, Bitcoin 965834 - all four dialects), and in the suite against
+stand-in nodes (`tests/rpc.test.mjs`) proving the block reading, a dead
+endpoint going DOWN, and a frozen-but-answering endpoint going STALLED
+with recovery.
+
+**Tunnels: ngrok verified.** `--tunnel ngrok` on the alarm gateway is now
+proven end-to-end (it was written-but-unverified): with Cloudflare's
+tunnels down on the bench, ngrok carried an alarm fired at the public
+ngrok URL from the internet through to the hub. Free-tier URLs rotate per
+restart; API callers send the ngrok-skip-browser-warning header. zrok
+remains the one unverified provider.
+
 **Distribution: the local installer, and the packaging unblockers.**
 `scripts/install.sh` is the one-command install: preflight (Node ≥18,
 cmake, a C++ compiler — prints the one line to fix a gap and stops, never

@@ -14,6 +14,7 @@ import { ServerPanel } from './ServerPanel';
 import { DevicePanel } from './DevicePanel';
 import { AgentPanel } from './AgentPanel';
 import { PRPanel } from './PRPanel';
+import { RpcPanel } from './RpcPanel';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
@@ -257,6 +258,7 @@ export default function App() {
       {toggles['toggle.devices'] !== false && <DevicePanel rows={rows} />}
       {toggles['toggle.agents'] !== false && <AgentPanel rows={rows} />}
       {toggles['toggle.prs'] !== false && <PRPanel rows={rows} />}
+      {toggles['toggle.rpc'] !== false && <RpcPanel rows={rows} />}
       {toggles['toggle.alarms'] !== false &&
         <AlarmBlotter rows={rows} hub={HUB} test={test}
                       onTest={() => void runTest()} verdictFor={verdictFor} />}

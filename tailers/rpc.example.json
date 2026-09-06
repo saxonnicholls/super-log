@@ -1,0 +1,15 @@
+{
+  "//": "Copy to rpc.json (GITIGNORED - RPC URLs usually carry a provider key, which is a credential). One row per chain PER PROVIDER: run more than one so you can see which died. kind: evm (default) | solana | tron | bitcoin.",
+  "url": "http://127.0.0.1:7333",
+  "interval": 60,
+  "stall": 120,
+  "endpoints": [
+    { "chain": "ethereum", "provider": "quicknode", "url": "https://YOUR-ETH.quiknode.pro/KEY/" },
+    { "chain": "ethereum", "provider": "alchemy",   "url": "https://eth-mainnet.g.alchemy.com/v2/KEY" },
+    { "chain": "base",     "provider": "public",     "url": "https://base-rpc.publicnode.com" },
+    { "chain": "arbitrum", "provider": "public",     "url": "https://arbitrum-one-rpc.publicnode.com" },
+    { "chain": "bsc",      "provider": "public",     "url": "https://bsc-rpc.publicnode.com" },
+    { "chain": "solana",   "provider": "public", "kind": "solana",  "url": "https://api.mainnet-beta.solana.com" },
+    { "chain": "bitcoin",  "provider": "mempool", "kind": "bitcoin", "url": "https://mempool.space/api" }
+  ]
+}

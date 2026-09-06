@@ -75,7 +75,8 @@
     "usb": "node tailers/bin/superlog-usb.mjs",
     "prs": "node tailers/bin/superlog-prs.mjs",
     "starlink": "node tailers/bin/superlog-starlink.mjs",
-    "otlp": "node tailers/bin/superlog-otlp.mjs"
+    "otlp": "node tailers/bin/superlog-otlp.mjs",
+    "rpc": "node tailers/bin/superlog-rpc.mjs"
   },
   "engines": {
     "node": ">=18"

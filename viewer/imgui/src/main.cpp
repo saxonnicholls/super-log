@@ -490,6 +490,43 @@ void note_pr(std::map<std::string, pr_entry>& prs, const row& r, double now)
     e.at = now;
 }
 
+// ---- the RPC board -----------------------------------------------------
+//
+// superlog-rpc publishes one DEBUG row per endpoint per poll (chain,
+// provider, url, block, latency, health) - the board keeps the latest
+// per chain/provider. Running two providers per chain is the point:
+// this is where you see WHICH one died or stalled.
+
+struct rpc_entry {
+    std::string chain, provider, url, health;
+    long block = -1;
+    int latency_ms = -1;
+    double at = 0;
+};
+
+void note_rpc(std::map<std::string, rpc_entry>& rpcs, const row& r, double now)
+{
+    if (r.topic.rfind("rpc.", 0) != 0)
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    const auto str = [&](const char* k) {
+        return f.contains(k) && f[k].is_string() ? f[k].get<std::string>() : std::string();
+    };
+    if (str("chain").empty() || str("provider").empty())
+        return;
+    auto& e = rpcs[str("chain") + "/" + str("provider")];
+    e.chain = str("chain");
+    e.provider = str("provider");
+    if (!str("url").empty()) e.url = str("url");
+    if (!str("health").empty()) e.health = str("health");
+    if (!str("block").empty()) e.block = std::atol(str("block").c_str());
+    if (!str("latency_ms").empty()) e.latency_ms = std::atoi(str("latency_ms").c_str());
+    e.at = now;
+}
+
 // ---- the device trees --------------------------------------------------
 //
 // superlog-usb publishes each host's tree as fields.tree on usb.<host>;
@@ -696,6 +733,7 @@ constexpr const char* fallback_menu = R"MENU([
     {"key":"menu.view.devices","label":"Devices (USB)","action":"toggle.devices","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.agents","label":"Agents (MCP)","action":"toggle.agents","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.prs","label":"PRs (GitHub)","action":"toggle.prs","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.rpc","label":"RPC nodes","action":"toggle.rpc","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
@@ -1184,6 +1222,7 @@ int main()
     std::map<std::string, phone_entry> phones;
     std::map<std::string, agent_entry> agents;
     std::map<std::string, pr_entry> prs;
+    std::map<std::string, rpc_entry> rpcs;
     static menu_state menu;
     load_menu(menu);
     static viewer_config vcfg;
@@ -1223,6 +1262,7 @@ int main()
                 note_usb(usb_trees, phones, fd.rows.front(), ImGui::GetTime());
                 note_agent(agents, fd.rows.front(), ImGui::GetTime());
                 note_pr(prs, fd.rows.front(), ImGui::GetTime());
+                note_rpc(rpcs, fd.rows.front(), ImGui::GetTime());
                 rows.push_back(std::move(fd.rows.front()));
                 fd.rows.pop_front();
             }
@@ -1971,6 +2011,94 @@ int main()
             ImGui::TextDisabled("waiting on US ages amber at 3d, red at 9d, and "
                                 "fires the alarm gateway - 51 silent days once "
                                 "turned a review request into a stale-close.");
+            ImGui::PopTextWrapPos();
+            ImGui::End();
+        }
+
+        // ---- RPC nodes: block height and health per endpoint. Two
+        // providers per chain is the point - this is where you see which
+        // one died (DOWN) or froze (STALLED, still answering).
+        if (menu.toggles["toggle.rpc"]) {
+            int unhealthy = 0;
+            for (const auto& [k, e] : rpcs)
+                if (e.health == "down" || e.health == "stalled") ++unhealthy;
+            char rtitle[64];
+            std::snprintf(rtitle, sizeof rtitle,
+                          unhealthy ? "RPC - %d unhealthy###rpc" : "RPC - %d###rpc",
+                          unhealthy ? unhealthy : static_cast<int>(rpcs.size()));
+            if (main_dock)
+                ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(620, 240), ImGuiCond_FirstUseEver);
+            ImGui::Begin(rtitle);
+            if (rpcs.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no RPC endpoints on the books - superlog-rpc "
+                                    "watches them (npm run rpc, config rpc.json).");
+                ImGui::PopTextWrapPos();
+            }
+            if (ImGui::BeginTable("rpcgrid", 7,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                    ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 52.0f);
+                ImGui::TableSetupColumn("chain", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+                ImGui::TableSetupColumn("provider", ImGuiTableColumnFlags_WidthFixed, 88.0f);
+                ImGui::TableSetupColumn("block", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+                ImGui::TableSetupColumn("lat", ImGuiTableColumnFlags_WidthFixed, 52.0f);
+                ImGui::TableSetupColumn("url", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("seen", ImGuiTableColumnFlags_WidthFixed, 44.0f);
+                ImGui::TableHeadersRow();
+                const double now = ImGui::GetTime();
+                for (const auto& [key, e] : rpcs) {
+                    ImGui::PushID(key.c_str());
+                    ImGui::TableNextRow();
+                    const bool down = e.health == "down";
+                    const bool stalled = e.health == "stalled";
+                    if (down)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(224, 91, 79, 34));
+                    else if (stalled)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(217, 164, 65, 26));
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(down ? ImVec4(1.0f, 0.18f, 0.12f, 1)
+                                     : stalled ? ImVec4(0.85f, 0.64f, 0.25f, 1)
+                                               : ImVec4(0.41f, 0.79f, 0.39f, 1),
+                                       "%s", down ? "DOWN" : stalled ? "STALL" : "up");
+                    ImGui::TableNextColumn();
+                    ImGui::TextColored(topic_color(e.chain), "%s", e.chain.c_str());
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(e.provider.c_str());
+                    ImGui::TableNextColumn();
+                    if (e.block >= 0) ImGui::Text("%ld", e.block);
+                    else ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    if (e.latency_ms >= 0)
+                        ImGui::TextColored(e.latency_ms > 1000 ? ImVec4(0.85f, 0.64f, 0.25f, 1)
+                                                              : ImVec4(0.45f, 0.47f, 0.52f, 1),
+                                           "%dms", e.latency_ms);
+                    else ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    {
+                        std::string u = e.url;
+                        if (u.rfind("https://", 0) == 0) u = u.substr(8);
+                        ImGui::TextDisabled("%s", u.c_str());
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", e.url.c_str());
+                    }
+                    ImGui::TableNextColumn();
+                    {
+                        const double ago = now - e.at;
+                        ImGui::TextColored(ago < 120 ? ImVec4(0.45f, 0.47f, 0.52f, 1)
+                                                     : ImVec4(0.85f, 0.64f, 0.25f, 1),
+                                           ago < 90 ? "%ds" : "%dm",
+                                           ago < 90 ? static_cast<int>(ago)
+                                                    : static_cast<int>(ago / 60));
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            ImGui::PushTextWrapPos();
+            ImGui::TextDisabled("block that stops advancing while still answering is "
+                                "STALLED (amber); no answer is DOWN (red). Run two "
+                                "providers per chain to see which failed.");
             ImGui::PopTextWrapPos();
             ImGui::End();
         }

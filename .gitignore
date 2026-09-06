@@ -66,3 +66,4 @@ endpoints.json
 
 # working docs, not for the public repo
 INSTALLERS.md
+rpc.json
