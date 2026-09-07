@@ -3,7 +3,7 @@ Version: @VERSION@
 Section: devel
 Priority: optional
 Architecture: @ARCH@
-Depends: nodejs (>= 18), libc6, libstdc++6
+Depends: nodejs (>= 18), libc6, libstdc++6, libatomic1
 Maintainer: Saxon Herschel Nicholls <me@saxonnicholls.com>
 Homepage: https://github.com/saxonnicholls/super-log
 Description: One hub for every log stream on a development bench

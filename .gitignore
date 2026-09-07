@@ -75,3 +75,5 @@ build-inst/
 
 # the Homebrew tap is its own repo, cloned here for convenience
 homebrew-tap/
+packaging/rpm/*.rpm
+build-rpm/

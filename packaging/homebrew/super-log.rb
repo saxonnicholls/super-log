@@ -86,7 +86,9 @@ class SuperLog < Formula
     # halves a package must actually deliver.
     require "open3"
     port = free_port
-    pid = spawn(bin/"superlogd", "--port", port.to_s)
+    # The hub takes its port from the environment, not a flag.
+    pid = spawn({ "SUPER_LOG_PORT" => port.to_s, "SUPER_LOG_BIND" => "127.0.0.1" },
+                bin/"superlogd")
     sleep 2
     begin
       out = shell_output("curl -s http://127.0.0.1:#{port}/healthz")

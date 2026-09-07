@@ -90,6 +90,7 @@ host-side tailer scraping the same device:
 | `stripe.<account>.<mode>` | Stripe events, one topic per account and per live/test — **redacted to an allowlist**, never customer records |
 | `socket.<host>.<peer>`| plain lines on a raw TCP or UDP socket |
 | `ros.<host>.<node>`   | a ROS 1 / ROS 2 node's log, one topic per node, from `/rosout` or `~/.ros/log` |
+| `fix.<session>`       | a FIX session log (QuickFIX, FIX8), SOH-delimited tag=value; the topic is `fix.<begin>-<sender>-<target>` from the message itself; MsgType levelled (Reject/rejected-fill ERROR, Logout/SequenceReset WARN, fills/orders INFO, Heartbeat DEBUG), with ClOrdID, Symbol, Side, Price, OrdStatus and the reject Text as fields |
 | `gpu.<host>.<index>`  | a GPU: utilisation, memory, temperature and power as `metric` events, plus threshold crossings |
 | `cuda.<app>`          | a CUDA program: kernel time from CUDA events, device printf, and faults caught at the synchronise |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |

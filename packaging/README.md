@@ -34,6 +34,29 @@ tailers as commands, and a systemd unit enabled by `postinst`.
   direct download, or host an apt repo (reprepro/aptly on a static host or
   R2) for `apt install super-log`.
 
+## rpm/ — `dnf`/`rpm` for Fedora, RHEL, Rocky, Alma & openSUSE
+
+`build-rpm.sh` (run inside a Fedora image, since rpmbuild is a Red Hat
+tool) produces `super-log-<version>-1.<dist>.<arch>.rpm`: the same payload
+as the .deb — hub binary, SDK headers, tailers as commands, and a systemd
+unit with the standard `%post`/`%preun`/`%postun` scriptlets.
+
+- Verify (from the repo root):
+  ```sh
+  docker run --rm -v "$PWD:/src" -w /src fedora:41 sh -c \
+    'dnf install -y rpm-build cmake gcc-c++ make git nodejs libatomic systemd-rpm-macros && sh packaging/rpm/build-rpm.sh'
+  ```
+  **VERIFIED** end to end: builds the package, then a fresh
+  `fedora:41` container `dnf install`s the resulting `.rpm`, the binaries
+  land on PATH, and `superlogd` answers `/healthz`. Two real bugs were
+  found by building it for real — the hub links `libatomic` (now a
+  Build/Requires here and a `libatomic1` Depends on the .deb), and
+  `CMAKE_INSTALL_LIBDIR` is pinned to `lib` so the header-only
+  `find_package` config lands where `%files` names it on Fedora's `lib64`
+  default.
+- **PUBLISH (maintainer):** attach the `.rpm` to the GitHub release,
+  host a dnf repo, or build it on COPR (see the tier ladder below).
+
 ## vcpkg/ — `vcpkg install super-log` (the C SDK)
 
 Scoped to the standalone C header on purpose: it is zero-dependency, so it
@@ -52,6 +75,67 @@ the honest vcpkg deliverable and the C++ SDK stays a source/brew install.
   (fill the real `SHA512` first — vcpkg prints it on the initial run).
 - **PUBLISH (maintainer):** submit the port to the vcpkg registry, or keep
   it as a documented overlay port for consumers who prefer that.
+
+## Getting into the distributions: the tier ladder
+
+The artifacts above are the foundation; this is how they reach `apt
+install super-log` and `dnf install super-log` on a stranger's machine.
+Three tiers, cheapest first. **The .deb and .rpm are built and verified —
+everything below is distribution, and most of it needs a maintainer
+account, not more code.**
+
+### Tier 1 — build services (free, no gatekeeper, all architectures)
+
+The fastest route to a real repo, and the one that builds the arm64 that a
+Raspberry Pi needs without owning a Pi.
+
+- **Fedora / RHEL / Rocky / Alma → COPR.** A Fedora account, a COPR
+  project, point it at this repo's `packaging/rpm/super-log.spec`. COPR
+  builds every arch (incl. `aarch64`) and hands users a one-liner: `sudo
+  dnf copr enable saxonnicholls/super-log && sudo dnf install super-log`.
+  Note: COPR allows network during builds, so the pinned ts-moveables
+  fetch works today; an official archive (Tier 3) will not, and needs
+  ts-moveables vendored into the source tarball first.
+- **Ubuntu / Debian → Launchpad PPA.** A Launchpad account, a PPA, upload
+  a source package built from `packaging/deb`. Launchpad builds each
+  supported series and arch; users get `sudo add-apt-repository
+  ppa:saxonnicholls/super-log && sudo apt install super-log`. The same
+  Pi-without-a-Pi benefit (Launchpad builds `arm64`/`armhf`).
+
+### Tier 2 — self-hosted repo + release artifacts (own the whole path)
+
+No third party, but you sign and host.
+
+- **Attach the `.deb` and `.rpm` to each GitHub release** (`gh release
+  upload vX.Y.Z super-log_*.deb super-log-*.rpm`). Immediate `curl`-and-
+  install for anyone, and the source of truth a repo or installer pulls
+  from.
+- **A one-line installer** that detects the distro, downloads the right
+  artifact from the latest release and installs it — the htop/ripgrep
+  on-ramp (`curl -fsSL https://super-log.com/install.sh | sh`). Distinct
+  from `scripts/install.sh`, which builds from source.
+- **A signed apt/dnf repo** on any static host (GitHub Pages, Cloudflare
+  R2, S3): `reprepro` for apt, `createrepo_c` for dnf, one GPG signing
+  key. Then the add-repo one-liner and `apt/dnf install super-log` with
+  real signature checking. This is the "de facto standard" spelling short
+  of the official archives.
+
+### Tier 3 — the official archives (the long game → see the commercial plan)
+
+Debian main, Fedora, EPEL: a sponsor, an ITP/review, Debian Policy
+compliance, and a maintenance commitment. Months, and worth it exactly
+once demand exists — and gated on **vendoring ts-moveables into the
+release tarball** (official builders have no network), the same constraint
+Homebrew core hit. The full Tier-3 campaign, sequencing and the Debian-
+archive endgame live in the commercial strategy docs
+(`super-log-commercial/docs/strategy/07-linux-standard.md`), not here.
+
+### Distro-agnostic shortcut — Snap
+
+A `snapcraft.yaml` bundles Node and the hub into one confined package that
+installs the same on every distro (`snap install super-log`), sidestepping
+per-distro packaging entirely. A good launch accelerant; not a substitute
+for being *in* the archives, which is what "standard" ultimately means.
 
 ## The shared keystone
 

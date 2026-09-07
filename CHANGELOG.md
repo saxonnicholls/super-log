@@ -5,6 +5,46 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-fix and FIX session logs: the quiet failure, made loud.** A FIX
+session fails the way expensive things fail - silently. A rejected order, a
+sequence gap, a session that logged out mid-day and stopped filling: each is
+one line in an engine's message log, buried in a wall of heartbeats, and
+nobody is tailing that file at the moment money is on the line. superlog-fix
+follows QuickFIX / FIX8 message logs (SOH-delimited tag=value, one message
+per line) by name (tail -F, so a logrotate can't end the stream) and turns
+each message into a bench event with the discipline every watcher here keeps:
+a Reject / BusinessMessageReject is ERROR with its reason (the Text field)
+and the offending RefTagID; an ExecutionReport is INFO for a fill but ERROR
+when it reports a rejected order (ExecType/OrdStatus 8); a Logout,
+SequenceReset or ResendRequest is WARN; a Heartbeat is DEBUG. ClOrdID,
+Symbol, Side, OrderQty, Price and OrdStatus ride as fields; the topic is
+fix.<begin>-<sender>-<target>, derived from the message and never the
+filename, so several sessions in one log separate cleanly. The tolerant
+reader also accepts pipe / caret-A delimiters and a leading local-timestamp
+prefix. **Credentials never reach the bench by construction**: a FIX Logon
+carries a password in tag 554 (and sometimes 925/96), so the tailer emits an
+allowlist of tags and never the raw message - the password cannot land in an
+event or the journal. VERIFIED two ways: tests/fix.test.mjs drives FIX
+messages (including a Logon bearing a password) through a real hub and asserts
+the levelling, the rejected-fill-as-ERROR rule, session-topic derivation,
+delimiter tolerance, one-event-per-message, and that the password reaches
+ZERO events - 10 checks green (node --test); and separately run against the
+user's own QuickFIX logs (FIX.4.4 LMAX and FIX.4.2, ~150K real messages),
+where the real account password in a real Logon's tag 554 appeared in none of
+the parsed events, a genuine rejected order surfaced as ERROR, and an unknown
+MsgType decoded as INFO. README entry in all three places, MCP guide.json
+stream (fix.<session>) and the fix-session-went-quiet playbook, PROTOCOL row.
+
+**The .rpm joins the .deb (Lane F).** `packaging/rpm` (super-log.spec +
+build-rpm.sh) builds an RPM inside a Fedora container - same payload as the
+.deb: hub daemon, SDK headers, the zero-dependency tailers as commands, and
+a systemd unit with the standard scriptlets. Two real bugs found and fixed
+by actually building it: the hub links libatomic (gcc lowers some atomics to
+out-of-line calls), so it's now a Build/Requires on the .rpm and a Depends
+on the .deb (a latent runtime break on minimal images, closed on both); and
+CMAKE_INSTALL_LIBDIR is pinned to `lib` so the header-only find_package
+config lands where %files names it on Fedora's lib64 default.
+
 **Packaging lanes and the README's story.** Three distribution channels
 authored and verified: a Homebrew formula (`packaging/homebrew` — `brew
 style` clean, builds the hub + tailers with a `brew services` block), a
