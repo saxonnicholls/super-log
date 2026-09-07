@@ -541,14 +541,15 @@ Other channels, each landing the hub and the tailers:
 # npm — the tailers and the MCP server as commands, anywhere Node ≥18 runs
 npm install -g @super-log/tailers @super-log/mcp
 
-# Debian / Ubuntu / Raspberry Pi — download the .deb, then let apt install it
-# (apt, not dpkg -i, so nodejs and libatomic1 are pulled in for you).
-# amd64 (x86-64):
-curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_amd64.deb
+# Debian / Ubuntu / Raspberry Pi — the PPA: apt install super-log, on every
+# architecture Launchpad builds (arm64/armhf included), with apt upgrade after.
+sudo add-apt-repository ppa:super-log/stable
+sudo apt update && sudo apt install super-log
+
+# ...or without adding a repo, take the .deb straight from the release (apt,
+# not dpkg -i, so nodejs and libatomic1 come with it). Pick your arch:
+curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_amd64.deb   # or _arm64.deb
 sudo apt install -y ./super-log_0.3.0_amd64.deb
-# arm64 / 64-bit Raspberry Pi:
-curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_arm64.deb
-sudo apt install -y ./super-log_0.3.0_arm64.deb
 
 # Fedora / RHEL / Rocky / Alma — dnf takes the URL directly:
 sudo dnf install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log-0.3.0-1.fc41.x86_64.rpm
