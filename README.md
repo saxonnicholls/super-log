@@ -68,6 +68,30 @@ plain HTTP POST), the hub fans out to any number of readers with
 replay-on-connect, and everything is interleaved by hub sequence — not by
 device clocks, which drift.
 
+## Quick start
+
+**macOS** — Homebrew:
+
+```sh
+brew install saxonnicholls/tap/super-log && brew services start super-log
+```
+
+**Linux** — Ubuntu / Debian / Raspberry Pi, every architecture, via the PPA:
+
+```sh
+sudo add-apt-repository ppa:super-log/stable && sudo apt update && sudo apt install super-log
+```
+
+Then see it work in two lines — the hub is already running on `:7333`:
+
+```sh
+echo "the bench is live" | superlog --topic hello
+curl -s "http://127.0.0.1:7333/recent?topic=hello"
+```
+
+Fedora/RHEL, npm, vcpkg, building from source, and the web + native viewers are
+in [Install](#install) below.
+
 ## What it does for you
 
 **One screen, everything on it.** Streams colour-coded by source and level,
