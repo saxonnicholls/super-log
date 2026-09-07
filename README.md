@@ -76,10 +76,18 @@ device clocks, which drift.
 brew install saxonnicholls/tap/super-log && brew services start super-log
 ```
 
-**Linux** — Ubuntu / Debian / Raspberry Pi, every architecture, via the PPA:
+**Ubuntu** (incl. Ubuntu Server on a Pi) — the PPA, every architecture, auto-updating:
 
 ```sh
 sudo add-apt-repository ppa:super-log/stable && sudo apt update && sudo apt install super-log
+```
+
+**Debian / Raspberry Pi OS** — the `.deb` directly (PPAs are Ubuntu-only; don't
+use `add-apt-repository` here). Pick your arch:
+
+```sh
+curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_arm64.deb   # or _amd64.deb
+sudo apt install -y ./super-log_0.3.0_arm64.deb
 ```
 
 Then see it work in two lines — the hub is already running on `:7333`:
@@ -565,15 +573,16 @@ Other channels, each landing the hub and the tailers:
 # npm — the tailers and the MCP server as commands, anywhere Node ≥18 runs
 npm install -g @super-log/tailers @super-log/mcp
 
-# Debian / Ubuntu / Raspberry Pi — the PPA: apt install super-log, on every
-# architecture Launchpad builds (arm64/armhf included), with apt upgrade after.
+# Ubuntu (incl. Ubuntu Server on a Pi) — the PPA: apt install super-log, every
+# architecture Launchpad builds (arm64 included), with apt upgrade after.
 sudo add-apt-repository ppa:super-log/stable
 sudo apt update && sudo apt install super-log
 
-# ...or without adding a repo, take the .deb straight from the release (apt,
-# not dpkg -i, so nodejs and libatomic1 come with it). Pick your arch:
-curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_amd64.deb   # or _arm64.deb
-sudo apt install -y ./super-log_0.3.0_amd64.deb
+# Debian / Raspberry Pi OS — PPAs are Ubuntu-only (no add-apt-repository here),
+# so take the .deb from the release (apt, not dpkg -i, so nodejs and libatomic1
+# come with it). Pick your arch — arm64 for a 64-bit Pi, amd64 for x86:
+curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_arm64.deb   # or _amd64.deb
+sudo apt install -y ./super-log_0.3.0_arm64.deb
 
 # Fedora / RHEL / Rocky / Alma — dnf takes the URL directly:
 sudo dnf install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log-0.3.0-1.fc41.x86_64.rpm
