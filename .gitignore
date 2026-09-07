@@ -77,3 +77,6 @@ build-inst/
 homebrew-tap/
 packaging/rpm/*.rpm
 build-rpm/
+
+# release signing identity (personal)
+scripts/release.env

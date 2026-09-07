@@ -34,8 +34,12 @@ set -eu
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-KEYID="${SUPER_LOG_SIGN_KEY:-13F633B102B34374}"
-FPR="${SUPER_LOG_SIGN_FPR:-DFDD6A2AB670758097762A0813F633B102B34374}"
+# The signing identity is personal, so it is NOT hardcoded here. Put your GPG
+# key id and fingerprint in scripts/release.env (gitignored) or the
+# environment - see scripts/release.env.example.
+[ -f "$REPO_ROOT/scripts/release.env" ] && . "$REPO_ROOT/scripts/release.env"
+KEYID="${SUPER_LOG_SIGN_KEY:?set SUPER_LOG_SIGN_KEY (your GPG key id) in scripts/release.env or the environment}"
+FPR="${SUPER_LOG_SIGN_FPR:?set SUPER_LOG_SIGN_FPR (your GPG fingerprint) in scripts/release.env or the environment}"
 PPA="${SUPER_LOG_PPA:-ppa:super-log/stable}"
 SERIES="${SUPER_LOG_SERIES:-noble}"
 IMG_DEB="ubuntu:24.04"
