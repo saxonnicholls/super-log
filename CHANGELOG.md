@@ -5,6 +5,29 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**superlog-mavlink: a drone's telemetry on the bench.** ArduPilot and PX4
+speak MAVLink, and the failures that end a flight - a battery past the
+reserve, a lost GPS fix, an EKF failsafe, a link gone quiet - live in that
+binary stream and nowhere a log tool reads, shown by a ground station for one
+second before the next frame scrolls them away. superlog-mavlink binds the
+UDP stream a GCS/SITL forwards (or replays a .tlog), decodes v1 and v2 frames
+CRC-checked (CRC-16/MCRF4XX + per-message CRC_EXTRA), and keeps the bench
+discipline: battery and satellites are DEBUG metric readings; a low battery
+(--batt-warn/--batt-crit), a lost 3D fix, an EMERGENCY system status and a
+link that stops heart-beating are edge-triggered WARN/ERROR with recovery;
+mode and arm changes are one INFO; and the flight controller's own STATUSTEXT
+rides through at its MAV_SEVERITY (an EKF failsafe arrives an ERROR because
+the autopilot said so). One topic per sysid; no config, MAVLink is
+self-describing. VERIFIED without a drone, honestly: tests/mavlink.test.mjs
+hand-encodes real-CRC v1 and v2 frames and sends them over a real UDP socket
+to a real hub - the battery WARN->ERROR->recovery crossings, the GPS edge, the
+EMERGENCY-as-ERROR, STATUSTEXT severity mapping, a denied COMMAND_ACK, v1/v2
+both, sysid topic separation, and that a bad-CRC frame produces ZERO events
+(no phantom messages) - 9 checks green (node --test). README entry in all
+three places, MCP guide.json stream (mavlink.<sysid>) and the drone-postflight
+playbook, PROTOCOL row. Companion planning in the commercial signal-domains
+doc; MAVLink was the recommended first pick and it is done.
+
 **superlog-fix and FIX session logs: the quiet failure, made loud.** A FIX
 session fails the way expensive things fail - silently. A rejected order, a
 sequence gap, a session that logged out mid-day and stopped filling: each is

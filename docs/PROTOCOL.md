@@ -91,6 +91,7 @@ host-side tailer scraping the same device:
 | `socket.<host>.<peer>`| plain lines on a raw TCP or UDP socket |
 | `ros.<host>.<node>`   | a ROS 1 / ROS 2 node's log, one topic per node, from `/rosout` or `~/.ros/log` |
 | `fix.<session>`       | a FIX session log (QuickFIX, FIX8), SOH-delimited tag=value; the topic is `fix.<begin>-<sender>-<target>` from the message itself; MsgType levelled (Reject/rejected-fill ERROR, Logout/SequenceReset WARN, fills/orders INFO, Heartbeat DEBUG), with ClOrdID, Symbol, Side, Price, OrdStatus and the reject Text as fields |
+| `mavlink.<sysid>`     | a drone's MAVLink telemetry (ArduPilot/PX4), decoded from v1/v2 frames with the real CRC, from a UDP stream or a `.tlog`; battery and satellites as `metric` readings, edge-triggered WARN/ERROR on low battery, lost 3D GPS fix, EMERGENCY system status and a link that stops heart-beating (recovery announced), mode/arm changes as INFO, and the flight controller's own STATUSTEXT at its MAV_SEVERITY |
 | `gpu.<host>.<index>`  | a GPU: utilisation, memory, temperature and power as `metric` events, plus threshold crossings |
 | `cuda.<app>`          | a CUDA program: kernel time from CUDA events, device printf, and faults caught at the synchronise |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |

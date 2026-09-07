@@ -31,6 +31,7 @@
     "superlog-replay": "bin/superlog-replay.mjs",
     "superlog-ros": "bin/superlog-ros.mjs",
     "superlog-fix": "bin/superlog-fix.mjs",
+    "superlog-mavlink": "bin/superlog-mavlink.mjs",
     "superlog-rpc": "bin/superlog-rpc.mjs",
     "superlog-search": "bin/superlog-search.mjs",
     "superlog-serial": "bin/superlog-serial.mjs",
