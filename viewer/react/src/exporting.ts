@@ -1,7 +1,7 @@
 //
 //  exporting.ts - serialisers for copy and export.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  One module so the clipboard, the three file exports and (by column

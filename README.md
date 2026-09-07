@@ -1602,4 +1602,4 @@ git clone --recurse-submodules --shallow-submodules --branch v0.1.0 \
 someone copies one out — which, for a repo made of self-contained
 single-file tools, is how most of it will actually be reused.
 
-Copyright 2026 Saxon Herschel Nicholls.
+Copyright 2026 Saxon Nicholls.

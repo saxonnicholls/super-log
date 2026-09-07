@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Herschel Nicholls
+// Copyright 2026 Saxon Nicholls
 // SPDX-License-Identifier: MIT
 //
 // One grid, two panels: the alarms panel shows production's routes, the

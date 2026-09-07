@@ -2,7 +2,7 @@
 //
 //  superlog-netstate - the network's state, watched; changes, announced.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Half of "everything just broke" on a development bench is the network

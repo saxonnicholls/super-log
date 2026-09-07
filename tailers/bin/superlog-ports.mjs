@@ -2,7 +2,7 @@
 //
 //  superlog-ports - what is listening, and which process owns it.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A listening socket is boring until it changes, and then it is the most

@@ -2,7 +2,7 @@
   "name": "@super-log/tailers",
   "version": "0.3.0",
   "description": "super-log tailers: 40+ zero-dependency log sources for one hub - devices, services, chains, network, OpenTelemetry and more",
-  "author": "Saxon Herschel Nicholls",
+  "author": "Saxon Nicholls",
   "type": "module",
   "bin": {
     "superlog": "bin/superlog-tee.mjs",

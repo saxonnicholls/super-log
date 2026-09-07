@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Herschel Nicholls
+// Copyright 2026 Saxon Nicholls
 // SPDX-License-Identifier: MIT
 //
 // The PRs board: whose move is it, and for how long. superlog-prs

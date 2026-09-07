@@ -1,7 +1,7 @@
 //
 //  tests/ros.test.mjs - superlog-ros against a stand-in for the robot.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A ROS distro is not something CI has, and the tool never links against

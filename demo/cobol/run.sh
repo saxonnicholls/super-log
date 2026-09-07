@@ -2,7 +2,7 @@
 #
 #  run.sh - build and run the COBOL clock.
 #
-#  Copyright 2026 Saxon Herschel Nicholls
+#  Copyright 2026 Saxon Nicholls
 #  SPDX-License-Identifier: MIT
 #
 #  The mode is compiled into the C shim, exactly like any C program -

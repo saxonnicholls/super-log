@@ -2,7 +2,7 @@
 //
 //  superlog-github - a GitHub repository on the same screen as the bench.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The local git watcher answers "what changed here". This answers "what

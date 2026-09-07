@@ -2,7 +2,7 @@
 //
 //  superlog-power - watts, thermals, and who is drawing them. macOS.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  This machine sat at 1258% aggregate CPU - eleven saturated cores, one

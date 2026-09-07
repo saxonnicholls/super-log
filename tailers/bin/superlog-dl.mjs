@@ -2,7 +2,7 @@
 //
 //  superlog-dl - a download in flight, on the bench.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A 100GB model fetch is hours of silence in a terminal somewhere, and the

@@ -2,7 +2,7 @@
 #
 # make-orig-tarball.sh - assemble a network-free super-log source tarball.
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # A Launchpad PPA (and Debian proper) build with NO network access, but

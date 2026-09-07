@@ -1,7 +1,7 @@
 //
 //  tests/mavlink.test.mjs - superlog-mavlink against hand-built MAVLink.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  No drone, and none needed. MAVLink is a documented binary frame with a

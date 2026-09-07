@@ -1,4 +1,4 @@
-! Copyright 2026 Saxon Herschel Nicholls
+! Copyright 2026 Saxon Nicholls
 ! SPDX-License-Identifier: MIT
 !
 ! The Fortran demo client - the same clock the other demo clients run, one

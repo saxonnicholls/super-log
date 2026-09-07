@@ -2,7 +2,7 @@
 //  SuperLog.java
 //  super-log - the Java SDK
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Same contract as the C++, Rust, Python and JS SDKs: events go into a

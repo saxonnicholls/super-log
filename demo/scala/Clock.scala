@@ -1,7 +1,7 @@
 //
 //  Clock.scala - the Scala demo client, riding the Java SDK.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Scala needs no SDK of its own for the same reason Kotlin does not: it

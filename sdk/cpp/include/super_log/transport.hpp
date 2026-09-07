@@ -2,7 +2,7 @@
 //  transport.hpp
 //  super-log C++ SDK
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The batching half of the SDK: events go into a bounded queue from any

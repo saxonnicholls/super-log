@@ -1,7 +1,7 @@
 //
 //  tests/gpu.test.mjs - superlog-gpu against stand-ins for four vendors.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Only one GPU is ever present on the machine running this, so the vendor

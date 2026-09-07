@@ -1,7 +1,7 @@
 --
 --  superlog.lua - the Lua client, stdlib plus curl.
 --
---  Copyright 2026 Saxon Herschel Nicholls
+--  Copyright 2026 Saxon Nicholls
 --  SPDX-License-Identifier: MIT
 --
 --  Lua's standard library has no sockets, so this makes the same honest

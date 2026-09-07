@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Herschel Nicholls
+// Copyright 2026 Saxon Nicholls
 // SPDX-License-Identifier: MIT
 //
 // The devices panel: each host's USB tree, live, from superlog-usb's

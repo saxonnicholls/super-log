@@ -1,7 +1,7 @@
 /*
  *  clock.c - the plain C demo client.
  *
- *  Copyright 2026 Saxon Herschel Nicholls
+ *  Copyright 2026 Saxon Nicholls
  *  SPDX-License-Identifier: MIT
  *
  *  The same clock every other demo client runs, once a second on c.clock:

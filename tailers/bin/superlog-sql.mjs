@@ -2,7 +2,7 @@
 //
 //  superlog-sql - SQL on the bench: Postgres NOTIFY and SQLite, watched.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  SQL runs inside an engine, so it cannot POST - but engines can talk.

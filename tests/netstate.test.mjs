@@ -1,7 +1,7 @@
 //
 //  tests/netstate.test.mjs - the network state watcher, on the real network.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Nothing mocked: the inventory test reads THIS machine's real

@@ -1,14 +1,14 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: super-log
-Upstream-Contact: Saxon Herschel Nicholls <me@saxonnicholls.com>
+Upstream-Contact: Saxon Nicholls <me@saxonnicholls.com>
 Source: https://github.com/saxonnicholls/super-log
 
 Files: *
-Copyright: 2026 Saxon Herschel Nicholls
+Copyright: 2026 Saxon Nicholls
 License: MIT
 
 Files: vendor/ts-moveables/*
-Copyright: 2024-2026 Saxon Herschel Nicholls
+Copyright: 2024-2026 Saxon Nicholls
 License: MIT
 Comment: Vendored at a pinned commit so the build fetches nothing. Upstream at
  https://github.com/saxonnicholls/ts-moveables

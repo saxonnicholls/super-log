@@ -2,7 +2,7 @@
 //
 //  superlog-gas - key balances on chain, with the alarm built in.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  An operational key that runs out of gas stops a production system as

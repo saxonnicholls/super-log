@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Herschel Nicholls
+// Copyright 2026 Saxon Nicholls
 // SPDX-License-Identifier: MIT
 
 // Package superlog forwards log events to a super-log hub.

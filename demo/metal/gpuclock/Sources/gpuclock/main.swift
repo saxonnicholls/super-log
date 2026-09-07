@@ -1,7 +1,7 @@
 //
 //  demo/metal/gpuclock - GPU work on the bench, with no GPU logger.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The point of this demo is what is NOT here. There is no Metal support in

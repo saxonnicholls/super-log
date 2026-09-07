@@ -2,7 +2,7 @@
 //
 //  superlog-ws - what is actually flowing down a WebSocket.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A WebSocket is the one part of a system with no log. HTTP leaves a trail

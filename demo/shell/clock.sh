@@ -2,7 +2,7 @@
 #
 # clock.sh - the shell demo client
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # The same clock the other demo clients run, once a second on topic

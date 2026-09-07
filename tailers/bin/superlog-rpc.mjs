@@ -2,7 +2,7 @@
 //
 //  superlog-rpc - the RPC node endpoints, watched: block height and health.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A chain watcher, a gas checker, an oracle - all of them are only as

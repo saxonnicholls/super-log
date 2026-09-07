@@ -2,7 +2,7 @@
 //
 //  superlog-watch - a directory tree, on the bench, as it changes.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  "It worked five minutes ago" is a question about files, and the answer is

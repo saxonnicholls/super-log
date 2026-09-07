@@ -1,7 +1,7 @@
 //
 //  tests/otlp.test.mjs - the OpenTelemetry inlet, against a real hub.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The inlet runs as a subprocess and real HTTP crosses the wire, per the

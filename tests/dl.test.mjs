@@ -1,7 +1,7 @@
 //
 //  tests/dl.test.mjs - superlog-dl against stand-ins for three progress bars.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The bars are played by shell scripts emitting captured shapes - tqdm,

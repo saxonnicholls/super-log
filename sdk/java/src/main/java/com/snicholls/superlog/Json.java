@@ -2,7 +2,7 @@
 //  Json.java
 //  super-log Java SDK
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Hand-rolled escaping, the same forty lines the Rust and C++ SDKs carry.

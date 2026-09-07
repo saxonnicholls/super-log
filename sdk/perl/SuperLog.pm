@@ -3,7 +3,7 @@ package SuperLog;
 #
 #  SuperLog.pm - the Perl client, core modules only.
 #
-#  Copyright 2026 Saxon Herschel Nicholls
+#  Copyright 2026 Saxon Nicholls
 #  SPDX-License-Identifier: MIT
 #
 #  Zero CPAN: HTTP::Tiny (core since 5.14), JSON::PP, Time::HiRes and

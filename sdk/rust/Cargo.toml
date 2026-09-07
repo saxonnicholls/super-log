@@ -3,7 +3,7 @@ name = "super-log"
 version = "0.1.0"
 edition = "2021"
 description = "Forward log and tracing events to a super-log hub"
-authors = ["Saxon Herschel Nicholls"]
+authors = ["Saxon Nicholls"]
 publish = false
 license = "MIT"
 

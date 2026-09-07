@@ -1,7 +1,7 @@
 //
 //  clock.zig - the Zig demo client.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Zig needs no SDK at all: @cImport reads sdk/c/superlog.h directly and

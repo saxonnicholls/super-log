@@ -2,7 +2,7 @@
 //
 //  superlog-search - what happened at 3am.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The hub's retention is minutes (a per-topic ring of recent events) and

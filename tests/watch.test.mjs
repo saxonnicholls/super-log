@@ -1,7 +1,7 @@
 //
 //  tests/watch.test.mjs - superlog-watch over a real temp tree.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Real files, real fs.watch, real debounce. The three things worth holding

@@ -2,7 +2,7 @@
 //
 //  superlog-otlp - the OpenTelemetry inlet: OTel -> the bench.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Anything OpenTelemetry-instrumented joins the bench with no new SDK -

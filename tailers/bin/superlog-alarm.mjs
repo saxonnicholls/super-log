@@ -2,7 +2,7 @@
 //
 //  superlog-alarm - the inbound half: production's way to reach the bench.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Production systems here are deliberately mute - every SDK's PRODUCTION

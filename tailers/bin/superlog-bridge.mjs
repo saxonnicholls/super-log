@@ -2,7 +2,7 @@
 //
 //  superlog-bridge - one bench out of many hubs.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A hub already rebroadcasts everything it ingests on /ws, so hubs

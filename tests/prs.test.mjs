@@ -1,7 +1,7 @@
 //
 //  tests/prs.test.mjs - the PR watcher, against real GitHub.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  gh carries the wire, so this runs only where gh is authenticated

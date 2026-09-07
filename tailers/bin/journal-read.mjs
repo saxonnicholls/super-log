@@ -1,7 +1,7 @@
 //
 //  journal-read - the other end of superlog-journal.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  superlog-journal appends hub envelope frames verbatim, one per line.

@@ -6,7 +6,7 @@
 # os.<hostname> - the Linux half of "OS logs beside app logs", and the live
 # verification of that tailer against a real journald.
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 set -e

@@ -2,7 +2,7 @@
 #
 # release.sh - cut a super-log release to GitHub AND Launchpad, in one go.
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # One version, two homes, kept in sync:

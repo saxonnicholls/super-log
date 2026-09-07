@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # Build and run the hub, then print how to point everything else at it.

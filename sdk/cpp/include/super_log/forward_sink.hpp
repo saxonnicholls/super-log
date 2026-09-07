@@ -2,7 +2,7 @@
 //  forward_sink.hpp
 //  super-log C++ SDK
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The bridge from snicholls::log to superlogd, and it is three lines because

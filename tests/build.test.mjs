@@ -1,7 +1,7 @@
 //
 //  tests/build.test.mjs - superlog-build against real compiler output.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The whole value of this tool is the folding: a Swift error is one finding

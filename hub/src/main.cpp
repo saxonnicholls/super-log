@@ -1,7 +1,7 @@
 //
 //  superlogd - the super-log hub
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  One process on the dev machine. Producers POST NDJSON chunks to

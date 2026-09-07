@@ -2,7 +2,7 @@
 #
 # setup.sh - put super-log into a project without putting super-log IN it.
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 #   ./scripts/setup.sh ~/code/my-app

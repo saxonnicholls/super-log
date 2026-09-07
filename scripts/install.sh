@@ -2,7 +2,7 @@
 #
 # install.sh - build super-log, verify it delivers, and keep it running.
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # The one-command install for a bench of your own. It does four things, in

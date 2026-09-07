@@ -2,7 +2,7 @@
 //
 //  superlog-starlink - the dish, watched: readings, alerts, and outages.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Starlink's dish speaks gRPC on 192.168.100.1:9200 (LAN-only,

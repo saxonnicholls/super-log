@@ -1,7 +1,7 @@
 //
 //  tests/alert.test.mjs - the combo rule: correlation, said once.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A deploy alone is routine and an error alone is routine; the two inside

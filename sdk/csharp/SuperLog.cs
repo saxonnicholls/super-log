@@ -1,7 +1,7 @@
 //
 //  SuperLog.cs - the C# client, BCL only.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Zero NuGet: HttpClient and System.Text.Json ship with .NET. One file,

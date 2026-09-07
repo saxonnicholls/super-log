@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # The whole bench, one command:  ./demo/run.sh   (or: npm run demo)

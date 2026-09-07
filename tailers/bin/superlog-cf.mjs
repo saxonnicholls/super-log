@@ -2,7 +2,7 @@
 //
 //  superlog-cf - Cloudflare Workers on the bench.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A Worker's logs live in a browser tab you have to remember to open, on a

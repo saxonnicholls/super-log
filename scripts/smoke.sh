@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright 2026 Saxon Herschel Nicholls
+# Copyright 2026 Saxon Nicholls
 # SPDX-License-Identifier: MIT
 #
 # The one smoke test - run identically by CI, the Ubuntu image build

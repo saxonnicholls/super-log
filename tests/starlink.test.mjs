@@ -1,7 +1,7 @@
 //
 //  tests/starlink.test.mjs - the dish watcher, against the real dish.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Runs only where a dish answers (skipped in CI, real on the bench,

@@ -1,7 +1,7 @@
 /*
  *  shim.c - the two dozen lines between COBOL and the bench.
  *
- *  Copyright 2026 Saxon Herschel Nicholls
+ *  Copyright 2026 Saxon Nicholls
  *  SPDX-License-Identifier: MIT
  *
  *  GnuCOBOL compiles to C and CALLs C by symbol, so COBOL does not need

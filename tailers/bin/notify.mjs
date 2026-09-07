@@ -1,7 +1,7 @@
 //
 //  notify.mjs - one interface, many ways to reach a human.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Every alerting path here - the rules engine, the inbound alarm gateway,

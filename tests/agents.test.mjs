@@ -1,7 +1,7 @@
 //
 //  tests/agents.test.mjs - the agents blotter's feed, over real MCP stdio.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Nothing mocked: a real superlog-mcp process over real stdio JSON-RPC

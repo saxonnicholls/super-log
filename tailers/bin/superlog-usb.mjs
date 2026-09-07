@@ -2,7 +2,7 @@
 //
 //  superlog-usb - the machine's device tree, watched; hotplug, announced.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The bench's physical edge: what is plugged into what. On macOS the

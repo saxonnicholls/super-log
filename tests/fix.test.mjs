@@ -1,7 +1,7 @@
 //
 //  tests/fix.test.mjs - superlog-fix against a real QuickFIX-style message log.
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A FIX message log is SOH-delimited tag=value, one message per line, and

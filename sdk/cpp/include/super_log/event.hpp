@@ -2,7 +2,7 @@
 //  event.hpp
 //  super-log C++ SDK
 //
-//  Copyright 2026 Saxon Herschel Nicholls
+//  Copyright 2026 Saxon Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  One event, one NDJSON line - the serialisation half of the SDK, shared by

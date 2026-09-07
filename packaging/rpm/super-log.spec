@@ -86,8 +86,8 @@ install -m 0644 packaging/rpm/superlogd.service \
 /usr/lib/cmake/ts_moveables/
 
 %changelog
-* Mon Sep 07 2026 Saxon Herschel Nicholls <me@saxonnicholls.com> - 0.3.0-1
+* Mon Sep 07 2026 Saxon Nicholls <me@saxonnicholls.com> - 0.3.0-1
 - super-log 0.3.0: FIX session logs and MAVLink drone telemetry, plus the
   verified .rpm lane (libatomic dependency, lib install dir).
-* Mon Sep 07 2026 Saxon Herschel Nicholls <me@saxonnicholls.com> - 0.2.0-1
+* Mon Sep 07 2026 Saxon Nicholls <me@saxonnicholls.com> - 0.2.0-1
 - super-log 0.2.0: alarms, agents, OpenTelemetry, RPC health, and more.
