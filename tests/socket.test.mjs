@@ -1,7 +1,7 @@
 //
 //  tests/socket.test.mjs - superlog-socket against real datagrams.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  This inlet exists for the half of a bench that will never run an SDK - a

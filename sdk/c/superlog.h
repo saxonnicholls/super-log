@@ -1,7 +1,7 @@
 /*
  *  superlog.h - the plain C client, header-only, POSIX sockets and libc.
  *
- *  Copyright 2026 Saxon Nicholls
+ *  Copyright 2026 Saxon Herschel Nicholls
  *  SPDX-License-Identifier: MIT
  *
  *  One header, stb-style: include it, compile with the mode declared, done.

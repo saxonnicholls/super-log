@@ -1,7 +1,7 @@
 //
 //  tests/gas.test.mjs - superlog-gas against a stand-in JSON-RPC node.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The chain is played by a local HTTP server whose balances this file

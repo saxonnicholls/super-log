@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Nicholls
+// Copyright 2026 Saxon Herschel Nicholls
 // SPDX-License-Identifier: MIT
 //
 // The alarm gateway, as React state: the routes roster polled every 30s,

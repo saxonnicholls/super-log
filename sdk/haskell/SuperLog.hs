@@ -2,7 +2,7 @@
 --
 --  SuperLog.hs - the Haskell client: GHC's boot libraries, plus curl.
 --
---  Copyright 2026 Saxon Nicholls
+--  Copyright 2026 Saxon Herschel Nicholls
 --  SPDX-License-Identifier: MIT
 --
 --  base has no sockets and this repo takes no dependencies, so the wire is

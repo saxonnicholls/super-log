@@ -2,7 +2,7 @@
 //
 //  superlog-grpc - a logging reverse proxy for gRPC calls.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Point a gRPC client at this instead of the real service; it forwards

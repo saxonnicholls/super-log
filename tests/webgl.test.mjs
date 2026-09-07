@@ -1,7 +1,7 @@
 //
 //  tests/webgl.test.mjs - patchWebGL against a stand-in context.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  There is no GPU and no browser in a test runner, so the WebGL context is

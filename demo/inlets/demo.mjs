@@ -2,7 +2,7 @@
 //
 //  demo/inlets/demo.mjs - the inlets, demonstrated without any hardware.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Three of the tools here look like they need equipment you have not got: a

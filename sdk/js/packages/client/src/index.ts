@@ -1,7 +1,7 @@
 //
 //  @super-log/client
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  One client for every JavaScript we run: React Native (Expo), the browser,

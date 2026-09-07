@@ -1,7 +1,7 @@
 //
 //  tests/git.test.mjs - superlog-git against a scratch repository.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A real repo, built by real git commands, watched by the real tool. The

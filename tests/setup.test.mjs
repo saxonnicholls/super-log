@@ -1,7 +1,7 @@
 //
 //  tests/setup.test.mjs - setup.sh and the logging.sh it writes.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  This pair is the documented front door: a stranger's first contact with

@@ -1,7 +1,7 @@
 //
 //  tests/sql.test.mjs - SQL on the bench, against real engines.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Nothing mocked, per the house rule: the SQLite half writes a real

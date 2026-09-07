@@ -1,7 +1,7 @@
 //
 //  tests/tee.test.mjs - superlog-tee, which must behave exactly like tee(1).
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  This tool gets dropped into somebody's pipeline, and the moment it alters

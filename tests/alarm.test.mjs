@@ -1,7 +1,7 @@
 //
 //  tests/alarm.test.mjs - the inbound gateway, held to the 4.7-day lesson.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Three promises earn this file, each the negation of a real failure: a

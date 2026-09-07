@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "description": "Forward console and structured logs to a super-log hub - React Native, browser, Node",
-  "author": "Saxon Nicholls",
+  "author": "Saxon Herschel Nicholls",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

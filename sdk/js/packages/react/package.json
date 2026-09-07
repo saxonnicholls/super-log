@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Provider + error boundary: every error in a React tree reaches the bench",
-  "author": "Saxon Nicholls",
+  "author": "Saxon Herschel Nicholls",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

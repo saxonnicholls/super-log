@@ -2,7 +2,7 @@
 #
 # build-rpm.sh - build a super-log .rpm, inside Fedora/Rocky.
 #
-# Copyright 2026 Saxon Nicholls
+# Copyright 2026 Saxon Herschel Nicholls
 # SPDX-License-Identifier: MIT
 #
 # rpmbuild is a Red Hat tool, so this runs in a Red Hat container - the

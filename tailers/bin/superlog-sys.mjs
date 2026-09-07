@@ -2,7 +2,7 @@
 //
 //  superlog-sys - the machine's own life events. macOS.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  This bench crashed four times before anything was watching, and the

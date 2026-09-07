@@ -1,7 +1,7 @@
 /-
   Superlog.lean - the Lean 4 client: core IO plus curl, nothing else.
 
-  Copyright 2026 Saxon Nicholls
+  Copyright 2026 Saxon Herschel Nicholls
   SPDX-License-Identifier: MIT
 
   Lean's core library has no sockets, and this repo takes no dependencies -

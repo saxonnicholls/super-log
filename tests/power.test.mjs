@@ -1,7 +1,7 @@
 //
 //  tests/power.test.mjs - superlog-power against a stand-in powermetrics.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  powermetrics requires root, and a test suite must not - so the sudo and

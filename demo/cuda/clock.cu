@@ -1,7 +1,7 @@
 //
 //  clock.cu - the CUDA demo client
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The GPU half of the same argument the Metal demo makes: super-log has no

@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Nicholls
+// Copyright 2026 Saxon Herschel Nicholls
 // SPDX-License-Identifier: MIT
 //
 // DEVELOPMENT's panel - the endpoint factory and the deliveries it

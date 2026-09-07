@@ -2,7 +2,7 @@
   "name": "@super-log/mcp",
   "version": "0.3.0",
   "description": "MCP server: let a coding agent query the super-log bench",
-  "author": "Saxon Nicholls",
+  "author": "Saxon Herschel Nicholls",
   "type": "module",
   "bin": {
     "superlog-mcp": "bin/superlog-mcp.mjs"

@@ -1,7 +1,7 @@
 //
 //  tests/harness.mjs - what every test file stands on.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The tools here are executable scripts that do their work on import: they

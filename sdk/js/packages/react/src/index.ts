@@ -1,7 +1,7 @@
 //
 //  @super-log/react
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The provider pattern over @super-log/client: wrap the tree once and

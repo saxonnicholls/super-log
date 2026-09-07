@@ -1,7 +1,7 @@
 //
 //  env.mjs - read .env without a dependency.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Enough dotenv for this repo's needs: KEY=value, # comments, optional

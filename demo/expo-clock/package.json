@@ -2,7 +2,7 @@
   "name": "expo-clock",
   "version": "1.0.0",
   "description": "The real Expo clock client - HANDOFF M2's first light. Standalone on purpose (not a workspace): its RN dependency tree stays out of the root install.",
-  "author": "Saxon Nicholls",
+  "author": "Saxon Herschel Nicholls",
   "main": "index.ts",
   "dependencies": {
     "@super-log/client": "file:../../sdk/js/packages/client",

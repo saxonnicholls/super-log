@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "description": "One hub for every log stream on the dev bench",
-  "author": "Saxon Nicholls",
+  "author": "Saxon Herschel Nicholls",
   "workspaces": [
     "sdk/js/packages/*",
     "tailers",

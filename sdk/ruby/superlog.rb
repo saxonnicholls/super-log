@@ -2,7 +2,7 @@
 #
 #  superlog.rb - the Ruby client, stdlib only.
 #
-#  Copyright 2026 Saxon Nicholls
+#  Copyright 2026 Saxon Herschel Nicholls
 #  SPDX-License-Identifier: MIT
 #
 #  Zero gems: net/http, json and securerandom all ship with Ruby. The mode

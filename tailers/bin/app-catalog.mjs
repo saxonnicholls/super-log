@@ -1,7 +1,7 @@
 //
 //  app-catalog.mjs - where the well-known apps keep their logs.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The top-20 things a developer actually wants on the bench - databases,

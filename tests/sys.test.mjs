@@ -2,7 +2,7 @@
 //  tests/sys.test.mjs - superlog-sys against synthetic reports and a
 //  stand-in diskutil.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A real crash cannot be scheduled and a real panic should not be, so the

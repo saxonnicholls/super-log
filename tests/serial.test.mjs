@@ -1,7 +1,7 @@
 //
 //  tests/serial.test.mjs - superlog-serial against a pseudo-terminal.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A pty is a character device in every way the tailer cares about: stty

@@ -2,7 +2,7 @@
 //
 //  superlog-stripe - Stripe events on the bench, redacted by default.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A failed payment is a support ticket you have not received yet, and it

@@ -2,7 +2,7 @@
 //  Status.java
 //  super-log Java SDK
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  What a client resolved to - the first thing to print when events are not

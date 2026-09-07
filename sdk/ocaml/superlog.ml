@@ -1,7 +1,7 @@
 (*
    superlog.ml - the OCaml client, over Unix sockets and nothing else.
 
-   Copyright 2026 Saxon Nicholls
+   Copyright 2026 Saxon Herschel Nicholls
    SPDX-License-Identifier: MIT
 
    Zero dependencies beyond the unix library that ships with the compiler,

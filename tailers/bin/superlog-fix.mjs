@@ -2,7 +2,7 @@
 //
 //  superlog-fix - FIX session logs on the bench, decoded.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  FIX is the wire the world's order flow runs on, and a FIX session

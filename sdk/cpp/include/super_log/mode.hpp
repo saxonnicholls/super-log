@@ -2,7 +2,7 @@
 //  mode.hpp
 //  super-log C++ SDK
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The mode switch and the policy that rides on it.

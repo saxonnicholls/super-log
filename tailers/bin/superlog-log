@@ -2,7 +2,7 @@
 #
 #  superlog-log - any shell script, on the bench.
 #
-#  Copyright 2026 Saxon Nicholls
+#  Copyright 2026 Saxon Herschel Nicholls
 #
 #  The producer of last resort. A deploy script, a cron job, a Makefile
 #  recipe or a box you have just ssh-ed into has no SDK to link and often

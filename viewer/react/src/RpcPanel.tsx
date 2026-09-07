@@ -1,4 +1,4 @@
-// Copyright 2026 Saxon Nicholls
+// Copyright 2026 Saxon Herschel Nicholls
 // SPDX-License-Identifier: MIT
 //
 // The RPC board: block height and health per node endpoint. superlog-rpc

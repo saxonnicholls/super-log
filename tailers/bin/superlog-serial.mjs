@@ -2,7 +2,7 @@
 //
 //  superlog-serial - the serial console, on the bench with everything else.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Embedded development happens in a terminal running screen or picocom, and

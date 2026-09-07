@@ -1,7 +1,7 @@
 Source: super-log
 Section: devel
 Priority: optional
-Maintainer: Saxon Nicholls <me@saxonnicholls.com>
+Maintainer: Saxon Herschel Nicholls <me@saxonnicholls.com>
 Build-Depends: debhelper-compat (= 13), cmake, g++ (>= 10)
 Standards-Version: 4.6.2
 Homepage: https://github.com/saxonnicholls/super-log

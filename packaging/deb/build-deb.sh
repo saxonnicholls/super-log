@@ -2,7 +2,7 @@
 #
 # build-deb.sh - build a super-log .deb, inside Ubuntu.
 #
-# Copyright 2026 Saxon Nicholls
+# Copyright 2026 Saxon Herschel Nicholls
 # SPDX-License-Identifier: MIT
 #
 # dpkg-deb lives on Debian/Ubuntu, not macOS, so this is meant to run in

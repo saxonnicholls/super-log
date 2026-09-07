@@ -1,7 +1,7 @@
 //
 //  tests/rpc.test.mjs - the RPC health watcher, against stand-in nodes.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  One local server plays several chains, routed by method/path, so the

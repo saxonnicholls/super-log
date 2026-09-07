@@ -2,7 +2,7 @@
 #
 #  clock.rb - the Ruby demo client.
 #
-#  Copyright 2026 Saxon Nicholls
+#  Copyright 2026 Saxon Herschel Nicholls
 #  SPDX-License-Identifier: MIT
 #
 #  The same clock every other demo client runs, once a second on

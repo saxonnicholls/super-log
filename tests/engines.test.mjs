@@ -1,7 +1,7 @@
 //
 //  tests/engines.test.mjs - Unreal and Unity log parsing, through file mode.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  The lines here are real shapes from real logs on this bench (an Unreal

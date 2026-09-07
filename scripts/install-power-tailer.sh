@@ -2,7 +2,7 @@
 #
 # install-power-tailer.sh - let superlog-power read watts without a prompt.
 #
-# Copyright 2026 Saxon Nicholls
+# Copyright 2026 Saxon Herschel Nicholls
 # SPDX-License-Identifier: MIT
 #
 # powermetrics requires root and superlog-power never asks for a password -

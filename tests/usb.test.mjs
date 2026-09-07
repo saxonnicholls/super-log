@@ -1,7 +1,7 @@
 //
 //  tests/usb.test.mjs - the device tree watcher, on the real machine.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Nothing mocked: --once reads THIS machine's real USB plane (ioreg on

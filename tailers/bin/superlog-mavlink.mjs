@@ -2,7 +2,7 @@
 //
 //  superlog-mavlink - a drone's telemetry on the bench, decoded.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  ArduPilot and PX4 speak MAVLink: a small binary frame carrying the

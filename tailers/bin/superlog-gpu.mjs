@@ -2,7 +2,7 @@
 //
 //  superlog-gpu - what the GPU is doing, here or on another machine.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  A GPU is the one part of a box with no log. It is either idle or it is

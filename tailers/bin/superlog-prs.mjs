@@ -2,7 +2,7 @@
 //
 //  superlog-prs - pull requests, watched; silence, alarmed.
 //
-//  Copyright 2026 Saxon Nicholls
+//  Copyright 2026 Saxon Herschel Nicholls
 //  SPDX-License-Identifier: MIT
 //
 //  Born from a real failure: a reviewer requested changes, the request
