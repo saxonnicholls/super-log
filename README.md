@@ -541,22 +541,25 @@ Other channels, each landing the hub and the tailers:
 # npm — the tailers and the MCP server as commands, anywhere Node ≥18 runs
 npm install -g @super-log/tailers @super-log/mcp
 
-# Debian / Ubuntu / Raspberry Pi — the hub as a systemd unit, tailers on PATH.
-# apt (not dpkg -i) so nodejs and libatomic1 are pulled in for you.
-sudo apt install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_amd64.deb   # x86-64
-sudo apt install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_arm64.deb   # arm64 / 64-bit Raspberry Pi
+# Debian / Ubuntu / Raspberry Pi — download the .deb, then let apt install it
+# (apt, not dpkg -i, so nodejs and libatomic1 are pulled in for you).
+# amd64 (x86-64):
+curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_amd64.deb
+sudo apt install -y ./super-log_0.3.0_amd64.deb
+# arm64 / 64-bit Raspberry Pi:
+curl -fsSL -O https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log_0.3.0_arm64.deb
+sudo apt install -y ./super-log_0.3.0_arm64.deb
 
-# Fedora / RHEL / Rocky / Alma
+# Fedora / RHEL / Rocky / Alma — dnf takes the URL directly:
 sudo dnf install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log-0.3.0-1.fc41.x86_64.rpm
 
 # vcpkg — the zero-dependency C SDK, to log to a hub from C or C++
 vcpkg install super-log
 ```
 
-On a systemd host the hub starts on install; in a container without systemd,
-run `superlogd` yourself. Pick the `.deb` for your architecture (`dpkg
---print-architecture`); older apt that can't fetch a URL takes a downloaded
-file: `sudo apt install -y ./super-log_0.3.0_<arch>.deb`.
+Pick the `.deb` for your architecture (`dpkg --print-architecture`). On a
+systemd host the hub starts on install; in a container without systemd, run
+`superlogd` yourself.
 
 The MCP server also runs straight from npx, no install:
 `claude mcp add super-log -- npx -y @super-log/mcp`. The **viewers** (native
