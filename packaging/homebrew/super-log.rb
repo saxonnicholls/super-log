@@ -17,8 +17,8 @@
 class SuperLog < Formula
   desc "One hub for every log stream on a development bench"
   homepage "https://github.com/saxonnicholls/super-log"
-  url "https://github.com/saxonnicholls/super-log/archive/refs/tags/v0.2.0.tar.gz"
-  sha256 "bcd958d56b536bedd1e288a1460f1da746d6b467f5fee31cc10376753c790178"
+  url "https://github.com/saxonnicholls/super-log/archive/refs/tags/v0.3.0.tar.gz"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # v0.3.0: set from the release tarball
   license "MIT"
 
   depends_on "cmake" => :build

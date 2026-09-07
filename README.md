@@ -542,7 +542,7 @@ Other channels, each landing the hub and the tailers:
 npm install -g @super-log/tailers @super-log/mcp
 
 # Debian / Ubuntu — the hub as a systemd unit, tailers on PATH
-sudo dpkg -i super-log_0.2.0_amd64.deb        # from the GitHub release
+sudo dpkg -i super-log_0.3.0_amd64.deb        # from the GitHub release
 
 # vcpkg — the zero-dependency C SDK, to log to a hub from C or C++
 vcpkg install super-log

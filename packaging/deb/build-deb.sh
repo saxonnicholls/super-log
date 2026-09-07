@@ -20,7 +20,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 REPO="$(pwd)"
-VERSION="${SUPER_LOG_VERSION:-0.2.0}"
+VERSION="${SUPER_LOG_VERSION:-0.3.0}"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

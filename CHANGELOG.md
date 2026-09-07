@@ -3,7 +3,7 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
-## Unreleased
+## 0.3.0 — 2026-09-07
 
 **superlog-mavlink: a drone's telemetry on the bench.** ArduPilot and PX4
 speak MAVLink, and the failures that end a flight - a battery past the

@@ -1,6 +1,6 @@
 {
   "name": "super-log",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "super-log C SDK: one zero-dependency header to log to a super-log hub",
   "homepage": "https://github.com/saxonnicholls/super-log",
   "license": "MIT",

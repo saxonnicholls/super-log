@@ -10,7 +10,7 @@ of this — see the repo README.
 
 ## homebrew/ — `brew install saxonnicholls/tap/super-log`
 
-`super-log.rb` builds the hub + tailers from the v0.2.0 release tarball,
+`super-log.rb` builds the hub + tailers from the v0.3.0 release tarball,
 installs the SDK headers, exposes every tailer as a command, and registers
 `superlogd` with `brew services`.
 
