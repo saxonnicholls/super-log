@@ -1,0 +1,11 @@
+super-log (0.3.0-1~noble1) noble; urgency=medium
+
+  * Initial PPA packaging: the hub daemon (superlogd) as a systemd service,
+    the C/C++ SDK headers, and the zero-dependency tailers as commands.
+  * FIX session logs (superlog-fix) and MAVLink drone telemetry
+    (superlog-mavlink).
+  * ts-moveables and the fmt/spdlog/json submodules are vendored into the
+    source tarball so the build fetches nothing - as a Launchpad builder
+    requires.
+
+ -- Saxon Herschel Nicholls <me@saxonnicholls.com>  Mon, 07 Sep 2026 12:00:00 +0000

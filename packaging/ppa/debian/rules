@@ -1,0 +1,54 @@
+#!/usr/bin/make -f
+#
+# Debian rules for super-log. Built with the CMake buildsystem via debhelper.
+# The build fetches NOTHING: ts-moveables comes from the vendored copy the
+# orig tarball carries (packaging/ppa/make-orig-tarball.sh puts it under
+# vendor/ts-moveables), the fmt/spdlog/json submodule contents ride in the
+# tarball too, and FETCHCONTENT_FULLY_DISCONNECTED makes any stray fetch a
+# hard error rather than a silent network call - which is what a Launchpad or
+# Debian builder needs, since they have no network.
+
+export DEB_BUILD_MAINTAINER_OPTIONS = hardening=+all
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+	    -DSUPER_LOG_INSTALL=ON \
+	    -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF \
+	    -DTS_MOVEABLES_DIR=$(CURDIR)/vendor/ts-moveables \
+	    -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+
+# Only the hub is a compiled artifact; the SDK is headers and the tailers are
+# scripts. Building the default (all) target would pull in demos we do not
+# ship here.
+override_dh_auto_build:
+	dh_auto_build -- superlogd
+
+override_dh_auto_install:
+	dh_auto_install
+	# The zero-dependency Node tailers under /usr/lib/super-log, each exposed
+	# as a wrapper on PATH. Not part of the CMake install rules, so staged here.
+	mkdir -p debian/super-log/usr/lib/super-log debian/super-log/usr/bin
+	cp tailers/bin/* debian/super-log/usr/lib/super-log/
+	set -e; for f in debian/super-log/usr/lib/super-log/superlog-*.mjs; do \
+	    name=$$(basename "$$f" .mjs); \
+	    printf '#!/bin/sh\nexec node /usr/lib/super-log/%s "$$@"\n' "$$(basename "$$f")" \
+	        > "debian/super-log/usr/bin/$$name"; \
+	    chmod 0755 "debian/super-log/usr/bin/$$name"; \
+	done
+	printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog-tee.mjs "$$@"\n' \
+	    > debian/super-log/usr/bin/superlog
+	chmod 0755 debian/super-log/usr/bin/superlog
+	# The systemd unit; dh_installsystemd (run in the dh sequence) finds it
+	# here and generates the enable/start scriptlets, guarded for containers.
+	mkdir -p debian/super-log/lib/systemd/system
+	cp packaging/deb/superlogd.service debian/super-log/lib/systemd/system/superlogd.service
+
+# The upstream suite drives Node subprocesses against a live hub; it is not a
+# package-build test. The hub binary's own build is the check that matters here.
+override_dh_auto_test:
+
+override_dh_installsystemd:
+	dh_installsystemd --name=superlogd

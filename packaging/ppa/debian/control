@@ -1,0 +1,23 @@
+Source: super-log
+Section: devel
+Priority: optional
+Maintainer: Saxon Herschel Nicholls <me@saxonnicholls.com>
+Build-Depends: debhelper-compat (= 13), cmake, g++ (>= 10)
+Standards-Version: 4.6.2
+Homepage: https://github.com/saxonnicholls/super-log
+Vcs-Git: https://github.com/saxonnicholls/super-log.git
+Vcs-Browser: https://github.com/saxonnicholls/super-log
+Rules-Requires-Root: no
+
+Package: super-log
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, nodejs (>= 18), libatomic1
+Description: one hub for every log stream on a development bench
+ super-log converges every log stream on one machine and one screen:
+ device, service, container, browser, chain and app logs, interleaved by
+ arrival - not by device clocks, which drift.
+ .
+ This package installs the hub daemon (superlogd) as a systemd service, the
+ C and C++ SDK headers, and the zero-dependency Node tailers as commands on
+ PATH: superlog, superlog-fix (FIX session logs), superlog-mavlink (drone
+ telemetry), superlog-otlp (an OpenTelemetry inlet) and many more.
