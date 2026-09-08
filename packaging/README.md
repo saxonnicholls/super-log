@@ -59,7 +59,7 @@ unit with the standard `%post`/`%preun`/`%postun` scriptlets.
 
 ## vcpkg/ — `vcpkg install super-log[cpp]` (the C and C++ SDK, incl. Windows)
 
-Two ports here: **`ts-moveables`** (Saxon's header-only lib, which already
+Two ports here: **`ts-moveables`** (an in-house header-only lib, which already
 ships clean CMake install/export) and **`super-log`**. The super-log port's
 default install is the zero-dependency C header; the **`cpp` feature** adds
 the header-only C++ SDK and depends on the ts-moveables port. The spdlog
