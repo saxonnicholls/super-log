@@ -3,6 +3,22 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
+## Unreleased
+
+**Native Windows: a Winsock port of the SDK transports, and a Windows CI
+job.** The C and C++ SDK transports were POSIX-sockets only (`<sys/socket.h>`,
+`MSG_NOSIGNAL`), so they would not compile with MSVC. Added an `#ifdef _WIN32`
+Winsock path to both: `superlog.h` and `transport.hpp` now use a socket
+typedef, one-time `WSAStartup`, `send`/`recv`, `closesocket`, and (in the C
+SDK) a `GetSystemTimeAsFileTime` shim for the timestamp; MSVC auto-links
+`ws2_32` via a pragma and the vcpkg `[cpp]` config links it too. This makes
+`vcpkg install super-log[cpp]` genuinely useful on Windows once a release
+carries it. A new `windows-latest` CI job compiles both SDKs with MSVC against
+ts-moveables from the vcpkg overlay port. The ts-moveables vcpkg port also
+switched from a raw commit to the v1.1.1 release tag. VERIFIED: the POSIX build
+(C and C++) still compiles + links on macOS after the edits; the Windows build
+is verified by the new CI job on push (it can't be run from the macOS bench).
+
 ## 0.3.0 — 2026-09-07
 
 **superlog-mavlink: a drone's telemetry on the bench.** ArduPilot and PX4

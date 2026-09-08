@@ -74,6 +74,30 @@ jobs:
       - name: smoke
         run: ./scripts/smoke.sh
 
+  # Windows via MSVC: the SDK's transports were POSIX-only until the Winsock
+  # port, so this compiles both SDKs from the working tree (not the released
+  # vcpkg port, which still points at the pre-Winsock v0.3.0) and installs the
+  # ts-moveables vcpkg port to supply the C++ dependency. No hub runs; the
+  # point is that it compiles and links with Winsock.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: ts-moveables from the vcpkg overlay port
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install ts-moveables `
+            --overlay-ports="$env:GITHUB_WORKSPACE\packaging\vcpkg\ports" `
+            --triplet x64-windows
+      - name: C and C++ SDKs compile + link with MSVC (Winsock path)
+        run: |
+          $root  = "$env:GITHUB_WORKSPACE".Replace('\','/')
+          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT".Replace('\','/')
+          cmake -S .github/ci/windows -B build-win `
+            "-DSUPERLOG_ROOT=$root" `
+            "-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows
+          cmake --build build-win --config Release
+
   # A checkout without submodules must still build the hub and the SDK test -
   # the EXISTS gates in CMake are load-bearing, so exercise the false side.
   cpp-no-submodules:

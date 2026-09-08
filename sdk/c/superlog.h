@@ -1,5 +1,5 @@
 /*
- *  superlog.h - the plain C client, header-only, POSIX sockets and libc.
+ *  superlog.h - the plain C client, header-only, BSD/Winsock sockets and libc.
  *
  *  Copyright 2026 Saxon Herschel Nicholls
  *  SPDX-License-Identifier: MIT
@@ -97,15 +97,55 @@ SUPERLOG_API void superlog_flush(superlog_t *lg) { (void)lg; }
 #define _POSIX_C_SOURCE 200112L
 #endif
 
-#include <netdb.h>
+#ifdef _WIN32
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+#  include <windows.h>          /* GetSystemTimeAsFileTime, FILETIME */
+#  if defined(_MSC_VER)
+#    pragma comment(lib, "ws2_32.lib")   /* auto-link Winsock under MSVC */
+#  endif
+#else
+#  include <netdb.h>
+#  include <sys/socket.h>
+#  include <sys/time.h>
+#  include <unistd.h>
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/time.h>
 #include <time.h>
-#include <unistd.h>
+
+/* Windows uses Winsock (send/recv/closesocket, one WSAStartup) and lacks the
+ * POSIX time calls; this shim keeps the client below one code path. */
+#ifdef _WIN32
+typedef SOCKET superlog__sock;
+#  define SUPERLOG__BADSOCK       INVALID_SOCKET
+#  define superlog__sockvalid(fd) ((fd) != INVALID_SOCKET)
+#  define superlog__closesock(fd) closesocket(fd)
+#  define superlog__gmtime(t, out) gmtime_s((out), (t))   /* note: (tm*, time_t*) */
+static void superlog__now(struct timeval *tv) {
+    FILETIME ft; ULARGE_INTEGER u;
+    GetSystemTimeAsFileTime(&ft);
+    u.LowPart = ft.dwLowDateTime; u.HighPart = ft.dwHighDateTime;
+    /* FILETIME is 100ns ticks since 1601; shift to microseconds since 1970. */
+    unsigned long long us = (u.QuadPart - 116444736000000000ULL) / 10ULL;
+    tv->tv_sec  = (long)(us / 1000000ULL);
+    tv->tv_usec = (long)(us % 1000000ULL);
+}
+#else
+typedef int superlog__sock;
+#  define SUPERLOG__BADSOCK       (-1)
+#  define superlog__sockvalid(fd) ((fd) >= 0)
+#  define superlog__closesock(fd) close(fd)
+#  define superlog__now(tv)        gettimeofday((tv), NULL)
+#  define superlog__gmtime(t, out) gmtime_r((t), (out))
+#endif
+#ifdef MSG_NOSIGNAL
+#  define SUPERLOG__SFLAGS MSG_NOSIGNAL   /* a hub restart is a failed POST, not SIGPIPE */
+#else
+#  define SUPERLOG__SFLAGS 0
+#endif
 
 /* ---- internals ------------------------------------------------------- */
 
@@ -113,8 +153,8 @@ static void superlog__iso(char *out, size_t n)
 {
     struct timeval tv;
     struct tm tm;
-    gettimeofday(&tv, NULL);
-    gmtime_r(&tv.tv_sec, &tm);
+    superlog__now(&tv);
+    superlog__gmtime(&tv.tv_sec, &tm);
     snprintf(out, n, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
              tm.tm_hour, tm.tm_min, tm.tm_sec, (int)(tv.tv_usec / 1000));
@@ -143,9 +183,15 @@ SUPERLOG_API void superlog_flush(superlog_t *lg)
 {
     struct addrinfo hints, *res = NULL;
     char portstr[16], header[512];
-    int fd = -1, hlen;
+    superlog__sock fd = SUPERLOG__BADSOCK;
+    int hlen;
 
     if (!lg->active || lg->len == 0) return;
+
+#ifdef _WIN32
+    { static int wsa = 0;
+      if (!wsa) { WSADATA wd; if (WSAStartup(MAKEWORD(2, 2), &wd) == 0) wsa = 1; } }
+#endif
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -153,21 +199,21 @@ SUPERLOG_API void superlog_flush(superlog_t *lg)
     snprintf(portstr, sizeof portstr, "%d", lg->port);
     if (getaddrinfo(lg->host, portstr, &hints, &res) != 0 || !res) goto out;
     fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (fd < 0) goto out;
-    if (connect(fd, res->ai_addr, res->ai_addrlen) != 0) goto out;
+    if (!superlog__sockvalid(fd)) goto out;
+    if (connect(fd, res->ai_addr, (int)res->ai_addrlen) != 0) goto out;
 
     hlen = snprintf(header, sizeof header,
                     "POST /ingest/%s HTTP/1.1\r\nHost: %s\r\n"
                     "Content-Type: application/x-ndjson\r\n"
                     "Content-Length: %zu\r\nConnection: close\r\n\r\n",
                     lg->topic, lg->host, lg->len);
-    if (write(fd, header, (size_t)hlen) < 0) goto out;
-    if (write(fd, lg->buf, lg->len) < 0) goto out;
+    if (send(fd, header, hlen, SUPERLOG__SFLAGS) < 0) goto out;
+    if (send(fd, lg->buf, (int)lg->len, SUPERLOG__SFLAGS) < 0) goto out;
     /* Read and discard the reply so the hub never sees a reset mid-answer. */
-    (void)!read(fd, header, sizeof header);
+    (void)!recv(fd, header, (int)sizeof header, 0);
 
 out:
-    if (fd >= 0) close(fd);
+    if (superlog__sockvalid(fd)) superlog__closesock(fd);
     if (res) freeaddrinfo(res);
     lg->len = 0;                /* delivered or dropped; either way, gone */
 }

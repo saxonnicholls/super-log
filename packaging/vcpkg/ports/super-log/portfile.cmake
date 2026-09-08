@@ -44,6 +44,11 @@ if(NOT TARGET superlog::cpp)
         INTERFACE_INCLUDE_DIRECTORIES \"\${_superlog_prefix}/include\"
         INTERFACE_COMPILE_FEATURES cxx_std_17
         INTERFACE_LINK_LIBRARIES snicholls::ts_moveables)
+    if(WIN32)
+        # The transport uses Winsock on Windows (MSVC also auto-links via a
+        # pragma, but be explicit for clang-cl / MinGW consumers).
+        set_property(TARGET superlog::cpp APPEND PROPERTY INTERFACE_LINK_LIBRARIES ws2_32)
+    endif()
 endif()
 unset(_superlog_prefix)
 ")

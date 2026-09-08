@@ -34,10 +34,18 @@
 #include <thread>
 #include <utility>
 
-#include <netdb.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+#ifdef _WIN32
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+#  if defined(_MSC_VER)
+#    pragma comment(lib, "ws2_32.lib")   // auto-link Winsock under MSVC
+#  endif
+#else
+#  include <netdb.h>
+#  include <sys/socket.h>
+#  include <sys/types.h>
+#  include <unistd.h>
+#endif
 
 namespace superlog {
 
@@ -52,55 +60,88 @@ struct transport_config {
 
 namespace detail {
 
+// One socket type and a handful of helpers so the POST below reads the same
+// on POSIX and Windows. Winsock's socket is an unsigned handle (INVALID_SOCKET,
+// closesocket) and needs a process-wide WSAStartup; POSIX is an int fd.
+#ifdef _WIN32
+using socket_t = SOCKET;
+inline bool socket_valid(socket_t s) { return s != INVALID_SOCKET; }
+inline void socket_close(socket_t s) { ::closesocket(s); }
+inline const socket_t bad_socket = INVALID_SOCKET;
+// A function-local static inits Winsock exactly once, thread-safely, and
+// tears it down at process exit - no burden on the call site.
+inline void ensure_winsock() {
+    static struct wsa_guard {
+        wsa_guard() { WSADATA d; ::WSAStartup(MAKEWORD(2, 2), &d); }
+        ~wsa_guard() { ::WSACleanup(); }
+    } guard;
+    (void)guard;
+}
+#else
+using socket_t = int;
+inline bool socket_valid(socket_t s) { return s >= 0; }
+inline void socket_close(socket_t s) { ::close(s); }
+inline const socket_t bad_socket = -1;
+inline void ensure_winsock() {}
+#endif
+
 // One POST, one connection. Returns true on any 2xx. Connection: close keeps
 // this at "read a little, done" - keep-alive is an optimisation for later,
 // measured first.
 inline bool http_post(const std::string& host, std::uint16_t port,
                       const std::string& path, const std::string& body)
 {
+    ensure_winsock();
     addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* res = nullptr;
     if (::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0)
         return false;
-    int fd = -1;
+    socket_t fd = bad_socket;
     for (addrinfo* a = res; a; a = a->ai_next) {
         fd = ::socket(a->ai_family, a->ai_socktype, a->ai_protocol);
-        if (fd < 0)
+        if (!socket_valid(fd))
             continue;
-        if (::connect(fd, a->ai_addr, a->ai_addrlen) == 0)
+        if (::connect(fd, a->ai_addr, static_cast<int>(a->ai_addrlen)) == 0)
             break;
-        ::close(fd);
-        fd = -1;
+        socket_close(fd);
+        fd = bad_socket;
     }
     ::freeaddrinfo(res);
-    if (fd < 0)
+    if (!socket_valid(fd))
         return false;
 #ifdef SO_NOSIGPIPE
     // A hub restart between our write()s must be a failed POST, not SIGPIPE
     int one = 1;
-    ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+    ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<const char*>(&one), sizeof one);
 #endif
     std::string req = "POST " + path + " HTTP/1.1\r\nHost: " + host +
                       "\r\nContent-Type: application/x-ndjson\r\nContent-Length: " +
                       std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
     std::size_t off = 0;
     while (off < req.size()) {
-#ifdef MSG_NOSIGNAL
-        const ssize_t n = ::send(fd, req.data() + off, req.size() - off, MSG_NOSIGNAL);
+        const std::size_t left = req.size() - off;
+#ifdef _WIN32
+        const int n = ::send(fd, req.data() + off, static_cast<int>(left), 0);
+#elif defined(MSG_NOSIGNAL)
+        const ssize_t n = ::send(fd, req.data() + off, left, MSG_NOSIGNAL);
 #else
-        const ssize_t n = ::send(fd, req.data() + off, req.size() - off, 0);
+        const ssize_t n = ::send(fd, req.data() + off, left, 0);
 #endif
         if (n <= 0) {
-            ::close(fd);
+            socket_close(fd);
             return false;
         }
         off += static_cast<std::size_t>(n);
     }
     char buf[64];
+#ifdef _WIN32
+    const int n = ::recv(fd, buf, static_cast<int>(sizeof buf), 0);
+#else
     const ssize_t n = ::recv(fd, buf, sizeof buf, 0);
-    ::close(fd);
+#endif
+    socket_close(fd);
     // "HTTP/1.1 2xx ..." - the status class is all we need
     return n >= 10 && buf[9] == '2';
 }
