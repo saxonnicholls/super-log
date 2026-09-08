@@ -3,7 +3,7 @@
 // send/recv, closesocket). forward_sink.hpp pulls transport.hpp; ts-moveables
 // comes from the vcpkg overlay port. No hub required - the batcher's worker
 // thread just fails its POSTs and counts them.
-#define SUPERLOG_DEVELOPMENT
+// the build mode (SUPERLOG_DEVELOPMENT / _PRODUCTION) is set by CMake's -D
 #include <super_log/forward_sink.hpp>
 
 int main()

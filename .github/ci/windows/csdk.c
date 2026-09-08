@@ -2,7 +2,7 @@
  * exercising the Winsock path in superlog.h (WSAStartup, send/recv,
  * closesocket) and the GetSystemTimeAsFileTime time shim. No hub required -
  * superlog_flush just fails the connect and drops the batch. */
-#define SUPERLOG_DEVELOPMENT
+/* the build mode (SUPERLOG_DEVELOPMENT / _PRODUCTION) is set by CMake's -D */
 #include <superlog.h>
 
 int main(void)

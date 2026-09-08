@@ -153,8 +153,12 @@ static void superlog__iso(char *out, size_t n)
 {
     struct timeval tv;
     struct tm tm;
+    time_t secs;
     superlog__now(&tv);
-    superlog__gmtime(&tv.tv_sec, &tm);
+    /* tv_sec is a long in Winsock's timeval, but time_t is 64-bit on Windows;
+     * copy through a time_t so gmtime_s reads the right width, not 4 bytes. */
+    secs = (time_t)tv.tv_sec;
+    superlog__gmtime(&secs, &tm);
     snprintf(out, n, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
              tm.tm_hour, tm.tm_min, tm.tm_sec, (int)(tv.tv_usec / 1000));
