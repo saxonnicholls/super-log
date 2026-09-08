@@ -3,6 +3,10 @@
 # vcpkg port still points at v0.3.0 (pre-Winsock), so we test the working tree,
 # not the release. ts-moveables comes from the vcpkg overlay port.
 #
+# Both build modes are built: DEVELOPMENT (the real wire) and PRODUCTION (the
+# inert shell) - both must compile on MSVC. The _development exes are then run
+# against a Node mock hub in CI to prove the Winsock transport actually sends.
+#
 #   cmake -S .github/ci/windows -B build -DSUPERLOG_ROOT=<repo> \
 #         -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake \
 #         -DVCPKG_TARGET_TRIPLET=x64-windows
@@ -15,21 +19,25 @@ if(NOT DEFINED SUPERLOG_ROOT)
     message(FATAL_ERROR "pass -DSUPERLOG_ROOT=<repo root>")
 endif()
 
-# The C SDK - one header, its own Winsock path.
-add_executable(csdk csdk.c)
-target_include_directories(csdk PRIVATE "${SUPERLOG_ROOT}/sdk/c")
-target_compile_definitions(csdk PRIVATE SUPERLOG_DEVELOPMENT)
-
-# The C++ SDK - header-only, against ts-moveables from vcpkg.
 find_package(ts_moveables CONFIG REQUIRED)
-add_executable(cppsdk cppsdk.cpp)
-target_include_directories(cppsdk PRIVATE "${SUPERLOG_ROOT}/sdk/cpp/include")
-target_compile_definitions(cppsdk PRIVATE SUPERLOG_DEVELOPMENT)
-target_link_libraries(cppsdk PRIVATE snicholls::ts_moveables)
 
-if(WIN32)
-    # The transports use Winsock; MSVC also auto-links it via a pragma, but be
-    # explicit here too.
-    target_link_libraries(csdk PRIVATE ws2_32)
-    target_link_libraries(cppsdk PRIVATE ws2_32)
-endif()
+# One C and one C++ executable per build mode.
+foreach(mode DEVELOPMENT PRODUCTION)
+    string(TOLOWER ${mode} m)
+
+    add_executable(csdk_${m} csdk.c)
+    target_include_directories(csdk_${m} PRIVATE "${SUPERLOG_ROOT}/sdk/c")
+    target_compile_definitions(csdk_${m} PRIVATE SUPERLOG_${mode})
+
+    add_executable(cppsdk_${m} cppsdk.cpp)
+    target_include_directories(cppsdk_${m} PRIVATE "${SUPERLOG_ROOT}/sdk/cpp/include")
+    target_compile_definitions(cppsdk_${m} PRIVATE SUPERLOG_${mode})
+    target_link_libraries(cppsdk_${m} PRIVATE snicholls::ts_moveables)
+
+    if(WIN32)
+        # The transports use Winsock; MSVC also auto-links it via a pragma, but
+        # be explicit here too (and for the C exe, whose pragma covers MSVC).
+        target_link_libraries(csdk_${m} PRIVATE ws2_32)
+        target_link_libraries(cppsdk_${m} PRIVATE ws2_32)
+    endif()
+endforeach()

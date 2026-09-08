@@ -83,12 +83,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: ts-moveables from the vcpkg overlay port
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install ts-moveables `
             --overlay-ports="$env:GITHUB_WORKSPACE\packaging\vcpkg\ports" `
             --triplet x64-windows
-      - name: C and C++ SDKs compile + link with MSVC (Winsock path)
+      - name: both SDKs compile with MSVC in both modes (Winsock + inert shell)
         run: |
           $root  = "$env:GITHUB_WORKSPACE".Replace('\','/')
           $vcpkg = "$env:VCPKG_INSTALLATION_ROOT".Replace('\','/')
@@ -97,6 +100,21 @@ jobs:
             "-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows
           cmake --build build-win --config Release
+      - name: end-to-end - the Winsock transport and the Node tailers deliver to a hub
+        run: |
+          Remove-Item received.txt -ErrorAction Ignore
+          $hub = Start-Process node -ArgumentList ".github/ci/windows/mock-hub.mjs" -PassThru
+          Start-Sleep -Seconds 2
+          & ".\build-win\Release\csdk_development.exe"
+          & ".\build-win\Release\cppsdk_development.exe"
+          "hello from windows" | node tailers/bin/superlog-tee.mjs --topic win.tee --url http://127.0.0.1:7333
+          Start-Sleep -Seconds 2
+          Stop-Process -Id $hub.Id -Force -ErrorAction Ignore
+          if (-not (Test-Path received.txt)) { throw "mock hub received nothing - Winsock send failed" }
+          $got = Get-Content received.txt
+          $got | ForEach-Object { Write-Host $_ }
+          if ($got.Count -lt 3) { throw "expected >=3 POSTs (C SDK, C++ SDK, tee tailer), got $($got.Count)" }
+          Write-Host "OK: mock hub received $($got.Count) POSTs on Windows"
 
   # A checkout without submodules must still build the hub and the SDK test -
   # the EXISTS gates in CMake are load-bearing, so exercise the false side.
