@@ -587,8 +587,10 @@ sudo apt install -y ./super-log_0.3.0_arm64.deb
 # Fedora / RHEL / Rocky / Alma — dnf takes the URL directly:
 sudo dnf install -y https://github.com/saxonnicholls/super-log/releases/download/v0.3.0/super-log-0.3.0-1.fc41.x86_64.rpm
 
-# vcpkg — the zero-dependency C SDK, to log to a hub from C or C++
-vcpkg install super-log
+# vcpkg — the SDK for C/C++ (incl. Windows/MSVC). C header by default;
+# [cpp] adds the header-only C++ SDK (pulls the ts-moveables vcpkg port).
+vcpkg install super-log          # the zero-dependency C header
+vcpkg install super-log[cpp]     # + the C++ SDK (event model, SN_LOG)
 ```
 
 Pick the `.deb` for your architecture (`dpkg --print-architecture`). On a

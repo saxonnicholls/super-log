@@ -57,24 +57,28 @@ unit with the standard `%post`/`%preun`/`%postun` scriptlets.
 - **PUBLISH (maintainer):** attach the `.rpm` to the GitHub release,
   host a dnf repo, or build it on COPR (see the tier ladder below).
 
-## vcpkg/ — `vcpkg install super-log` (the C SDK)
+## vcpkg/ — `vcpkg install super-log[cpp]` (the C and C++ SDK, incl. Windows)
 
-Scoped to the standalone C header on purpose: it is zero-dependency, so it
-is a clean port. The C++ SDK depends on ts-moveables (not a vcpkg port),
-so it ships via `find_package(superlog)` from a source/brew install
-instead — the portfile's usage note says so.
+Two ports here: **`ts-moveables`** (Saxon's header-only lib, which already
+ships clean CMake install/export) and **`super-log`**. The super-log port's
+default install is the zero-dependency C header; the **`cpp` feature** adds
+the header-only C++ SDK and depends on the ts-moveables port. The spdlog
+sink header is included; the `spdlog` feature (or the consumer's own
+`find_package(spdlog)`) compiles it. The hub daemon and Node tailers are
+not vcpkg artifacts — they ship via apt/brew/source.
 
-**To ship the full C++ SDK through vcpkg**, ts-moveables needs its own
-vcpkg port first (it is the maintainer's own library, so this is
-tractable): a `ts-moveables` port, then a second `super-log-cpp` port that
-declares `"dependencies": ["ts-moveables"]` and installs the C++ headers
-via the same `-DSUPER_LOG_INSTALL=ON` export. Until then the C header is
-the honest vcpkg deliverable and the C++ SDK stays a source/brew install.
-
-- Verify: `vcpkg install super-log --overlay-ports=packaging/vcpkg/ports`
-  (fill the real `SHA512` first — vcpkg prints it on the initial run).
-- **PUBLISH (maintainer):** submit the port to the vcpkg registry, or keep
-  it as a documented overlay port for consumers who prefer that.
+- **VERIFIED** (arm64-osx): `vcpkg install super-log[cpp]` installs
+  `ts-moveables` + the C/C++ SDK, and a consumer that does
+  `find_package(super-log CONFIG)` + links `superlog::cpp` +
+  `#include <super_log/event.hpp>` compiles and links.
+  ```sh
+  vcpkg install super-log[cpp] --overlay-ports=packaging/vcpkg/ports
+  ```
+  Note: on a bleeding-edge vcpkg registry, upstream **spdlog** may fail to
+  build (a spdlog/fmt/cmake issue, not ours) — that only affects the
+  optional `[spdlog]` feature; the core `[cpp]` SDK is ts-moveables-only.
+- **PUBLISH (maintainer):** submit both ports to the vcpkg registry (or a
+  custom registry), or keep them as the documented overlay for now.
 
 ## Getting into the distributions: the tier ladder
 
