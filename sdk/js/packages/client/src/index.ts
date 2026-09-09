@@ -180,8 +180,11 @@ export function newTraceId(): string {
   ).padEnd(16, '0');
 }
 
-// Deep enough to find the throw, short enough not to ship a book per crash.
-const MAX_STACK_LINES = 40;
+// The whole stack of a real crash - a deep React Native throw runs 100+ frames
+// through the bridge, and clipping it to the throw site alone loses the render
+// path a developer actually needs to paste. Still bounded (a runaway recursion
+// stays a few KB, not a book), and anything past it is marked stack_truncated.
+const MAX_STACK_LINES = 200;
 // How long a dying process waits for its last batch. Long enough for a
 // loopback POST, short enough that a wedged hub cannot hang the exit.
 const FATAL_FLUSH_MS = 1500;

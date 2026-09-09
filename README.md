@@ -158,13 +158,18 @@ viewer, `GET /recent?trace=…`, or an agent tool — returns the whole story in
 order.
 
 **Every error, including the ones nobody logged.** Uncaught exceptions and
-unhandled rejections are captured by default in every SDK, with stacks —
-chaining to whatever was already installed, so React Native still shows its
-red box, Node still exits 1, and C++ still aborts. C++ traces are demangled
-(`pricer::Engine::quote(int)`) with no boost dependency. For the hardest
-class — an exception a library throws and your code catches and *displays* —
-there is a render chokepoint pattern and an opt-in breadcrumb on every Error
-construction.
+unhandled rejections are captured by default in every SDK, with **whole
+stacks** — not clipped to the throw site, because a deep React Native render
+error runs 100+ frames through the bridge and that path is the thing you
+actually need to paste. Capture chains to whatever was already installed, so
+React Native still shows its red box, Node still exits 1, and C++ still aborts.
+C++ traces are demangled (`pricer::Engine::quote(int)`) with no boost
+dependency. For the hardest class — an exception a library throws and a
+component boundary **catches and displays**, so it never reaches the global
+handler — wrap the tree in `SuperLogErrorBoundary` (or forward your own
+boundary's `componentDidCatch` to `log.exception`): that lands the **component
+stack** too, the one thing a JS stack never contains — it names the component
+that threw. Plus an opt-in breadcrumb on every Error construction.
 
 **Zero-app-change fallbacks.** Host-side tailers scrape what already exists:
 `adb logcat` (scoped to one app, because an OEM handset emits ~600 lines a

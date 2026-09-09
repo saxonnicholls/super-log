@@ -58,7 +58,9 @@ export class SuperLogErrorBoundary extends Component<
     // component that threw, which no JS stack contains.
     log?.exception(error, 'react-render', {
       boundary: this.props.name ?? 'SuperLogErrorBoundary',
-      component_stack: (info.componentStack ?? '').split('\n').slice(0, 20).join('\n').trim(),
+      // The whole component path to the throw - it is bounded by tree depth, and
+      // clipping it drops the outer providers that often say WHICH screen broke.
+      component_stack: (info.componentStack ?? '').split('\n').slice(0, 80).join('\n').trim(),
     });
   }
 
