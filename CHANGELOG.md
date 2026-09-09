@@ -5,6 +5,21 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**`superlog login` — a door to super-log Cloud, and nothing else.** The free
+bench had no way to reach the paid tier: a user who wanted more had no command
+to type. This adds the one that is guessable — `superlog login` — and it is
+deliberately the thinnest thing that could work: it prints a URL and hands it to
+the operating system's browser opener, then exits. It makes **no network call of
+its own** — no version check, no account probe, no telemetry — because the one
+command whose whole claim is "opens a page" must be the counter-example to
+phoning home; `strings` the tool and you find a URL it never connects to. The
+enrolment ceremony, the token and every byte that actually leaves a machine live
+in the separate, proprietary cloud package — the MIT tool carries no cloud code.
+(Before this, `superlog login` was read as a filename by the tee entrypoint and
+hung on stdin — the bug that surfaced the gap.) VERIFIED: tests/login.test.mjs
+runs it, asserts the URL is shown and the command exits rather than hanging, and
+guards that the door imports nothing that could reach the network.
+
 **Fleet-scale, measured: ~217,000 events/second through one hub, none
 dropped.** A real dev team runs hundreds of machines, and the honest question
 is whether one bench hub can take them all at once. It can: a new reproducible

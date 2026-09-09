@@ -35,8 +35,18 @@
 import { createWriteStream } from 'node:fs';
 import { hostname } from 'node:os';
 import { loadEnv } from './env.mjs';
+import { runLogin } from './superlog-login.mjs';
 
 const argv = process.argv.slice(2);
+
+// `superlog login` is not a tee invocation - it is the door to super-log Cloud.
+// The `superlog` command IS this tee, so the subcommand is dispatched here, and
+// it MUST come before anything touches stdin: a bare `superlog login` would
+// otherwise be read as a filename and sit forever waiting on input.
+if (argv[0] === 'login') {
+  runLogin(argv.slice(1));
+  process.exit(0);
+}
 const flagsWithValues = new Set(['--topic', '--level', '--url', '--app', '--trace']);
 const opt = (name, dflt) => {
   const i = argv.indexOf(`--${name}`);
