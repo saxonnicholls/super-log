@@ -30,11 +30,13 @@ import { spawn } from 'node:child_process';
 import { platform } from 'node:os';
 
 // Gap 8: compile-time constant, never read from config or environment. This is
-// the console's OWN login route on purpose - the person typing `superlog login`
-// is an OSS bench user who most likely has no account yet, so the door has to
-// land where an account is created, not on a marketing page. Changing it later
-// is a release, so it is an address meant to be kept.
-const LOGIN_URL = 'https://app.super-log.com/login';
+// the /connect page, built for this door: it resolves on BOTH super-log.com and
+// app.super-log.com (the stranger's link has to work on the apex, while only the
+// app origin may mint an enrolment code), so whichever build serves it the
+// constant cannot 404. No trailing slash - the host answers /connect with a 308
+// to /connect/ that browsers follow invisibly. Changing it later is a release,
+// so it is an address meant to be kept.
+const LOGIN_URL = 'https://super-log.com/connect';
 
 function openInBrowser(url) {
   // The opener is per-OS; on a headless box it simply is not there, which is
@@ -62,8 +64,12 @@ export function runLogin(args = []) {
     openInBrowser(LOGIN_URL);
     process.stdout.write('Opening your browser (if it does not, copy the link above).\n');
   }
+  // Deliberately "how to connect", not "the two commands": the page does end on
+  // copy-pasteable commands, but the cloud client is not on npm yet, so this
+  // stays true today and the day it publishes - MIT code must not overclaim a
+  // commercial page.
   process.stdout.write(
-    'When you finish there, the page shows the two commands that connect this bench.\n\n');
+    'When you finish there, the page shows how to connect this bench.\n\n');
   // No network call was made, and nothing waits on input - so it exits, and
   // `superlog login` never hangs the way a stdin-reading tee would.
 }

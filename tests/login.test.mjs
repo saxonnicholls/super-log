@@ -19,7 +19,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..');
 const tee = join(repo, 'tailers', 'bin', 'superlog-tee.mjs');
 const door = join(repo, 'tailers', 'bin', 'superlog-login.mjs');
-const URL_RE = /https:\/\/app\.super-log\.com\/login/;
+const URL_RE = /https:\/\/super-log\.com\/connect/;
 
 // --print so the test never actually launches a browser. stdin is /dev/null and
 // the 5s timeout is the safety net: a regression that read stdin would either
