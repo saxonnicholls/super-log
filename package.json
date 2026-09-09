@@ -1,9 +1,10 @@
 {
   "name": "super-log",
   "version": "0.3.0",
-  "private": true,
   "description": "One hub for every log stream on the dev bench",
+  "license": "MIT",
   "author": "Saxon Herschel Nicholls",
+  "private": true,
   "workspaces": [
     "sdk/js/packages/*",
     "tailers",
@@ -11,7 +12,7 @@
     "demo/js"
   ],
   "scripts": {
-    "viewer": "npm run dev --workspace @super-log/viewer-react",
+    "viewer": "npm run dev --workspace @super-log/viewer",
     "tail:android": "node tailers/bin/superlog-tail.mjs android",
     "tail:ios-sim": "node tailers/bin/superlog-tail.mjs ios-sim",
     "tail:os": "node tailers/bin/superlog-tail.mjs os",
@@ -30,7 +31,7 @@
     "demo:ios": "node demo/js/clock.mjs ios",
     "demo:android": "node demo/js/clock.mjs android",
     "demo:web": "node demo/web/serve.mjs",
-    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react",
+    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer",
     "chain": "node tailers/bin/superlog-chain.mjs",
     "dns": "node tailers/bin/superlog-dns.mjs",
     "ports": "node tailers/bin/superlog-ports.mjs",
@@ -112,6 +113,5 @@
     "superlog-gas": "tailers/bin/superlog-gas.mjs",
     "superlog-alarm": "tailers/bin/superlog-alarm.mjs",
     "superlog-otlp": "tailers/bin/superlog-otlp.mjs"
-  },
-  "license": "MIT"
+  }
 }
