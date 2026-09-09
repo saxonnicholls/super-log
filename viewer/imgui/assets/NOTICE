@@ -1,0 +1,16 @@
+super-log viewer application icon
+=================================
+
+The application icon in this directory - icon.png and icon.svg - and the icon
+pixel data generated from it into ../src/app_icon.h are the property of
+
+    Basseterre LLC.  All rights reserved.
+
+They are a trademark/brand asset and are NOT covered by the MIT License that
+governs the source code in this repository. They are bundled here for one
+purpose only: so the open-source super-log viewer can display its own
+application icon in the title bar, taskbar and dock.
+
+You may not use this icon for commercial purposes, and you may not use it to
+imply endorsement by or affiliation with Basseterre LLC or super-log. If you
+fork this viewer for redistribution under another name, replace these files.

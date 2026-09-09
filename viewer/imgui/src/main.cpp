@@ -34,6 +34,12 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
+#include "app_icon.h"                       // the embedded application icon
+#ifdef __APPLE__
+// glfwSetWindowIcon is a no-op on Cocoa; this sets the dock icon (mac_icon.mm).
+extern "C" void superlog_set_dock_icon(const unsigned char* png, int len);
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -1364,6 +1370,21 @@ int main()
     GLFWwindow* win = glfwCreateWindow(1280, 800, "super-log", nullptr, nullptr);
     if (!win)
         return 1;
+    // The application's own icon: the title bar and taskbar on Linux/Windows
+    // (glfwSetWindowIcon wants raw pixels, so small pre-decoded sizes), and the
+    // dock on macOS via a Cocoa shim (glfwSetWindowIcon is a no-op there).
+    {
+        GLFWimage icons[2];
+        icons[0].width = 32; icons[0].height = 32;
+        icons[0].pixels = const_cast<unsigned char*>(superlog_icon_rgba_32);
+        icons[1].width = 48; icons[1].height = 48;
+        icons[1].pixels = const_cast<unsigned char*>(superlog_icon_rgba_48);
+        glfwSetWindowIcon(win, 2, icons);
+#ifdef __APPLE__
+        superlog_set_dock_icon(superlog_icon_png,
+                               static_cast<int>(superlog_icon_png_len));
+#endif
+    }
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
 

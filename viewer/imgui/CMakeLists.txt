@@ -48,7 +48,10 @@ target_link_libraries(superlog_viewer PRIVATE
 target_compile_features(superlog_viewer PRIVATE cxx_std_17)
 
 if(APPLE)
-    target_link_libraries(superlog_viewer PRIVATE "-framework OpenGL")
+    # A bare executable has no bundle icon, so the dock icon is set at runtime
+    # (mac_icon.mm) - which needs AppKit.
+    target_sources(superlog_viewer PRIVATE src/mac_icon.mm)
+    target_link_libraries(superlog_viewer PRIVATE "-framework OpenGL" "-framework Cocoa")
     # OpenGL is deprecated-not-removed on macOS; fine for a dev tool
     target_compile_definitions(superlog_viewer PRIVATE GL_SILENCE_DEPRECATION)
 else()
