@@ -5,6 +5,18 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Crash capture keeps the whole stack — and the component stack too.** A React
+Native red-box runs 100+ frames through the bridge and its component path is
+often what actually names the broken screen, but the SDK clipped the JS stack to
+40 frames and the component stack to 20 lines — so a crash arrived truncated,
+missing the part you wanted to paste. Both caps are lifted (JS stack to 200
+frames, component stack to 80 lines, still bounded and still flagged
+`stack_truncated` past that). And the README now says plainly what captures
+what: uncaught throws chain through `ErrorUtils` / the browser handlers, but a
+render error a **component boundary catches never reaches them** — wrap the tree
+in `SuperLogErrorBoundary` (or forward your own boundary's `componentDidCatch` to
+`log.exception`) to land the component stack, which no JS stack contains.
+
 **Viewer copy is capped, so a paste can't crash what it lands in.** A "copy"
 that grabbed the whole visible firehose produced a multi-megabyte blob, and
 pasting that into an LLM or any endpoint with a 4 MB body limit crashed it (a
