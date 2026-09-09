@@ -5,6 +5,17 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Viewer copy is capped, so a paste can't crash what it lands in.** A "copy"
+that grabbed the whole visible firehose produced a multi-megabyte blob, and
+pasting that into an LLM or any endpoint with a 4 MB body limit crashed it (a
+real `413 body exceeds 4194304 bytes` on the bench). Both viewers now offer copy
+in **512 / 1024 / 2048** lines instead of one unbounded button — the tail, where
+the recent lines are — with a hard byte ceiling underneath so even the largest
+choice stays under the wall, and a one-line notice when it trims. **Save stays
+uncapped**: it writes a file, which is the right place for the whole thing. The
+same cap covers every copy surface (the log firehose and each panel's copy) in
+the React and ImGui viewers.
+
 **`superlog login` — a door to super-log Cloud, and nothing else.** The free
 bench had no way to reach the paid tier: a user who wanted more had no command
 to type. This adds the one that is guessable — `superlog login` — and it is

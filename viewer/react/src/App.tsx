@@ -19,7 +19,7 @@ import { PRPanel } from './PRPanel';
 import { RpcPanel } from './RpcPanel';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
-import { copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
+import { COPY_LINE_CHOICES, capForCopy, copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
 
 // The hub lives on whichever machine served this page - true for the demo,
 // for scripts/dev.sh, and for anyone who opened the viewer over the LAN. A
@@ -77,7 +77,7 @@ export default function App() {
   // streams by definition.
   const [traceFilter, setTraceFilter] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
   // One row expanded at a time: the point of expanding is to read that one
   // stack, and several open at once is the wall of text again.
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -162,20 +162,21 @@ export default function App() {
         )}
         <button onClick={clear} style={selStyle}>clear</button>
         {/* copy + export act on the *visible* rows - export follows the
-            filters, because that is the view someone just narrowed down to */}
-        <button
-          style={selStyle}
-          title="copy visible rows"
-          onClick={() => {
-            void copyText(toTxt(visible)).then((ok) => {
-              if (!ok) return;
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1200);
-            });
-          }}
-        >
-          {copied ? 'copied ✓' : 'copy'}
-        </button>
+            filters, because that is the view someone just narrowed down to.
+            Copy gives the last N lines: a full firehose copy is megabytes and
+            crashes what it is pasted into (an LLM, a 4 MB body). Export/txt
+            below is the uncapped path when the whole thing is wanted. */}
+        <span style={{ color: '#5c6470' }}>copy</span>
+        {COPY_LINE_CHOICES.map((n) => (
+          <button key={n} style={selStyle} title={`copy the last ${n} visible rows`}
+                  onClick={() => void copyText(capForCopy(toTxt(visible), n)).then((ok) => {
+                    if (!ok) return;
+                    setCopied(n);
+                    setTimeout(() => setCopied(null), 1200);
+                  })}>
+            {copied === n ? '✓' : n}
+          </button>
+        ))}
         <span style={{ color: '#5c6470' }}>export</span>
         <button style={selStyle} title="visible rows, full fidelity"
                 onClick={() => download(`superlog-${stamp()}.json`, 'application/json', toJson(visible))}>

@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react';
 import type { LogRow } from './useLogFeed';
 import { useGateway, type SelftestStep } from './useGateway';
 import { RoutesGrid } from './RoutesGrid';
-import { download, stamp } from './exporting';
+import { capForCopy, copyText, download, stamp } from './exporting';
 
 const age = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -136,8 +136,7 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
                 title="every delivery the filters show, newest first, payloads included"
                 onClick={() => {
                   if (deliveries.length)
-                    void navigator.clipboard.writeText(
-                      deliveries.map(whText).join('\n\n') + '\n');
+                    void copyText(capForCopy(deliveries.map(whText).join('\n\n') + '\n', 1024));
                   setCopiedAll(true);
                   setTimeout(() => setCopiedAll(false), 1500);
                 }}>
@@ -169,7 +168,7 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                 <button style={{ ...box, padding: '0 4px', fontSize: 11 }}
                         title="copy this delivery, payload included"
-                        onClick={() => void navigator.clipboard.writeText(whText(r) + '\n')}>
+                        onClick={() => void copyText(whText(r) + '\n')}>
                   ⧉
                 </button>
                 <span style={{ color: LEVEL_COLOR[r.level] ?? '#d6dae2' }}>

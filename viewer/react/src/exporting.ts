@@ -69,20 +69,55 @@ export function toCsv(rows: LogRow[]): string {
   return lines.join('\n') + '\n';
 }
 
+// A copy is destined for a PASTE - into a chat, an issue, an LLM - and a paste
+// that is megabytes crashes the thing it lands in: an LLM context, or a body
+// limit (the hub and many endpoints cap a request at 4 MB). So the copy toolbar
+// offers a choice of line counts, and the clipboard is guarded so it can never
+// exceed the byte wall no matter what is chosen. SAVE stays uncapped and is the
+// escape hatch when you genuinely want the whole thing in a file.
+export const COPY_LINE_CHOICES = [512, 1024, 2048] as const;
+export const COPY_MAX_BYTES = 3_000_000;   // hard ceiling, comfortably under 4 MB
+
+const byteLen = (s: string): number => new Blob([s]).size;
+
+/** Keep the last `maxLines` lines and stay under `maxBytes`, keeping the tail
+ *  (newest lines matter most) and stamping a one-line notice when it trims.
+ *  `maxLines` may be Infinity to cap by bytes alone. */
+export function capForCopy(text: string,
+                           maxLines: number,
+                           maxBytes = COPY_MAX_BYTES): string {
+  const trailingNL = text.endsWith('\n');
+  const lines = text.split('\n');
+  if (trailingNL) lines.pop();
+  const total = lines.length;
+  let kept = total > maxLines ? lines.slice(total - maxLines) : lines.slice();
+  // One fat row (a versions inventory is tens of KB) can blow the byte budget
+  // while under the line cap - trim more off the top until it fits.
+  while (kept.length > 1 && byteLen(kept.join('\n')) > maxBytes)
+    kept = kept.slice(Math.max(1, Math.round(kept.length * 0.1)));
+  const body = kept.join('\n') + (trailingNL ? '\n' : '');
+  return kept.length < total
+    ? `… copy trimmed to the last ${kept.length} of ${total} lines — use save for the rest …\n${body}`
+    : body;
+}
+
 /** Clipboard with a fallback: the viewer is often opened over plain http
  *  from another machine on the bench LAN, where navigator.clipboard does
- *  not exist (secure contexts only). */
+ *  not exist (secure contexts only). A hard byte guard is applied here so that
+ *  even a copy path that forgot to pick a line count can never hand a paste
+ *  something big enough to crash it; the toolbars choose line counts on top. */
 export async function copyText(text: string): Promise<boolean> {
+  const capped = byteLen(text) > COPY_MAX_BYTES ? capForCopy(text, Infinity) : text;
   try {
     if (navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(capped);
       return true;
     }
   } catch {
     /* fall through */
   }
   const ta = document.createElement('textarea');
-  ta.value = text;
+  ta.value = capped;
   ta.style.position = 'fixed';
   ta.style.opacity = '0';
   document.body.appendChild(ta);

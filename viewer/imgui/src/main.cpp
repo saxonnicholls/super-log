@@ -777,13 +777,44 @@ std::string facts_to_text(const nlohmann::json& facts)
     return out;
 }
 
-// A tiny toolbar: "copy" to the clipboard, "save" to a timestamped file next to
-// the viewer. Returns nothing - it acts on the text it is handed.
+// A copy is going to be PASTED - into a chat, an LLM, an issue - and a paste of
+// megabytes crashes what it lands in: an LLM's context, or a 4 MB request-body
+// limit. So a copy keeps only the last max_lines lines, and never more than a
+// byte ceiling under that wall whatever the line choice. SAVE stays uncapped -
+// that is the escape hatch when the whole thing is genuinely wanted in a file.
+static const std::size_t COPY_MAX_BYTES = 3u * 1000u * 1000u;
+std::string cap_for_copy(const std::string& text, std::size_t max_lines)
+{
+    std::vector<std::size_t> line_start;    // offset where each line begins
+    line_start.push_back(0);
+    for (std::size_t i = 0; i < text.size(); ++i)
+        if (text[i] == '\n' && i + 1 < text.size())
+            line_start.push_back(i + 1);
+    std::size_t start = 0;
+    if (line_start.size() > max_lines)
+        start = line_start[line_start.size() - max_lines];
+    if (text.size() - start > COPY_MAX_BYTES) {         // byte wall, whatever the line count
+        const std::size_t want = text.size() - COPY_MAX_BYTES;
+        const auto it = std::lower_bound(line_start.begin(), line_start.end(), want);
+        start = it != line_start.end() ? *it : want;
+    }
+    return start ? "... copy trimmed to the tail - use save for the rest ...\n" + text.substr(start)
+                 : text;
+}
+
+// A tiny toolbar: "copy" (the last 512/1024/2048 lines, see cap_for_copy) to the
+// clipboard, "save" the whole thing to a timestamped file next to the viewer.
 void copy_save_toolbar(const char* id, const std::string& text, const char* stem)
 {
     ImGui::PushID(id);
-    if (ImGui::SmallButton("copy"))
-        ImGui::SetClipboardText(text.c_str());
+    ImGui::TextDisabled("copy");
+    for (int n : {512, 1024, 2048}) {
+        ImGui::SameLine();
+        char lbl[8];
+        std::snprintf(lbl, sizeof lbl, "%d", n);
+        if (ImGui::SmallButton(lbl))
+            ImGui::SetClipboardText(cap_for_copy(text, static_cast<std::size_t>(n)).c_str());
+    }
     ImGui::SameLine();
     if (ImGui::SmallButton("save"))
         write_file(export_path_named(stem, "txt"), text);
@@ -1614,9 +1645,17 @@ int main()
         if (ImGui::Button("clear"))
             rows.clear();
         ImGui::SameLine();
-        if (ImGui::Button(ImGui::GetTime() < copied_until ? "copied" : "copy")) {
-            ImGui::SetClipboardText(to_txt(shown).c_str());
-            copied_until = ImGui::GetTime() + 1.2;
+        // copy the last N visible lines - a full firehose copy is megabytes and
+        // crashes an LLM or a 4 MB body; the txt export below is the full path.
+        ImGui::TextDisabled(ImGui::GetTime() < copied_until ? "copied" : "copy");
+        for (int n : {512, 1024, 2048}) {
+            ImGui::SameLine();
+            char lbl[8];
+            std::snprintf(lbl, sizeof lbl, "%d", n);
+            if (ImGui::Button(lbl)) {
+                ImGui::SetClipboardText(cap_for_copy(to_txt(shown), static_cast<std::size_t>(n)).c_str());
+                copied_until = ImGui::GetTime() + 1.2;
+            }
         }
         ImGui::SameLine();
         ImGui::TextDisabled("export");
@@ -1898,7 +1937,7 @@ int main()
                         all += wh_text(*it) + "\n\n";
                         ++n;
                     }
-                    if (n) ImGui::SetClipboardText(all.c_str());
+                    if (n) ImGui::SetClipboardText(cap_for_copy(all, 1024).c_str());
                     wh_copied_until = ImGui::GetTime() + 1.5;
                 }
                 if (ImGui::IsItemHovered())
