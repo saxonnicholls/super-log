@@ -268,6 +268,20 @@ std::string export_path(const char* ext)
     return dir + "/superlog-" + stamp + '.' + ext;
 }
 
+std::string export_path_named(const char* stem, const char* ext)
+{
+    std::string dir = ".";
+    if (const char* home = std::getenv("HOME")) {
+        const std::string dl = std::string(home) + "/Downloads";
+        if (::access(dl.c_str(), W_OK) == 0)
+            dir = dl;
+    }
+    char stamp[32];
+    const std::time_t t = std::time(nullptr);
+    std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", std::localtime(&t));
+    return dir + "/superlog-" + stem + '-' + stamp + '.' + ext;
+}
+
 bool write_file(const std::string& path, const std::string& text)
 {
     std::FILE* f = std::fopen(path.c_str(), "wb");
@@ -386,6 +400,7 @@ struct server_entry {
     int last_level = 2;
     int worst = 0;                              // loudest level, decaying
     double worst_at = 0;
+    std::string worst_msg;                      // and WHY - the loudest line itself
 };
 
 void note_server(std::map<std::string, server_entry>& servers, const row& r, double now)
@@ -407,6 +422,7 @@ void note_server(std::map<std::string, server_entry>& servers, const row& r, dou
     if (r.level >= e.worst || now - e.worst_at > 60) {
         e.worst = r.level;
         e.worst_at = now;
+        e.worst_msg = r.msg;                    // remember WHY it was loud
     }
 }
 
@@ -631,10 +647,167 @@ void draw_usb_node(const nlohmann::json& node)
                                         ImGuiTreeNodeFlags_SpanAvailWidth)) {
         if (!detail.empty())
             ImGui::TextDisabled("%s", detail.c_str());
-        for (const auto& c : node["children"])
+        int idx = 0;
+        for (const auto& c : node["children"]) {   // index keys the ID: siblings may share a name
+            ImGui::PushID(idx++);
             draw_usb_node(c);
+            ImGui::PopID();
+        }
         ImGui::TreePop();
     }
+}
+
+// superlog-topology publishes the LAN tree on net.<host>.topology and each
+// watched route on net.<host>.route.<target>, each as fields.tree in the same
+// {name, children} shape the device tree uses - so draw_usb_node renders it
+// unchanged. Latest per topic; parsed at capture, drawn every frame.
+//
+// A deliberate omission: this window shows that the PATH is up, never that the
+// service behind it is healthy. A route that resolves to a dead or starved
+// service still draws its hops - reachable is not verified, and the window must
+// not let the two be confused. See docs/proposals/network-topology.md.
+void note_topology(std::map<std::string, usb_state>& trees, const row& r, double now)
+{
+    if (r.topic.rfind("net.", 0) != 0 ||
+        (r.topic.find(".topology") == std::string::npos &&
+         r.topic.find(".route.") == std::string::npos &&
+         r.topic.find(".connections") == std::string::npos))
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    if (!f.contains("tree") || !f["tree"].is_string())
+        return;
+    const auto t = nlohmann::json::parse(f["tree"].get<std::string>(), nullptr, false);
+    if (t.is_discarded() || !t.is_object())
+        return;
+    auto& e = trees[r.topic];
+    e.tree = t;
+    e.at = now;
+}
+
+// A case-insensitive substring, and whether a node or any descendant matches -
+// so the Topology window's filter box can find a device, process or endpoint
+// anywhere in a tree.
+inline bool istr_contains(const std::string& hay, const std::string& needle_lower)
+{
+    if (needle_lower.empty())
+        return true;
+    std::string h = hay;
+    for (char& c : h) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return h.find(needle_lower) != std::string::npos;
+}
+bool topo_node_matches(const nlohmann::json& node, const std::string& needle)
+{
+    if (istr_contains(node.value("name", "device"), needle))
+        return true;
+    if (node.contains("children"))
+        for (const auto& c : node["children"])
+            if (topo_node_matches(c, needle))
+                return true;
+    return false;
+}
+
+// Filtered draw: a node whose own name matches shows its whole subtree;
+// otherwise only the branches that lead to a match are drawn. Empty filter is
+// the ordinary full tree.
+void draw_topo_node(const nlohmann::json& node, const std::string& needle)
+{
+    if (needle.empty() || istr_contains(node.value("name", "device"), needle)) {
+        draw_usb_node(node);
+        return;
+    }
+    if (!node.contains("children") || node["children"].empty())
+        return;                                 // a non-matching leaf is hidden
+    bool any = false;
+    for (const auto& c : node["children"])
+        if (topo_node_matches(c, needle)) { any = true; break; }
+    if (!any)
+        return;
+    const std::string name = node.value("name", "device");
+    if (ImGui::TreeNodeEx(name.c_str(), ImGuiTreeNodeFlags_DefaultOpen |
+                                        ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        int idx = 0;
+        for (const auto& c : node["children"]) {
+            if (topo_node_matches(c, needle)) {
+                ImGui::PushID(idx);
+                draw_topo_node(c, needle);
+                ImGui::PopID();
+            }
+            ++idx;
+        }
+        ImGui::TreePop();
+    }
+}
+
+// ---- copy / save for the board windows ---------------------------------
+//
+// Every window can hand its current contents to the clipboard or a file, the
+// way the log firehose already does. A tree serialises indented; an inventory
+// as "category  tool  version [scope]" lines.
+
+void tree_to_text(const nlohmann::json& node, int depth, std::string& out)
+{
+    out.append(static_cast<std::size_t>(depth) * 2, ' ');
+    out += node.value("name", "");
+    out += '\n';
+    if (node.contains("children"))
+        for (const auto& c : node["children"])
+            tree_to_text(c, depth + 1, out);
+}
+
+std::string facts_to_text(const nlohmann::json& facts)
+{
+    std::string out;
+    for (const auto& f : facts) {
+        const bool absent = f.value("state", "") == "absent";
+        out += f.value("category", "?") + "  " + f.value("tool", "?") + "  ";
+        out += absent ? "absent" : f.value("version", f.value("raw", std::string("?")));
+        const std::string scope = f.value("scope", std::string());
+        if (!scope.empty()) out += "  [" + scope + "]";
+        out += '\n';
+    }
+    return out;
+}
+
+// A tiny toolbar: "copy" to the clipboard, "save" to a timestamped file next to
+// the viewer. Returns nothing - it acts on the text it is handed.
+void copy_save_toolbar(const char* id, const std::string& text, const char* stem)
+{
+    ImGui::PushID(id);
+    if (ImGui::SmallButton("copy"))
+        ImGui::SetClipboardText(text.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("save"))
+        write_file(export_path_named(stem, "txt"), text);
+    ImGui::PopID();
+}
+
+// superlog-versions publishes host.<name>.versions with the whole inventory as
+// a JSON array on fields.versions. The Versions window renders the latest per
+// host, grouped by category, with a filter box - a bench has hundreds.
+struct versions_state {
+    nlohmann::json facts;                       // array of {category, tool, version, state, ...}
+    double at = 0;
+};
+void note_versions(std::map<std::string, versions_state>& hosts, const row& r, double now)
+{
+    if (r.topic.rfind("host.", 0) != 0 || r.topic.size() < 15 ||
+        r.topic.compare(r.topic.size() - 9, 9, ".versions") != 0)
+        return;
+    const auto j = nlohmann::json::parse(r.raw, nullptr, false);
+    if (j.is_discarded() || !j.contains("fields") || !j["fields"].is_object())
+        return;
+    const auto& f = j["fields"];
+    if (!f.contains("versions") || !f["versions"].is_string())
+        return;
+    const auto v = nlohmann::json::parse(f["versions"].get<std::string>(), nullptr, false);
+    if (v.is_discarded() || !v.is_array())
+        return;                                 // a change event, not the inventory
+    auto& e = hosts[r.topic.substr(5, r.topic.size() - 5 - 9)];
+    e.facts = v;
+    e.at = now;
 }
 
 // ---- viewer config -----------------------------------------------------
@@ -731,6 +904,8 @@ constexpr const char* fallback_menu = R"MENU([
     {"key":"menu.view.log","label":"Log firehose","action":"toggle.log","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.servers","label":"Servers (health)","action":"toggle.servers","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.devices","label":"Devices (USB)","action":"toggle.devices","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.topology","label":"Topology (network)","action":"toggle.topology","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.versions","label":"Versions (stack)","action":"toggle.versions","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.agents","label":"Agents (MCP)","action":"toggle.agents","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.prs","label":"PRs (GitHub)","action":"toggle.prs","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.rpc","label":"RPC nodes","action":"toggle.rpc","attributes":["CHECKBOX"],"checked":true},
@@ -1219,6 +1394,8 @@ int main()
     std::vector<wh_entry> webhooks;
     std::map<std::string, server_entry> servers;
     std::map<std::string, usb_state> usb_trees;
+    std::map<std::string, usb_state> topo_trees;   // net.<host>.topology / .route.<target>
+    std::map<std::string, versions_state> versions_hosts;   // host.<name>.versions
     std::map<std::string, phone_entry> phones;
     std::map<std::string, agent_entry> agents;
     std::map<std::string, pr_entry> prs;
@@ -1260,6 +1437,8 @@ int main()
                 note_webhook(webhooks, fd.rows.front(), ImGui::GetTime());
                 note_server(servers, fd.rows.front(), ImGui::GetTime());
                 note_usb(usb_trees, phones, fd.rows.front(), ImGui::GetTime());
+                note_topology(topo_trees, fd.rows.front(), ImGui::GetTime());
+                note_versions(versions_hosts, fd.rows.front(), ImGui::GetTime());
                 note_agent(agents, fd.rows.front(), ImGui::GetTime());
                 note_pr(prs, fd.rows.front(), ImGui::GetTime());
                 note_rpc(rpcs, fd.rows.front(), ImGui::GetTime());
@@ -1505,6 +1684,22 @@ int main()
                                            vp->WorkPos.y + 20), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(380, 360), ImGuiCond_FirstUseEver);
             ImGui::Begin(title);
+            {
+                // The whole blotter as text - the state of every alarm, newest
+                // first, exactly as read on screen - so a firing incident is
+                // one paste into a chat, not a round of screenshots.
+                std::string t;
+                const double now = ImGui::GetTime();
+                for (auto it = blotter.rbegin(); it != blotter.rend(); ++it) {
+                    const alarm_entry& a = *it;
+                    t += a.recovered ? "ok " : "!! ";
+                    t += a.key;
+                    if (a.repeat > 1) t += " x" + std::to_string(a.repeat);
+                    t += "  " + std::to_string(static_cast<int>(now - a.at)) + "s ago\n";
+                    if (!a.msg.empty()) t += "   " + a.msg + "\n";
+                }
+                copy_save_toolbar("alarms", t, "alarms");
+            }
             static bool path_open = true;
             const float reserved = path_open
                 ? std::min(300.0f, ImGui::GetContentRegionAvail().y * 0.5f)
@@ -1586,6 +1781,19 @@ int main()
                                            vp->WorkPos.y + 390), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(380, 360), ImGuiCond_FirstUseEver);
             ImGui::Begin(wtitle);
+            {
+                // Every development endpoint and its public URL as text - the
+                // URL to hand a webhook sender, without reading it off a grid.
+                std::string t;
+                for (const auto& r : dev_routes) {
+                    t += r.healthy == 1 ? "up   " : r.healthy == 0 ? "down " : "?    ";
+                    t += r.name;
+                    const std::string& u = r.public_url.empty() ? r.url : r.public_url;
+                    if (!u.empty()) t += "  " + u;
+                    t += '\n';
+                }
+                copy_save_toolbar("wh", t, "webhooks");
+            }
             std::string pending_cmd;
             const char* pending_label = nullptr;
             draw_routes_grid(dev_routes, st_steps, gateway, pending_cmd, pending_label);
@@ -1726,15 +1934,26 @@ int main()
                                     ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(400, 240), ImGuiCond_FirstUseEver);
             ImGui::Begin(stitle);
+            {
+                std::string t;
+                const double now = ImGui::GetTime();
+                for (const auto& [name, e] : servers) {
+                    const double ago = now - e.last_at;
+                    t += (ago < 120 ? "up     " : ago < 600 ? "quiet  " : "silent ");
+                    t += name + "  " + std::to_string(static_cast<int>(ago)) + "s ago\n";
+                }
+                copy_save_toolbar("srv", t, "servers");
+            }
             if (servers.empty())
                 ImGui::TextDisabled("nobody has spoken yet.");
-            if (ImGui::BeginTable("srvgrid", 4,
+            if (ImGui::BeginTable("srvgrid", 5,
                     ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                     ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
                 ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 44.0f);
-                ImGui::TableSetupColumn("server", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("server", ImGuiTableColumnFlags_WidthStretch, 0.5f);
                 ImGui::TableSetupColumn("last seen", ImGuiTableColumnFlags_WidthFixed, 80.0f);
                 ImGui::TableSetupColumn("loudest (1m)", ImGuiTableColumnFlags_WidthFixed, 86.0f);
+                ImGui::TableSetupColumn("reason", ImGuiTableColumnFlags_WidthStretch, 1.0f);
                 ImGui::TableHeadersRow();
                 const double now = ImGui::GetTime();
                 for (const auto& [name, e] : servers) {
@@ -1780,6 +1999,17 @@ int main()
                                            levels[e.last_level]);
                     else
                         ImGui::TextDisabled("-");
+                    ImGui::TableNextColumn();
+                    // WHY it was loud - the loudest line itself, in the level's
+                    // colour when it is loud right now, dimmed otherwise.
+                    if (!e.worst_msg.empty()) {
+                        if (loud)
+                            ImGui::TextColored(level_color(e.worst), "%s", e.worst_msg.c_str());
+                        else
+                            ImGui::TextDisabled("%s", e.worst_msg.c_str());
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip("%s", e.worst_msg.c_str());
+                    }
                 }
                 ImGui::EndTable();
             }
@@ -1802,6 +2032,24 @@ int main()
                                     ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(420, 320), ImGuiCond_FirstUseEver);
             ImGui::Begin(dtitle);
+            {
+                // Handsets and every host's USB tree as text - "the phone is
+                // NOT connected" is exactly the state worth pasting to someone.
+                std::string t;
+                for (const auto& [key, p] : phones) {
+                    t += p.connected ? "connected  " : "UNPLUGGED  ";
+                    t += p.label + "  (" + p.host + ")\n";
+                }
+                if (!phones.empty()) t += '\n';
+                for (const auto& [host, st] : usb_trees) {
+                    t += host + ":\n";
+                    if (st.tree.contains("children"))
+                        for (const auto& c : st.tree["children"])
+                            tree_to_text(c, 1, t);
+                    t += '\n';
+                }
+                copy_save_toolbar("dev", t, "devices");
+            }
             if (ImGui::SmallButton("refresh")) {
                 // Fire-and-forget poke to the local tailer; remote hosts
                 // republish on their own 5s clocks, which is refresh enough.
@@ -1849,6 +2097,131 @@ int main()
             ImGui::End();
         }
 
+        // ---- topology: the local network as a tree, and any watched route -
+        // host, gateway, the devices under it, and per --to target the path in
+        // hops. superlog-topology draws it; draw_usb_node renders the same
+        // {name, children} shape. The window says the PATH is up, never that
+        // the service behind it is healthy - reachable is not verified.
+        if (menu.toggles["toggle.topology"]) {
+            char ttitle[64];
+            std::snprintf(ttitle, sizeof ttitle, "topology - %d view(s)###topology",
+                          static_cast<int>(topo_trees.size()));
+            if (main_dock)
+                ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + 20, vp->WorkPos.y + 340),
+                                    ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(470, 340), ImGuiCond_FirstUseEver);
+            ImGui::Begin(ttitle);
+            {
+                std::string t;
+                for (const auto& [tp, st] : topo_trees) { t += tp + ":\n"; tree_to_text(st.tree, 1, t); t += '\n'; }
+                copy_save_toolbar("topo", t, "topology");
+            }
+            static char topo_filter[64] = "";
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##topofilter", "filter (device, process, endpoint, AS)...",
+                                     topo_filter, sizeof topo_filter);
+            std::string needle = topo_filter;
+            for (char& c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (topo_trees.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no topology yet - superlog-topology publishes it "
+                                    "(npm run topology; add --to <target> to watch a route, "
+                                    "npm run connections for what this box is talking to). "
+                                    "The path being up is not the service being healthy.");
+                ImGui::PopTextWrapPos();
+            }
+            for (const auto& [topic, st] : topo_trees) {
+                if (!needle.empty() && !topo_node_matches(st.tree, needle))
+                    continue;                   // nothing in this view matches the filter
+                char hdr[128];
+                std::snprintf(hdr, sizeof hdr, "%s  (%ds ago)###topo_%s", topic.c_str(),
+                              static_cast<int>(ImGui::GetTime() - st.at), topic.c_str());
+                if (ImGui::CollapsingHeader(hdr, ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::PushID(topic.c_str());   // two trees may share a root name
+                    draw_topo_node(st.tree, needle);
+                    ImGui::PopID();
+                }
+            }
+            ImGui::End();
+        }
+
+        // ---- versions: every version under the bench, grouped by category
+        // with a filter box (a bench has hundreds). It reports; it does not
+        // advise - "openssl 3.6.3", never "and that is a problem".
+        if (menu.toggles["toggle.versions"]) {
+            char vtitle[64];
+            std::snprintf(vtitle, sizeof vtitle, "versions - %d host(s)###versions",
+                          static_cast<int>(versions_hosts.size()));
+            if (main_dock)
+                ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(470, 380), ImGuiCond_FirstUseEver);
+            ImGui::Begin(vtitle);
+            {
+                std::string t;
+                for (const auto& [vh, st] : versions_hosts) t += vh + ":\n" + facts_to_text(st.facts) + "\n";
+                copy_save_toolbar("ver", t, "versions");
+            }
+            static char ver_filter[64] = "";
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##verfilter", "filter (tool, version, category)...",
+                                     ver_filter, sizeof ver_filter);
+            std::string needle = ver_filter;
+            for (char& c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (versions_hosts.empty()) {
+                ImGui::PushTextWrapPos();
+                ImGui::TextDisabled("no versions yet - superlog-versions publishes them "
+                                    "(npm run versions). It reports; it does not advise.");
+                ImGui::PopTextWrapPos();
+            }
+            static const char* CATS[] = {"os", "hardware", "runtime", "toolchain",
+                                         "database", "library", "firmware", "deployed"};
+            for (const auto& [vhost, st] : versions_hosts) {
+                char hdr[96];
+                std::snprintf(hdr, sizeof hdr, "%s  (%ds ago)###ver_%s", vhost.c_str(),
+                              static_cast<int>(ImGui::GetTime() - st.at), vhost.c_str());
+                if (!ImGui::CollapsingHeader(hdr, ImGuiTreeNodeFlags_DefaultOpen))
+                    continue;
+                for (const char* cat : CATS) {
+                    std::vector<const nlohmann::json*> items;
+                    for (const auto& fct : st.facts) {
+                        if (fct.value("category", "") != cat)
+                            continue;
+                        if (!needle.empty()) {
+                            const std::string hay = fct.value("tool", "") + " " +
+                                fct.value("version", fct.value("raw", std::string())) + " " +
+                                std::string(cat) + " " + fct.value("scope", std::string());
+                            if (!istr_contains(hay, needle))
+                                continue;
+                        }
+                        items.push_back(&fct);
+                    }
+                    if (items.empty())
+                        continue;
+                    ImGui::TextDisabled("%s (%d)", cat, static_cast<int>(items.size()));
+                    for (const auto* fp : items) {
+                        const auto& fct = *fp;
+                        const bool absent = fct.value("state", "") == "absent";
+                        const std::string tool = fct.value("tool", "?");
+                        if (absent) {
+                            ImGui::TextDisabled("    %s  absent", tool.c_str());
+                            continue;
+                        }
+                        const std::string ver = fct.value("version", fct.value("raw", std::string("?")));
+                        const std::string scope = fct.value("scope", std::string());
+                        ImGui::Text("    %s", tool.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.41f, 0.79f, 0.39f, 1), "%s", ver.c_str());
+                        if (!scope.empty() && scope != "system") {
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("[%s]", scope.c_str());
+                        }
+                    }
+                }
+            }
+            ImGui::End();
+        }
+
         // ---- agents: who is working the bench - listening, requesting,
         // reporting - with the LLM named and the light held to each
         // agent's own promised cadence.
@@ -1864,6 +2237,20 @@ int main()
                                     ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(480, 240), ImGuiCond_FirstUseEver);
             ImGui::Begin(atitle);
+            {
+                // The blotter as text: which agent, on which model, doing what,
+                // and how long since it last spoke - the bench's own roll-call.
+                std::string t;
+                const double now = ImGui::GetTime();
+                for (const auto& [name, a] : agents) {
+                    t += name + "  " + (a.llm.empty() ? "-" : a.llm);
+                    if (a.pct >= 0) t += "  [" + std::to_string(a.pct) + "%]";
+                    if (!a.status.empty()) t += "  " + a.status;
+                    t += "  (" + std::to_string(static_cast<int>(now - a.at)) + "s ago)\n";
+                    if (!a.task.empty()) t += "   task: " + a.task + "\n";
+                }
+                copy_save_toolbar("agents", t, "agents");
+            }
             if (agents.empty()) {
                 ImGui::PushTextWrapPos();
                 ImGui::TextDisabled("no agents yet. MCP consumers appear when they "
@@ -1935,6 +2322,23 @@ int main()
                 ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(560, 260), ImGuiCond_FirstUseEver);
             ImGui::Begin(ptitle);
+            {
+                // The board as text - whose move, how long, and the link -
+                // so a standup update is a paste, not a manual transcription.
+                std::string t;
+                for (const auto& [k, p] : prs) {
+                    const bool ours = p.waiting_on == "us" && p.state == "open";
+                    t += p.state == "closed" ? "closed " : p.state == "merged" ? "merged "
+                                                          : ours ? "OURS   " : "theirs ";
+                    t += p.repo + "#" + p.number;
+                    char d[32]; std::snprintf(d, sizeof d, "  %.1fd  ", p.days);
+                    t += d;
+                    t += p.title;
+                    if (!p.url.empty()) t += "  " + p.url;
+                    t += '\n';
+                }
+                copy_save_toolbar("prs", t, "prs");
+            }
             if (prs.empty()) {
                 ImGui::PushTextWrapPos();
                 ImGui::TextDisabled("no PRs on the books - superlog-prs watches them "
@@ -2030,6 +2434,20 @@ int main()
                 ImGui::SetNextWindowDockID(main_dock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(620, 240), ImGuiCond_FirstUseEver);
             ImGui::Begin(rtitle);
+            {
+                // Every endpoint's health, block and latency as text - which
+                // provider is DOWN or STALLED, ready to paste to a provider.
+                std::string t;
+                for (const auto& [key, e] : rpcs) {
+                    t += e.health == "down" ? "DOWN  " : e.health == "stalled" ? "STALL " : "up    ";
+                    t += e.chain + "  " + e.provider + "  ";
+                    t += e.block >= 0 ? "block " + std::to_string(e.block) : "block -";
+                    if (e.latency_ms >= 0) t += "  " + std::to_string(e.latency_ms) + "ms";
+                    if (!e.url.empty()) t += "  " + e.url;
+                    t += '\n';
+                }
+                copy_save_toolbar("rpc", t, "rpc");
+            }
             if (rpcs.empty()) {
                 ImGui::PushTextWrapPos();
                 ImGui::TextDisabled("no RPC endpoints on the books - superlog-rpc "

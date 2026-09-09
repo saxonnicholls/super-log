@@ -78,6 +78,9 @@ host-side tailer scraping the same device:
 | `dns.<domain>`        | a domain's DNS records and TLS certificate, reported when they change |
 | `net.<host>.listeners`| listening sockets and the processes that own them |
 | `net.<host>.state`    | the network's own state, diffed: interface addresses, default gateway, Wi-Fi SSID, VPN tunnels, DNS resolver set, ARP first-sights (gateway MAC change is ERROR); `--ping` targets as RTT/loss `metric` readings with edge-triggered degradation, the traceroute diagnosis sharing the edge's `trace` |
+| `net.<host>.topology` | the LAN as a TREE on `fields.tree` (host → gateway → devices), for the viewers' Topology window; a periodic DEBUG structural reading. `--discover` sweeps the /24 to include devices not yet in the ARP table |
+| `net.<host>.route.<target>` | a watched route: the hops on `fields.tree` and per-hop RTT as DEBUG `metric` readings, with edge-triggered WARN/ERROR only for the STABLE facts — target unreachable, a sustained path-length change, a near-hop latency edge. Reports PATH health, never service health |
+| `net.<host>.connections` | the OUTBOUND side: which local process holds a connection to which remote endpoint, as a process → endpoint tree on `fields.tree` (from `ss`/`lsof`), a periodic DEBUG structural reading. Edge-triggered WARN when a socket stays stuck in SYN-SENT across two polls (the SYN went out, nothing came back — filtered/dropped or the service is down), recovery on reach; first contact with a remote host is one INFO. The inbound complement of `net.<host>.listeners` |
 | `build.<host>.<label>`| a build: one event per compiler diagnostic, one verdict; sanitizer and valgrind findings arrive whole, one event each; lake/ninja/make progress rides as a `build.progress_pct` metric |
 | `git.<host>.<repo>`   | a checkout: commits, branch switches, rewritten history, tags, conflicts |
 | `github.<owner>.<repo>`| a GitHub repository: pushes, CI runs, pull requests, issues, releases |
@@ -95,6 +98,7 @@ host-side tailer scraping the same device:
 | `gpu.<host>.<index>`  | a GPU: utilisation, memory, temperature and power as `metric` events, plus threshold crossings |
 | `cuda.<app>`          | a CUDA program: kernel time from CUDA events, device printf, and faults caught at the synchronise |
 | `host.<name>.vitals`  | disk, memory, CPU and load; readings are `metric` events |
+| `host.<name>.versions`| the machine's version inventory on `fields.versions` — OS/kernel, compilers and toolchains, language runtimes and their active version manager, databases, and every package the package manager knows — a snapshot-and-diff reading (a republish carries `versions`, a change carries `before`+`after`). Major bump/vanished tool WARN, new tool INFO. Each fact carries `category`, `tool`, `raw`, orderable `version` (or `unorderable:true`), `scheme`, `purl` where honest, `provenance`, `scope` and explicit `state` (present\|absent). A CVE roadmap — a first-class egress-cut candidate |
 | `power.<host>`        | CPU package watts, thermal pressure, fan RPM, die temperatures, aggregate CPU and the top energy consumers, as `metric` events plus edge-triggered crossings; macOS |
 | `dl.<host>.<label>`   | a download in flight: percent, bytes and rate as `metric` events, an edge-triggered WARN on stall, and one verdict when it ends |
 | `sys.<host>`          | the machine's own life events: crash reports (ERROR) and kernel panics (CRITICAL) parsed from DiagnosticReports, the previous shutdown cause once per boot, volume mounts/unmounts/renames, sleep/wake; macOS |
@@ -159,6 +163,16 @@ extra keys, and a payload line that is not JSON at all — the last becomes
 `INFO`). Producers should be strict; readers must be forgiving. This is what
 lets a dumb `adb logcat` tailer share a pipeline with a structured spdlog
 sink.
+
+**Nothing here is authenticated.** `origin` (its `app`, `platform`, `device`,
+`runtime`), `session`, `trace` and the topic itself are all *producer-declared*
+— whatever the sender wrote. The hub does not and cannot verify them, so they
+are for reading and routing, never for a trust or authorization decision:
+`origin.device` says "iPhone 16 Pro" because a producer said so, and anyone who
+can reach the port can send the same. Treat the whole event as attacker-
+controllable input. This is a property of the wire, not a gap to be patched at
+this layer — the boundary is who can reach the port (see the README's Security
+posture and [DEVICES.md](DEVICES.md)), plus the hub-side egress cut below.
 
 ## Correlation: following one action across every stream
 
@@ -234,7 +248,8 @@ GET, which is what scripts, cron jobs and agents actually want.
   "events": [
     {"id": 42, "seq": 7, "topic": "cpp.clock", "event": {"v":1, "level":"INFO", "msg":"tick 3"}}
   ],
-  "next": 42, "count": 1, "oldest": 1, "newest": 42, "missed": false
+  "next": 42, "count": 1, "oldest": 1, "newest": 42,
+  "epoch": "a7bf4b5473fdb560", "truncated": false, "missed": false
 }
 ```
 
@@ -244,10 +259,40 @@ GET, which is what scripts, cron jobs and agents actually want.
   WebSocket feed. One POSTed chunk is many events, so ids share a seq.
 - `next` advances past filtered-out events too, so a `level=ERROR` poller
   does not re-scan the quiet events every time.
+- `epoch` — **this hub lifetime's id.** `id` and `seq` both reset to zero when
+  the hub restarts, so a consumer that saved a cursor across a restart would
+  find it sitting ABOVE every new event and read the whole stream as
+  already-seen replay — connected and healthy while silently discarding
+  everything. **A cursor-holding consumer MUST compare `epoch` and, when it
+  changes, reset its cursor** (a saved `next` from a different epoch is
+  meaningless). The value is a random per-boot id; only its change matters. It
+  is also on `/healthz`, so a `/ws`-only consumer can read it on connect.
 - `missed` — true when the ring moved past `since`: that reader lost events.
   Ring depth is 5000 events (`SUPER_LOG_RECENT`).
 
 Default port **7333** (`SUPER_LOG_PORT` overrides).
+
+### Egress policy — `SUPER_LOG_NO_EGRESS`
+
+A hub-side security control. Its value is a comma-separated list of patterns;
+a topic that matches is **accepted** (still `202`) but **served to nothing** —
+not broadcast on `/ws`, not returned by `/recent`. A pattern is an exact
+topic, a `prefix.*` glob (`secrets.*` matches the topic `secrets` and anything
+under `secrets.`), or a bare `*` for the whole hub (accept everything,
+rebroadcast nothing — composability off).
+
+| `SUPER_LOG_NO_EGRESS` | Effect |
+|-----------------------|--------|
+| unset (default)       | every ingested topic is rebroadcast — hubs compose |
+| `secrets.*,vault.*`   | those topics stay on the machine; everything else is normal |
+| `*`                   | the hub is a local sink: nothing leaves via `/ws` or `/recent` |
+
+Enforced in `superlogd` (MIT), not the SDKs, so no producer or subscriber can
+override it. A cut topic never enters the `/ws` replay ring, so a reconnecting
+subscriber cannot recover it. The hub names the active cut on its console at
+startup. **Limitation:** a cut topic is dropped, not persisted — the on-disk
+journal is itself a `/ws` subscriber, so a cut topic reaches no journal either.
+Hub-internal journaling is the scheduled follow-up.
 
 Reaching the hub from a device:
 
@@ -257,3 +302,15 @@ Reaching the hub from a device:
 | Android emulator      | `10.0.2.2`, or `localhost` after `adb reverse tcp:7333 tcp:7333` |
 | Android hardware      | `localhost` after `adb reverse tcp:7333 tcp:7333` (USB), else the Mac's LAN IP |
 | iOS hardware          | the Mac's LAN IP (same Wi-Fi) |
+
+The two rows that use **the Mac's LAN IP** only work if the hub is bound to
+the LAN: `superlogd` binds `127.0.0.1` by default, so a handset POSTing to the
+Mac's LAN address reaches a socket that is not listening there — and the drop
+is silent at both ends (the producer's bounded queue drops by design; the hub
+cannot report a connection it never received). Start the hub with
+`SUPER_LOG_LAN=1` (or `SUPER_LOG_BIND=0.0.0.0`) on a trusted network. `ping`
+succeeds regardless — it says nothing about a TCP bind — so verify with
+`lsof -nP -iTCP:7333 -sTCP:LISTEN` (want `*:7333`, not `127.0.0.1:7333`) or by
+opening `http://<lan-ip>:7333/healthz` in the handset's own browser. `ping`
+is not a valid check — it says nothing about a TCP bind address. See
+[DEVICES.md](DEVICES.md) for the full device path and diagnosis.

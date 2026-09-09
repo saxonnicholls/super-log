@@ -32,7 +32,7 @@ export interface LogRow {
   src?: string;
 }
 
-const MAX_ROWS = 5000;
+const MAX_ROWS = 2000;   // every panel re-scans this on each update - keep it lean
 
 function parseLine(line: string, hubSeq: number, hubTs: number, topic: string, sub: number): LogRow | null {
   const trimmed = line.trim();

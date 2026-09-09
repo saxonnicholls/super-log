@@ -95,8 +95,13 @@ const MAX_LIMIT = 200;
 const MAX_WAIT_MS = 120000;
 // A journal can be gigabytes. A tool call that reads all of it is a tool
 // call the agent is still waiting on, so the scan has a deadline and says
-// when it hit one.
-const MAX_SCAN_MS = 15000;
+// when it hit one. SUPER_LOG_SCAN_MS tunes the budget (a slow box or a big
+// journal may want more); a partial scan is always reported as partial, never
+// as a clean "no".
+const MAX_SCAN_MS = (() => {
+  const v = Number(process.env.SUPER_LOG_SCAN_MS);
+  return Number.isFinite(v) && v >= 0 ? v : 15000;
+})();
 
 // ---------------------------------------------------------------- the hub
 
@@ -175,7 +180,10 @@ function journalFiles(where) {
   return readdirSync(where)
     .filter((n) => /\.ndjson(\.gz)?$/.test(n))
     .sort()                                   // the writer's stamp sorts chronologically
-    .map((n) => join(where, n));
+    .reverse()                                // ...and we read NEWEST first: almost every
+    .map((n) => join(where, n));              // history query is recent, and the scan has a
+                                              // budget - reading oldest-first spends it all on
+                                              // ancient files and returns zero for "since 45m".
 }
 
 /** Streams the journal and returns at most `limit` rows - the newest ones,
@@ -191,12 +199,11 @@ async function searchJournal({ dir, topic, level, contains, trace, since, until,
   const deadline = Date.now() + MAX_SCAN_MS;
   const stats = { files: 0, frames: 0, events: 0, matched: 0, bad: 0, timedOut: false };
   const kept = [];
-  let ringAt = 0;
   let earliest, latest;
-  let stop = false;
 
   for (const path of files) {
     stats.files++;
+    let fileLatest;                             // newest arrival ts seen in THIS file
     const file = createReadStream(path);
     const input = path.endsWith('.gz') ? file.pipe(createGunzip()) : file;
     const rl = createInterface({ input, crlfDelay: Infinity });
@@ -227,11 +234,11 @@ async function searchJournal({ dir, topic, level, contains, trace, since, until,
         // is the truth), so it needs no slack for skew and the scan can
         // stop the moment it passes `until`.
         if (Number.isFinite(frame.ts_ms)) {
+          if (fileLatest === undefined || frame.ts_ms > fileLatest) fileLatest = frame.ts_ms;
+          // Newest-first: a line past the upper bound is skipped, never a
+          // reason to stop (the next line down may be inside the window).
+          if (until !== undefined && frame.ts_ms > until) continue;
           if (since !== undefined && frame.ts_ms < since) continue;
-          if (until !== undefined && frame.ts_ms > until) {
-            stop = true;
-            break;
-          }
         }
         stats.frames++;
         for (const raw of frame.payload.split('\n')) {
@@ -253,12 +260,13 @@ async function searchJournal({ dir, topic, level, contains, trace, since, until,
           stats.matched++;
           if (earliest === undefined || at < earliest) earliest = at;
           if (latest === undefined || at > latest) latest = at;
-          const row = { seq: frame.seq, topic: frame.topic, event: ev.ts ? ev : { ...ev, ts } };
-          if (kept.length < limit) kept.push(row);
-          else {
-            kept[ringAt] = row;
-            ringAt = (ringAt + 1) % limit;
-          }
+          // Newest-first scan: the first `limit` matches we hold are the newest,
+          // so keep them and stop growing - further matches are older and only
+          // add to the count. (A ring that kept the LAST `limit` added, correct
+          // under an oldest-first scan, would now keep the oldest and mislabel
+          // them as newest.)
+          if (kept.length < limit)
+            kept.push({ at, seq: frame.seq, topic: frame.topic, event: ev.ts ? ev : { ...ev, ts } });
         }
       }
     } finally {
@@ -266,10 +274,16 @@ async function searchJournal({ dir, topic, level, contains, trace, since, until,
       input.destroy?.();
       file.destroy?.();
     }
-    if (stats.timedOut || stop) break;
+    if (stats.timedOut) break;
+    // Files are newest-first, so once an ENTIRE file predates the window,
+    // every older file does too - stop rather than scan history that cannot
+    // match. (Only a real lower bound lets us conclude this.)
+    if (since !== undefined && fileLatest !== undefined && fileLatest < since) break;
   }
 
-  const rows = kept.length < limit || ringAt === 0 ? kept : [...kept.slice(ringAt), ...kept.slice(0, ringAt)];
+  // Present oldest-first (chronological), the way a log reads - independent of
+  // the newest-first order they were gathered in.
+  const rows = kept.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
   return { rows, stats, earliest, latest, fileCount: files.length };
 }
 
@@ -588,9 +602,23 @@ const TOOLS = [
           `npm run journal (set SUPER_LOG_JOURNAL, or pass dir, if it writes elsewhere).\n` +
           `For the last few minutes, tail_logs reads the hub's live ring instead.`
         );
+      // The dangerous case: the budget ran out before a single match AND before
+      // the journal was fully read. That is NOT "this never happened" - it is
+      // "I could not finish looking". A truncated scan is amber; it must never
+      // be formatted like a confident zero, because an agent relaying it will
+      // tell someone "no" when the honest answer is "unknown".
+      const incomplete = r.stats.timedOut && r.stats.files < r.fileCount;
+      if (incomplete && r.stats.matched === 0)
+        return (
+          `INCOMPLETE SCAN - this is NOT a "no". The ${MAX_SCAN_MS / 1000}s budget ran out after ` +
+          `${r.stats.files} of ${r.fileCount} journal file(s) (${r.stats.events} event(s) read) with no ` +
+          `match found YET. Whether it happened is UNKNOWN, not no.\n` +
+          `Ask again with a tighter window - since=/until=/topic=/level= - so the scan reaches an ` +
+          `answer inside the budget. Newest files are read first, so a recent window returns fast.`
+        );
       const head = [
-        `Journal ${dir}: ${r.stats.files} file(s), ${r.stats.events} events read, ` +
-          `${r.stats.matched} match(es).`,
+        `Journal ${dir}: scanned ${r.stats.files} of ${r.fileCount} file(s), ` +
+          `${r.stats.events} events read, ${r.stats.matched} match(es).`,
       ];
       if (r.earliest !== undefined)
         head.push(
@@ -601,11 +629,13 @@ const TOOLS = [
         head.push(`Showing the newest ${r.rows.length}; narrow with since/topic/level for the rest.`);
       if (r.stats.timedOut)
         head.push(
-          `WARNING: the scan stopped after ${MAX_SCAN_MS / 1000}s, so older files were not read. ` +
-            `Narrow the window and ask again.`,
+          `PARTIAL: the ${MAX_SCAN_MS / 1000}s budget stopped the scan at ${r.stats.files} of ` +
+            `${r.fileCount} files - older history was NOT read, so there may be more. Narrow and ask again.`,
         );
       if (r.stats.bad) head.push(`${r.stats.bad} unreadable line(s) skipped.`);
-      if (r.rows.length === 0) head.push('No matching events.');
+      // A definitive "no" needs a COMPLETE scan; if it was cut short the PARTIAL
+      // line above already says the absence is unproven.
+      if (r.rows.length === 0 && !r.stats.timedOut) head.push('No matching events (scan completed).');
       return [...head, '', ...r.rows.map(formatEvent)].join('\n');
     },
   },

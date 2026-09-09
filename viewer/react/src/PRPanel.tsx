@@ -11,6 +11,7 @@
 
 import { useMemo } from 'react';
 import type { LogRow } from './useLogFeed';
+import { PanelTools } from './PanelTools';
 
 interface Pr {
   repo: string; number: string; title: string; url: string; state: string;
@@ -54,6 +55,14 @@ export function PRPanel({ rows }: { rows: LogRow[] }) {
 
   const waitingUs = prs.filter((p) => p.waitingOn === 'us' && p.state === 'open').length;
 
+  const asText = () => prs.map((p) => {
+    const ours = p.waitingOn === 'us' && p.state === 'open';
+    const word = p.state === 'closed' ? 'closed' : p.state === 'merged' ? 'merged'
+                                                  : ours ? 'OURS' : 'theirs';
+    return `${word.padEnd(7)}${p.repo}#${p.number}  ${p.days.toFixed(1)}d  ${p.title}` +
+           (p.url ? `  ${p.url}` : '');
+  }).join('\n') + '\n';
+
   return (
     <aside style={{ width: 420, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
@@ -62,6 +71,7 @@ export function PRPanel({ rows }: { rows: LogRow[] }) {
         <strong style={{ color: waitingUs ? '#d9a441' : '#8a93a3' }}>
           ⇄ PRs{waitingUs ? ` · ${waitingUs} waiting on us` : ` · ${prs.length}`}
         </strong>
+        <PanelTools text={asText} stem="prs" style={{ marginLeft: 'auto' }} />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 10px', fontSize: 13 }}>
         {prs.length === 0 && (

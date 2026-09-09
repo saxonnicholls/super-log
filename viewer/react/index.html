@@ -12,6 +12,9 @@
       .rowcopy { background: none; border: none; padding: 0; cursor: pointer;
                  color: #5c6470; font: inherit; opacity: 0.15; }
       .row:hover .rowcopy { opacity: 1; }
+      /* Panels keep their width and the panel row scrolls sideways, so opening
+         many of them never squeezes the firehose out of existence. */
+      aside { flex-shrink: 0; }
     </style>
   </head>
   <body>

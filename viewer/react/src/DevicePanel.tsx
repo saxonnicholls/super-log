@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from 'react';
 import type { LogRow } from './useLogFeed';
+import { PanelTools } from './PanelTools';
 
 interface UsbNode {
   name: string; vendor?: string; serial?: string; speed?: string;
@@ -67,6 +68,26 @@ export function DevicePanel({ rows }: { rows: LogRow[] }) {
     setTimeout(() => setRefreshed(false), 1500);
   };
 
+  const nodeText = (n: UsbNode, depth: number): string => {
+    const detail = [n.vendor, n.speed, n.serial ? `sn ${n.serial}` : '']
+      .filter(Boolean).join(', ');
+    let s = '  '.repeat(depth) + n.name + (detail ? ` (${detail})` : '') + '\n';
+    for (const c of n.children ?? []) s += nodeText(c, depth + 1);
+    return s;
+  };
+  const asText = () => {
+    let t = '';
+    for (const [, p] of phones)
+      t += `${p.connected ? 'connected  ' : 'UNPLUGGED  '}${p.label}  (${p.host})\n`;
+    if (phones.size) t += '\n';
+    for (const [host, tr] of trees) {
+      t += `${host}:\n`;
+      for (const c of tr.tree.children ?? []) t += nodeText(c, 1);
+      t += '\n';
+    }
+    return t;
+  };
+
   const renderNode = (n: UsbNode, depth: number, key: string): React.ReactNode => {
     const detail = [n.vendor, n.speed, n.serial ? `sn ${n.serial}` : '']
       .filter(Boolean).join(', ');
@@ -87,7 +108,8 @@ export function DevicePanel({ rows }: { rows: LogRow[] }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center',
                     padding: '8px 10px', borderBottom: '1px solid #262b33' }}>
         <strong style={{ color: '#8a93a3' }}>🔌 devices · {trees.size} host(s)</strong>
-        <button style={{ ...box, marginLeft: 'auto' }} onClick={refresh}
+        <PanelTools text={asText} stem="devices" style={{ marginLeft: 'auto' }} />
+        <button style={box} onClick={refresh}
                 title="measure this machine's tree NOW (remote hosts republish on their own clocks)">
           {refreshed ? 'poked' : 'refresh'}
         </button>

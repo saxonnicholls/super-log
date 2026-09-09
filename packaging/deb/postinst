@@ -4,3 +4,24 @@ if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
     systemctl enable --now superlogd.service || true
 fi
+
+# The hub is now running - but a hub with no producers publishes nothing, and a
+# fresh box reading `published: 0` looks broken when it is merely quiet. Say
+# plainly how to give it something to say, so the first ten minutes end in a
+# stream and not an empty screen.
+cat <<'EOF'
+
+super-log: the hub (superlogd) is running on 127.0.0.1:7333.
+A hub with no producers is silent - give it something to log:
+
+  superlog-tail os-linux              # this box's journald  -> os.<host>
+  superlog-vitals                     # disk / memory / CPU  -> host.<host>.vitals
+  superlog-ports                      # listening sockets    -> net.<host>.listeners
+
+  # run one at a time to try it, then keep it alive with a systemd --user unit:
+  superlog-tail os-linux &            # (foreground first, to confirm it flows)
+
+Watch it: curl -s localhost:7333/recent | head   (or point a viewer at the hub).
+The hub binds loopback and has no auth; see /usr/share/doc/super-log or the
+project README before exposing it to a network.
+EOF

@@ -108,13 +108,22 @@ jobs:
           & ".\build-win\Release\csdk_development.exe"
           & ".\build-win\Release\cppsdk_development.exe"
           "hello from windows" | node tailers/bin/superlog-tee.mjs --topic win.tee --url http://127.0.0.1:7333
+          # superlog-topology's win32 branch, run against the runner's REAL arp
+          # and route (no --to: tracert is slow/blocked on hosted runners). This
+          # is the only place the Windows network path is actually executed - it
+          # proves arp -a / route print parse and the tree is built and POSTed,
+          # which a compile can't.
+          node tailers/bin/superlog-topology.mjs --once --url http://127.0.0.1:7333
           Start-Sleep -Seconds 2
           Stop-Process -Id $hub.Id -Force -ErrorAction Ignore
           if (-not (Test-Path received.txt)) { throw "mock hub received nothing - Winsock send failed" }
           $got = Get-Content received.txt
           $got | ForEach-Object { Write-Host $_ }
-          if ($got.Count -lt 3) { throw "expected >=3 POSTs (C SDK, C++ SDK, tee tailer), got $($got.Count)" }
-          Write-Host "OK: mock hub received $($got.Count) POSTs on Windows"
+          if ($got.Count -lt 4) { throw "expected >=4 POSTs (C SDK, C++ SDK, tee, topology), got $($got.Count)" }
+          if (-not ($got | Where-Object { $_ -match '/ingest/net\..*\.topology' })) {
+            throw "superlog-topology did not deliver a net.<host>.topology event on Windows"
+          }
+          Write-Host "OK: mock hub received $($got.Count) POSTs on Windows, topology among them"
 
   # A checkout without submodules must still build the hub and the SDK test -
   # the EXISTS gates in CMake are load-bearing, so exercise the false side.

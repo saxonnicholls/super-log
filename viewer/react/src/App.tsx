@@ -12,6 +12,8 @@ import { AlarmBlotter } from './AlarmBlotter';
 import { WebhookPanel } from './WebhookPanel';
 import { ServerPanel } from './ServerPanel';
 import { DevicePanel } from './DevicePanel';
+import { TopologyPanel } from './TopologyPanel';
+import { VersionsPanel } from './VersionsPanel';
 import { AgentPanel } from './AgentPanel';
 import { PRPanel } from './PRPanel';
 import { RpcPanel } from './RpcPanel';
@@ -199,10 +201,17 @@ export default function App() {
         </span>
       </header>
 
-      <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <div style={{ flex: 1, display: 'flex', minHeight: 0, overflowX: 'auto' }}>
       {toggles['toggle.log'] !== false &&
-      <main style={{ flex: 1, overflowY: 'auto', padding: '4px 12px' }}>
-        {visible.map((r) => (
+      <main style={{ flex: '1 0 520px', minWidth: 520, overflowY: 'auto', padding: '4px 12px' }}>
+        {/* A firehose: keep the ring for copy/export, but only render the tail -
+            the DOM, not the data, is what makes the browser stall. */}
+        {visible.length > 500 && (
+          <div style={{ color: '#3d434d', padding: '2px 0' }}>
+            … {visible.length - 500} older rows hidden (copy/export still cover all {visible.length})
+          </div>
+        )}
+        {visible.slice(-500).map((r) => (
           <div key={r.hubSeq} className="row" style={{ display: 'flex', gap: 8, whiteSpace: 'pre-wrap' }}>
             <button className="rowcopy" title="copy row"
                     onClick={() => void copyText(rowText(r))}>⧉</button>
@@ -256,6 +265,8 @@ export default function App() {
           signature verdicts). Both toggle from the View menu. */}
       {toggles['toggle.servers'] !== false && <ServerPanel rows={rows} />}
       {toggles['toggle.devices'] !== false && <DevicePanel rows={rows} />}
+      {toggles['toggle.topology'] !== false && <TopologyPanel rows={rows} />}
+      {toggles['toggle.versions'] !== false && <VersionsPanel rows={rows} />}
       {toggles['toggle.agents'] !== false && <AgentPanel rows={rows} />}
       {toggles['toggle.prs'] !== false && <PRPanel rows={rows} />}
       {toggles['toggle.rpc'] !== false && <RpcPanel rows={rows} />}

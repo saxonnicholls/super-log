@@ -27,6 +27,10 @@
 #
 #   ./scripts/install.sh                 # build + verify
 #   ./scripts/install.sh --persist       # ...and start at login, forever
+#   ./scripts/install.sh --persist --lan # ...and bind the LAN so phones/other
+#                                        #    hosts can log to it (no auth -
+#                                        #    trust the network). Baked into
+#                                        #    the login service so it sticks.
 #   ./scripts/install.sh --uninstall     # remove the login services
 #   ./scripts/install.sh --no-viewer     # headless: hub + tailers only
 #
@@ -38,11 +42,20 @@ OS="$(uname -s)"
 PERSIST=0
 UNINSTALL=0
 WANT_VIEWER=1
+# The persisted hub binds loopback unless asked otherwise. Devices on the LAN
+# (a phone, a container, another host) cannot reach a loopback hub, and the
+# drop is silent at both ends - so a persisted loopback hub is the reason
+# handset logging "never worked". --lan (or exporting SUPER_LOG_LAN=1 /
+# SUPER_LOG_BIND before install) bakes the binding INTO the login service, so
+# KeepAlive relaunches keep it - which a one-off `export` before `up` cannot.
+LAN="${SUPER_LOG_LAN:-0}"
+BIND="${SUPER_LOG_BIND:-}"
 for a in "$@"; do
     case "$a" in
         --persist) PERSIST=1 ;;
         --uninstall) UNINSTALL=1 ;;
         --no-viewer) WANT_VIEWER=0 ;;
+        --lan) LAN=1 ;;
         -h|--help)
             sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -86,6 +99,16 @@ macos_agent() {
         echo '  <key>ProgramArguments</key><array>'
         for arg in "$@"; do printf '    <string>%s</string>\n' "$arg"; done
         echo '  </array>'
+        # A KeepAlive agent relaunches with EXACTLY this environment and no
+        # more, so anything the process needs at runtime must live here - an
+        # `export` in the installing shell does not survive the relaunch.
+        if [ -n "${SERVICE_ENV:-}" ]; then
+            echo '  <key>EnvironmentVariables</key><dict>'
+            for kv in $SERVICE_ENV; do
+                printf '    <key>%s</key><string>%s</string>\n' "${kv%%=*}" "${kv#*=}"
+            done
+            echo '  </dict>'
+        fi
         echo "  <key>WorkingDirectory</key><string>$REPO</string>"
         echo '  <key>RunAtLoad</key><true/>'
         echo '  <key>KeepAlive</key><true/>'
@@ -106,6 +129,9 @@ linux_unit() {
         echo '[Unit]'
         echo "Description=super-log: $label"
         echo '[Service]'
+        # Same reason as the launchd agent: Restart=always relaunches with the
+        # unit's own environment, so a runtime need belongs in the unit.
+        for kv in ${SERVICE_ENV:-}; do echo "Environment=$kv"; done
         printf 'ExecStart='
         for arg in "$@"; do printf '%s ' "$arg"; done
         echo
@@ -138,9 +164,20 @@ host() { hostname -s 2>/dev/null || echo local; }
 persist() {
     mkdir -p "$REPO/logs"
     NODE="$(command -v node)"
-    install_service "$(svc_label hub)" "$REPO/build/hub/superlogd"
+    # The hub carries its binding as service env, so a KeepAlive/Restart
+    # relaunch keeps it. Only the hub - the tailers are loopback clients and
+    # want no part of this.
+    hub_env=""
+    [ -n "$BIND" ] && hub_env="SUPER_LOG_BIND=$BIND"
+    [ "$LAN" = "1" ] && [ -z "$BIND" ] && hub_env="SUPER_LOG_LAN=1"
+    if [ -n "$hub_env" ]; then
+        say "hub will bind for the LAN ($hub_env) - devices can reach it. No auth: trust the network."
+    else
+        say "hub will bind loopback only - re-run with --lan for phones/other hosts to reach it."
+    fi
+    SERVICE_ENV="$hub_env" install_service "$(svc_label hub)" "$REPO/build/hub/superlogd"
     for t in $( [ "$OS" = "Darwin" ] && default_tailers_macos || default_tailers_linux ); do
-        install_service "$(svc_label "$t")" "$NODE" "$REPO/tailers/bin/superlog-$t.mjs"
+        SERVICE_ENV="" install_service "$(svc_label "$t")" "$NODE" "$REPO/tailers/bin/superlog-$t.mjs"
     done
     say "login services installed. They start now and at every login."
     say "Manage them: $( [ "$OS" = Darwin ] && echo 'launchctl list | grep superlog' || echo 'systemctl --user status services.superlog.*' )"

@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <deque>
 #include <mutex>
+#include <random>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -55,6 +56,87 @@ std::size_t size_from_env(const char* name, std::size_t dflt)
             return static_cast<std::size_t>(v);
     }
     return dflt;
+}
+
+// The per-topic egress policy - the "scalpel". Topics matching any pattern in
+// SUPER_LOG_NO_EGRESS (comma-separated: "secrets.*,vault.*") are accepted by
+// the hub but SERVED TO NOTHING: never broadcast on /ws, never returned by
+// /recent. A security control - a stream that must exist on the bench and must
+// never leave the machine, enforced by MIT code you can read.
+//
+// Honest limitation, stated wherever this is described: "served to nothing" is
+// the whole claim today. It is NOT "journaled locally", because the on-disk
+// journal is itself a /ws subscriber - so a no-egress topic reaches no journal
+// either. Hub-internal journaling is the scheduled follow-up that would make
+// local persistence true; until it lands, a no-egress topic is not persisted.
+std::vector<std::string> no_egress_from_env()
+{
+    std::vector<std::string> out;
+    const char* v = std::getenv("SUPER_LOG_NO_EGRESS");
+    if (!v || !*v)
+        return out;
+    std::string cur;
+    for (const char* p = v;; ++p) {
+        if (*p == ',' || *p == '\0') {
+            const std::size_t a = cur.find_first_not_of(" \t");
+            const std::size_t b = cur.find_last_not_of(" \t");
+            if (a != std::string::npos)
+                out.push_back(cur.substr(a, b - a + 1));
+            cur.clear();
+            if (*p == '\0')
+                break;
+        } else {
+            cur.push_back(*p);
+        }
+    }
+    return out;
+}
+
+// A pattern is a bare "*" (everything - the whole-hub cut), an exact topic, or
+// a "prefix.*" glob: "secrets.*" matches the topic "secrets" and anything under
+// "secrets.". Deliberately small - a topic is [a-z0-9._-], so there is no
+// general glob to get wrong. "*" is the fire alarm: SUPER_LOG_NO_EGRESS=* makes
+// the hub accept everything and rebroadcast nothing, so composability is off.
+bool topic_matches(const std::string& topic, const std::string& pat)
+{
+    if (pat == "*")
+        return true;
+    if (pat.size() >= 2 && pat[pat.size() - 2] == '.' && pat.back() == '*') {
+        const std::string prefix(pat, 0, pat.size() - 2);   // "secrets" from "secrets.*"
+        return topic == prefix ||
+               (topic.size() > prefix.size() && topic[prefix.size()] == '.' &&
+                topic.compare(0, prefix.size(), prefix) == 0);
+    }
+    return topic == pat;
+}
+
+bool is_no_egress(const std::string& topic, const std::vector<std::string>& pats)
+{
+    for (const std::string& p : pats)
+        if (topic_matches(topic, p))
+            return true;
+    return false;
+}
+
+// A fresh id minted each boot. The hub's `seq` - and /recent's `id` cursor -
+// reset to zero on restart, so a consumer that saved a cursor from a previous
+// lifetime finds it sitting ABOVE every frame the restarted hub emits, and
+// reads all of them as already-seen replay: connected, healthy, discarding
+// everything, saying nothing. That silently dropped an uplink for five hours
+// on this bench. The epoch makes the restart detectable on the very first
+// response - a consumer that sees a new epoch resets its cursor. It need not
+// be ordered or meaningful, only different from the last lifetime's.
+std::string mint_epoch()
+{
+    std::random_device rd;
+    static const char hex[] = "0123456789abcdef";
+    std::string s;
+    for (int word = 0; word < 2; ++word) {
+        const std::uint32_t v = rd();
+        for (int shift = 28; shift >= 0; shift -= 4)
+            s.push_back(hex[(v >> shift) & 0xF]);
+    }
+    return s;                                    // 16 hex chars
 }
 
 // ---------------------------------------------------------------- /recent
@@ -176,7 +258,8 @@ struct recent_event {
 // across every stream.
 class recent_ring {
 public:
-    explicit recent_ring(std::size_t cap_per_topic) : cap_(cap_per_topic) {}
+    recent_ring(std::size_t cap_per_topic, std::string epoch)
+        : cap_(cap_per_topic), epoch_(std::move(epoch)) {}
 
     void record(const std::string& topic, std::uint64_t seq, std::string line)
     {
@@ -267,10 +350,15 @@ public:
         // A reader away longer than the ring is deep has missed events; say
         // so rather than let it believe it saw everything.
         const bool gap = oldest != 0 && since != 0 && since + 1 < oldest;
+        // `epoch` identifies this hub lifetime. `id`/`seq` reset to zero on a
+        // restart, so a poller that saved `next` across one MUST notice the
+        // epoch change and reset its cursor - otherwise the old cursor sits
+        // above every new event and the whole stream reads as replay.
         out += "],\"next\":" + std::to_string(next) +
                ",\"count\":" + std::to_string(picked.size()) +
                ",\"oldest\":" + std::to_string(oldest) +
                ",\"newest\":" + std::to_string(last_id_) +
+               ",\"epoch\":\"" + epoch_ + "\"" +
                ",\"truncated\":" + (truncated ? "true" : "false") +
                ",\"missed\":" + (gap ? "true" : "false") + '}';
         return out;
@@ -289,6 +377,7 @@ private:
     mutable std::mutex m_;
     std::unordered_map<std::string, std::deque<recent_event>> topics_;
     std::size_t cap_;
+    std::string epoch_;                          // this hub lifetime's id (see mint_epoch)
     std::uint64_t last_id_ = 0;
 
 public:
@@ -345,29 +434,40 @@ int main()
     // Recent-event ring for GET /recent. ~5k events is a few minutes of a
     // busy bench; SUPER_LOG_RECENT overrides.
     // Per topic, so a firehose is expensive only to itself.
-    recent_ring recent{size_from_env("SUPER_LOG_RECENT", 2000)};
+    const std::string hub_epoch = mint_epoch();
+    recent_ring recent{size_from_env("SUPER_LOG_RECENT", 2000), hub_epoch};
+
+    // The per-topic egress policy (the scalpel), read once at startup. Topics
+    // matching these are accepted but served to nothing - see is_no_egress.
+    const std::vector<std::string> no_egress = no_egress_from_env();
 
     // Our own ingest route, registered BEFORE mount(): the router matches in
     // registration order, so this one wins and the hub's identical route is
     // shadowed. It records each event, then publishes the chunk verbatim -
     // the hub still sees exactly what a producer sent, and the WS feed is
     // byte-for-byte what it always was.
-    srv.post("/ingest/:topic", [&hub, &recent](const http::request& req, http::responder r) {
+    srv.post("/ingest/:topic", [&hub, &recent, &no_egress](const http::request& req, http::responder r) {
         const std::string topic = req.has_param("topic") ? req.param("topic") : std::string("*");
-        hub.publish(topic, req.body);
-        // The seq the hub just assigned. Handlers run on the loop thread and
-        // so does publish(), so this is the frame we published, not a later
-        // one - see ws_broadcast_hub::do_publish.
-        const std::uint64_t seq = hub.snapshot().seq;
-        std::size_t from = 0;
-        while (from <= req.body.size()) {
-            const std::size_t nl = req.body.find('\n', from);
-            const std::size_t end = nl == std::string::npos ? req.body.size() : nl;
-            if (end > from)
-                recent.record(topic, seq, req.body.substr(from, end - from));
-            if (nl == std::string::npos)
-                break;
-            from = nl + 1;
+        // The scalpel: a no-egress topic is accepted (202) but served to
+        // nothing - not broadcast on /ws and not recorded for /recent, so it
+        // never enters a path off this machine. It is not journaled either -
+        // see the note on no_egress_from_env().
+        if (!is_no_egress(topic, no_egress)) {
+            hub.publish(topic, req.body);
+            // The seq the hub just assigned. Handlers run on the loop thread and
+            // so does publish(), so this is the frame we published, not a later
+            // one - see ws_broadcast_hub::do_publish.
+            const std::uint64_t seq = hub.snapshot().seq;
+            std::size_t from = 0;
+            while (from <= req.body.size()) {
+                const std::size_t nl = req.body.find('\n', from);
+                const std::size_t end = nl == std::string::npos ? req.body.size() : nl;
+                if (end > from)
+                    recent.record(topic, seq, req.body.substr(from, end - from));
+                if (nl == std::string::npos)
+                    break;
+                from = nl + 1;
+            }
         }
         r.send(202, "text/plain", "accepted");
     });
@@ -391,18 +491,22 @@ int main()
                             req.query_param("trace")));
     });
 
-    // uptime and version answer the question the counters cannot: "did this
-    // restart?" A hub that restarted has counters starting from zero, which
-    // reads identically to a quiet bench unless it can say how long it has
-    // been up. Convention borrowed from the health routes in the sibling
-    // projects, so anything already scraping those finds what it expects.
+    // uptime, version and epoch answer the question the counters cannot: "did
+    // this restart?" A hub that restarted has counters starting from zero,
+    // which reads identically to a quiet bench. `uptime_seconds` hinted at it;
+    // `epoch` settles it exactly - a new epoch is a new lifetime, so a
+    // /ws-only consumer that cannot see /recent's epoch can still read it here
+    // on connect and reset a stale cursor. Convention borrowed from the health
+    // routes in the sibling projects, so anything already scraping those finds
+    // what it expects.
     const auto started = std::chrono::steady_clock::now();
-    srv.get("/healthz", [&hub, started, &recent](const http::request&, http::responder r) {
+    srv.get("/healthz", [&hub, started, &recent, &hub_epoch](const http::request&, http::responder r) {
         const auto s = hub.snapshot();
         const auto up = std::chrono::duration_cast<std::chrono::seconds>(
                             std::chrono::steady_clock::now() - started).count();
         std::string j = "{\"ok\":true,\"status\":\"ok\""
                         ",\"version\":\"" SUPERLOG_VERSION "\""
+                        ",\"epoch\":\"" + hub_epoch + "\""
                         ",\"uptime_seconds\":" + std::to_string(up) +
                         ",\"published\":" + std::to_string(s.published) +
                         ",\"delivered\":" + std::to_string(s.delivered) +
@@ -461,7 +565,8 @@ int main()
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
-    SN_LOG_INFO() << "superlogd listening on " << bind_host << ':' << port;
+    SN_LOG_INFO() << "superlogd listening on " << bind_host << ':' << port
+                  << "  (epoch " << hub_epoch << ")";
     // Say it plainly when it is reachable from elsewhere. A one-line notice
     // at startup is the difference between an informed choice and a surprise.
     if (bind_host != "127.0.0.1" && bind_host != "localhost" && bind_host != "::1") {
@@ -469,12 +574,26 @@ int main()
                       << " - there is no authentication, so anyone who can reach";
         SN_LOG_WARN() << "  this port can read every stream and publish to any topic.";
     } else {
-        SN_LOG_INFO() << "  loopback only. Devices on the LAN need SUPER_LOG_LAN=1"
-                         " (or SUPER_LOG_BIND=0.0.0.0) - see docs/ARCHITECTURE.md.";
+        // Name the silent failure explicitly: a phone or another host POSTing
+        // to this machine's LAN address hits a socket that is not listening
+        // there, and neither end can see the drop. One console line is the
+        // difference between "handsets never worked" and a two-second fix.
+        SN_LOG_INFO() << "  loopback only - a phone or another host on the LAN CANNOT reach this."
+                         " For device logging start with SUPER_LOG_LAN=1 (or"
+                         " SUPER_LOG_BIND=0.0.0.0) on a trusted network - see docs/DEVICES.md.";
     }
     SN_LOG_INFO() << "  ingest:  POST http://<host>:" << port << "/ingest/<topic>";
     SN_LOG_INFO() << "  feed:    ws://<host>:" << port << "/ws?topic=*";
     SN_LOG_INFO() << "  health:  GET  http://<host>:" << port << "/healthz";
+    // A security control that silently drops traffic must announce itself, or
+    // the first sign of it is a stream that is mysteriously empty. Name the
+    // patterns so an operator - or an agent reading the console - knows why.
+    if (!no_egress.empty()) {
+        std::string joined;
+        for (const auto& p : no_egress) joined += (joined.empty() ? "" : ", ") + p;
+        SN_LOG_WARN() << "  egress cut (SUPER_LOG_NO_EGRESS): " << joined
+                      << " - accepted but served to nothing (no /ws, no /recent).";
+    }
 
     std::thread loop([&srv] { srv.run(); });
 

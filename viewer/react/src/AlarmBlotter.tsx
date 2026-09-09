@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react';
 import type { LogRow } from './useLogFeed';
 import { useGateway, type Selftest, type SelftestStep } from './useGateway';
 import { RoutesGrid } from './RoutesGrid';
+import { PanelTools } from './PanelTools';
 
 const LEVEL_COLOR: Record<string, string> = {
   INFO: '#68c964', WARN: '#d9a441', ERROR: '#e05b4f', CRITICAL: '#ff2e1f',
@@ -65,6 +66,12 @@ export function AlarmBlotter({ rows, hub, test, onTest, verdictFor }: {
     ? { ok: test.ok, okc: test.steps.filter((s) => s.ok).length, n: test.steps.length }
     : null;
 
+  const asText = () => alarms.map(({ key, row, recovered }) => {
+    const repeat = row.fields?.repeat && Number(row.fields.repeat) > 1 ? ` x${row.fields.repeat}` : '';
+    return `${recovered ? 'ok ' : '!! '}${key}${repeat}  ${age(Date.now() - row.hubTs)} ago\n` +
+           `   ${row.msg}  [${row.topic}]`;
+  }).join('\n') + '\n';
+
   return (
     <aside style={{ width: 380, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
@@ -73,7 +80,8 @@ export function AlarmBlotter({ rows, hub, test, onTest, verdictFor }: {
         <strong style={{ color: firing.length ? '#e05b4f' : '#8a93a3' }}>
           ⚠ alarms{firing.length ? ` · ${firing.length} firing` : ''}
         </strong>
-        <span style={{ color: '#3d434d', fontSize: 12, marginLeft: 'auto' }}>production</span>
+        <PanelTools text={asText} stem="alarms" style={{ marginLeft: 'auto' }} />
+        <span style={{ color: '#3d434d', fontSize: 12 }}>production</span>
       </div>
 
       {/* Alarms first, always: this space belongs to them alone. */}

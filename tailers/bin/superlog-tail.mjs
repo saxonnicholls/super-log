@@ -45,7 +45,13 @@ import { hostname } from 'node:os';
 import { APP_CATALOG, patternsFor, resolveApp } from './app-catalog.mjs';
 
 const args = process.argv.slice(2);
-const mode = args[0];
+// The mode is the reader; a Linux person types the name of the thing being
+// read. Accept those instincts as aliases rather than crash-looping on them
+// (a systemd unit that exits 2 makes an operator read the journal to find out
+// why nothing is logging).
+const MODE_ALIASES = { journald: 'os-linux', journal: 'os-linux', journalctl: 'os-linux',
+                       linux: 'os-linux', macos: 'os', darwin: 'os', mac: 'os', unified: 'os' };
+const mode = MODE_ALIASES[args[0]] ?? args[0];
 const opt = (name, dflt) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : dflt;
@@ -837,8 +843,9 @@ while ($true) {
     }
   })();
 } else {
-  console.error('usage: superlog-tail <android|ios-sim|os|os-linux|file <path>|ssh <dest>> [--serial S] [--udid U] [--topic T] [--url U] [--process P] [--predicate Q] [--level L] [--unit U] [--winlog LOG] [--file PATH] [--format F]');
-  console.error('       ios hardware: see tailers/README.md');
+  console.error(`superlog-tail: '${args[0]}' is not a mode.`);
+  console.error('usage: superlog-tail <android|ios-sim|os|os-linux|file <path>|ssh <dest>|apps|app|docker> [--serial S] [--udid U] [--topic T] [--url U] [--process P] [--predicate Q] [--level L] [--unit U] [--winlog LOG] [--file PATH] [--format F]');
+  console.error('       journald/journal/linux are accepted as os-linux; macos/darwin as os. ios hardware: see tailers/README.md');
   process.exit(2);
 }
 

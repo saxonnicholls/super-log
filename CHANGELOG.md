@@ -5,6 +5,129 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Fleet-scale, measured: ~217,000 events/second through one hub, none
+dropped.** A real dev team runs hundreds of machines, and the honest question
+is whether one bench hub can take them all at once. It can: a new reproducible
+harness (bench/loadtest.mjs) simulates a 250-machine fleet — each box POSTing a
+full ~600-fact versions inventory plus a stream of log events — and on one
+developer machine the hub ingested **500,000 events in 2.3 seconds (~217k
+events/s, 67 MB/s), dropped none**, and answered a level-filtered `/recent` in
+**16 ms** while the flood was still arriving. This replaces the old README
+caveat that the hub "has never been load-tested"; what still makes it unfit for
+permanent production is the lack of auth and the in-memory ring, not the ingest
+path. VERIFIED: run `HUB=… node bench/loadtest.mjs` against a throwaway hub and
+read its `/healthz` (published, dropped) and the `/recent` timing it prints.
+
+**superlog-versions: every version under the bench, diffed.** "It works on my
+machine" is a version-skew report waiting to be written. This inventories a
+machine's whole stack on `host.<name>.versions` — OS/kernel, compilers and
+toolchains, language runtimes and the active version manager (nvm/pyenv),
+databases, and every package the package manager knows (brew/dpkg/rpm) — as a
+snapshot-and-diff stream like netstate/dns/ports: the full inventory rides
+`fields.versions` as a DEBUG republish (carrying `versions`), and a CHANGE is
+the event with `before`+`after` — a major bump or a vanished tool is WARN, a new
+tool INFO. Each fact carries `category`, `tool`, `raw`, an orderable `version`
+(or `unorderable:true`), `scheme`, `purl` where honest, `provenance`, `scope`
+and an explicit `state` (present vs absent — never a missing tool reported as
+zero). `--ssh` inventories a remote box with no node on it; `--check-conflicts`
+downloads a known-bad list and matches it LOCALLY. It REPORTS, it never ADVISES
+— "openssl changed", never "and that matters" — because EOL/CVE/known-bad
+advice is a separate maintained thing, and a version list is a CVE roadmap, so
+`host.*.versions` is a first-class `SUPER_LOG_NO_EGRESS` candidate. VERIFIED:
+tests/versions.test.mjs drives a real hub with the probes mocked on PATH — the
+inventory shape, a version bump surfacing as a WARN change with before+after, a
+tool going absent, and the republish-vs-change distinction. macOS + Linux are
+first-class; the package-manager sweep is brew/dpkg/rpm (Windows package
+managers are not covered). Firmware (drones, FPGAs, USB, BIOS) is a separate
+tailer landing in a later release.
+
+**superlog-connections: the outbound side, and the port that hangs.** Ports
+watches who is LISTENING; this watches who this box is TALKING TO — which local
+process holds a connection to which remote endpoint, as a process → endpoint
+tree on `fields.tree` (from `ss` on Linux, `lsof` on macOS), a periodic DEBUG
+structural reading on `net.<host>.connections`. The edge that earns it: a socket
+stuck in SYN-SENT across two polls is a WARN — the SYN went out and nothing came
+back, so the port is filtered/dropped or the service is down, which is the exact
+hang a dev burns an afternoon on (a refused port RSTs instantly and never hangs;
+it is the *filtered* one that is pollable). Reaching it recovers (INFO); first
+contact with a remote host is one INFO — the "is my app pointed at dev or prod"
+answer. `--ssh` watches a remote box. VERIFIED: tests/connections.test.mjs
+drives a real hub with ss/lsof mocked on PATH — the endpoint tree, a stuck
+SYN-SENT firing WARN only after two checks (never on the first), recovery on
+reach, and first-contact INFO. macOS + Linux are first-class.
+
+**superlog-topology: the local network as a tree, and a route kept under
+watch.** A flat log never shows the *shape* of a network. This publishes the
+LAN as a tree on `net.<host>.topology` (this host, its gateway, the devices
+under it) for a new Topology window in both viewers, and watches any `--to
+<target>` route on `net.<host>.route.<target>`: per-hop RTT is a DEBUG reading,
+but only the STABLE facts alarm — a target going unreachable (ERROR), a
+sustained path-length change/reroute (WARN), a near-hop latency edge — while
+the ECMP-noisy middle is charted, never diffed (naive continuous traceroute was
+rejected before for exactly that noise). The ARP table only holds devices this
+machine has talked to, so `--discover` ping-sweeps the /24 (opt-in). Addresses
+carry a reverse-DNS name where one resolves; `--geo` labels public hops with
+their AS/owning network (opt-in, via RIPE). Secure by default: it reads the
+LOCAL net and reports to the LOCAL hub; the only off-machine lookups (`--geo`,
+`--discover`) are opt-in, and it says the PATH is up, never that the SERVICE is
+healthy. VERIFIED: tests/topology.test.mjs drives a real hub with the network
+tools mocked on PATH (as tests/gpu.test.mjs does nvidia-smi) — the LAN tree, a
+route's hops + per-hop RTT readings, and the unreachable ERROR firing once after
+two checks. CI runs it on Ubuntu; the Windows job runs the tailer against the
+runner's real arp/route. macOS + Linux are first-class; the Windows branch
+(arp -a, route print, tracert) is written but unverified on a real box.
+
+**Hub lifetime id (`epoch`), so a restart is detectable.** The hub's `seq` -
+and `/recent`'s `id` cursor - reset to zero on restart, so a consumer holding a
+cursor from a previous lifetime finds it above every new frame and reads the
+whole stream as already-seen replay: connected, healthy, discarding everything,
+silently. That dropped an uplink for five hours on this bench. The hub now mints
+a random `epoch` per boot and reports it on `/healthz` and in every `/recent`
+envelope; a cursor-holding consumer that sees a new epoch resets its cursor.
+Documented in PROTOCOL.md as a contract every cursor-holder must honour. (The
+`/ws` frame carries no epoch yet — that is a ts-moveables change; `/healthz` on
+connect covers a `/ws`-only consumer meanwhile.) VERIFIED: tests/epoch.test.mjs
+proves the epoch is present on both surfaces, they agree, it is stable within a
+run, and two hub lifetimes never share one.
+
+**search_history no longer reports a timed-out scan as a clean "no".** The
+journal scan has a time budget, and it read the OLDEST files first - so a "since
+45m" query against a 38 GB journal spent the whole budget on ancient files and
+returned "0 matches" having read zero of the recent ones. A false "no" to "did
+this ever happen?", which an agent then relayed as fact. Fixed three ways: files
+are read NEWEST-first (almost every history query is recent); the result states
+how much was covered ("scanned N of M files"); and a scan cut short before a
+match is reported as INCOMPLETE - "this is NOT a no" - never formatted like a
+definitive zero (only a COMPLETED scan may say "no matching events"). The budget
+is now `SUPER_LOG_SCAN_MS`-tunable. VERIFIED: tests/history.test.mjs drives the
+real MCP server over stdio against a synthetic journal - coverage reporting, a
+recent match found, a completed no, and (with a 1ms budget) the incomplete-scan
+message instead of a false zero.
+
+**Egress control at the hub: a topic can be cut from rebroadcast.**
+Composability is the hub's default — everything ingested goes out on `/ws`, so
+hubs compose — but that default can now be taken back, because a stream can be
+one that must exist on the bench and must never leave the machine.
+`SUPER_LOG_NO_EGRESS` names the topics: an exact topic, a `prefix.*` glob
+(`secrets.*` covers `secrets` and anything under `secrets.`), or a bare `*` for
+the whole hub. A matching topic is **accepted (still `202`) but served to
+nothing** — never broadcast on `/ws`, never returned by `/recent`, and because
+it never enters the `/ws` replay ring, a reconnecting subscriber can't recover
+it either. It is enforced in `superlogd` (MIT), not the SDKs, so no producer or
+subscriber can override it, and the hub names the active cut on its console at
+startup. HONEST LIMITATION, stated in the README, PROTOCOL and MCP guide too:
+"served to nothing" is the *whole* claim — a cut topic is **not journaled
+locally**, because super-log's own journal is itself a `/ws` subscriber, so a
+cut topic reaches no journal. Hub-internal journaling is the scheduled
+follow-up; until it lands, a cut topic is dropped, not persisted. VERIFIED:
+tests/egress.test.mjs drives a real hub as a subprocess and proves, against a
+no-policy control hub that DOES serve the same topic (so the test can see a
+leak), that a cut topic appears on neither `/recent` nor `/ws`, holds across a
+subscriber reconnect (no replay), and that `*` rebroadcasts nothing at all —
+and, as the failing half of the pair, neutering the hub's gate makes exactly
+those three assertions fail while the controls still pass. Full suite green
+(node --test).
+
 **Native Windows: a Winsock port of the SDK transports, and a Windows CI
 job.** The C and C++ SDK transports were POSIX-sockets only (`<sys/socket.h>`,
 `MSG_NOSIGNAL`), so they would not compile with MSVC. Added an `#ifdef _WIN32`

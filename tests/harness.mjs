@@ -108,7 +108,7 @@ async function healthy(url) {
  * Loopback-bound: a test hub that accepts connections from the LAN is a test
  * that can be joined by whatever else is on the network.
  */
-export async function startHub({ port, timeoutMs = 15000 } = {}) {
+export async function startHub({ port, timeoutMs = 15000, env = {} } = {}) {
   if (!hubBuilt())
     throw new Error(`superlogd not built at ${HUB_BIN} - run ./scripts/dev.sh or cmake --build build`);
 
@@ -121,6 +121,7 @@ export async function startHub({ port, timeoutMs = 15000 } = {}) {
         SUPER_LOG_PORT: String(p),
         SUPER_LOG_BIND: '127.0.0.1',
         SUPER_LOG_RECENT: '5000',
+        ...env,
       }),
     });
     let log = '';

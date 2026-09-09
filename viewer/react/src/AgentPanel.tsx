@@ -12,6 +12,7 @@
 
 import { useMemo } from 'react';
 import type { LogRow } from './useLogFeed';
+import { PanelTools } from './PanelTools';
 
 const LEVEL_COLOR: Record<string, string> = {
   WARN: '#d9a441', ERROR: '#e05b4f', CRITICAL: '#ff2e1f',
@@ -49,12 +50,22 @@ export function AgentPanel({ rows }: { rows: LogRow[] }) {
                                            : `${(s / 3600).toFixed(1)}h ago`;
   };
 
+  const asText = () => agents.map(([name, a]) => {
+    let s = `${name}  ${a.llm || '-'}`;
+    if (a.pct != null) s += `  [${a.pct}%]`;
+    if (a.status) s += `  ${a.status}`;
+    s += `  (${age(now - a.ts)})`;
+    if (a.task) s += `\n   task: ${a.task}`;
+    return s;
+  }).join('\n') + '\n';
+
   return (
     <aside style={{ width: 380, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center',
                     padding: '8px 10px', borderBottom: '1px solid #262b33' }}>
         <strong style={{ color: '#8a93a3' }}>🤖 agents · {agents.length}</strong>
+        <PanelTools text={asText} stem="agents" style={{ marginLeft: 'auto' }} />
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 10px', fontSize: 13 }}>
         {agents.length === 0 && (

@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import type { LogRow } from './useLogFeed';
 import { useGateway, type SelftestStep } from './useGateway';
 import { RoutesGrid } from './RoutesGrid';
+import { download, stamp } from './exporting';
 
 const age = (ms: number): string => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -141,6 +142,12 @@ export function WebhookPanel({ rows, hub, verdictFor }: {
                   setTimeout(() => setCopiedAll(false), 1500);
                 }}>
           {copiedAll ? 'copied' : 'copy all'}
+        </button>
+        <button style={box}
+                title="save every delivery the filters show, payloads included, as a .txt"
+                onClick={() => download(`superlog-webhooks-${stamp()}.txt`, 'text/plain',
+                                        deliveries.map(whText).join('\n\n') + '\n')}>
+          save
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 6px' }}>

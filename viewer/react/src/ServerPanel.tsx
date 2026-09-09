@@ -11,6 +11,7 @@
 
 import { useMemo } from 'react';
 import type { LogRow } from './useLogFeed';
+import { PanelTools } from './PanelTools';
 
 const LEVELS = ['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'] as const;
 const LEVEL_COLOR: Record<string, string> = {
@@ -62,12 +63,19 @@ export function ServerPanel({ rows }: { rows: LogRow[] }) {
 
   const now = Date.now();
 
+  const asText = () => servers.map(([name, e]) => {
+    const ago = now - e.last;
+    const word = ago < 120000 ? 'up' : ago < 600000 ? 'quiet' : 'silent';
+    return `${word.padEnd(7)}${name}  ${age(ago)}  ${e.lastLevel}`;
+  }).join('\n') + '\n';
+
   return (
     <aside style={{ width: 320, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center',
                     padding: '8px 10px', borderBottom: '1px solid #262b33' }}>
         <strong style={{ color: '#8a93a3' }}>🖥 servers · {servers.length}</strong>
+        <PanelTools text={asText} stem="servers" style={{ marginLeft: 'auto' }} />
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>

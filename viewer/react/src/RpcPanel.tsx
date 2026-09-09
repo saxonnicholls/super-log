@@ -10,6 +10,7 @@
 
 import { useMemo } from 'react';
 import type { LogRow } from './useLogFeed';
+import { PanelTools } from './PanelTools';
 
 interface Rpc {
   chain: string; provider: string; url: string; health: string;
@@ -50,6 +51,12 @@ export function RpcPanel({ rows }: { rows: LogRow[] }) {
   const unhealthy = rpcs.filter((e) => e.health === 'down' || e.health === 'stalled').length;
   const now = Date.now();
 
+  const asText = () => rpcs.map((e) => {
+    const word = e.health === 'down' ? 'DOWN' : e.health === 'stalled' ? 'STALL' : 'up';
+    return `${word.padEnd(6)}${e.chain}  ${e.provider}  block ${e.block || '-'}` +
+           (e.latency ? `  ${e.latency}ms` : '') + (e.url ? `  ${e.url}` : '');
+  }).join('\n') + '\n';
+
   return (
     <aside style={{ width: 440, borderLeft: '1px solid #262b33', display: 'flex',
                     flexDirection: 'column', minHeight: 0 }}>
@@ -58,6 +65,7 @@ export function RpcPanel({ rows }: { rows: LogRow[] }) {
         <strong style={{ color: unhealthy ? '#e05b4f' : '#8a93a3' }}>
           ⛓ RPC nodes{unhealthy ? ` · ${unhealthy} unhealthy` : ` · ${rpcs.length}`}
         </strong>
+        <PanelTools text={asText} stem="rpc" style={{ marginLeft: 'auto' }} />
       </div>
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>

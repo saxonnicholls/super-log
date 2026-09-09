@@ -7,6 +7,8 @@
       { "key": "menu.view.log", "label": "Log firehose", "action": "toggle.log", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.servers", "label": "Servers (health)", "action": "toggle.servers", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.devices", "label": "Devices (USB)", "action": "toggle.devices", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.topology", "label": "Topology (network)", "action": "toggle.topology", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.versions", "label": "Versions (stack)", "action": "toggle.versions", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.agents", "label": "Agents (MCP)", "action": "toggle.agents", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.prs", "label": "PRs (GitHub)", "action": "toggle.prs", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.rpc", "label": "RPC nodes", "action": "toggle.rpc", "attributes": ["CHECKBOX"], "checked": true },
