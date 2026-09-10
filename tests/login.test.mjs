@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..');
-const tee = join(repo, 'tailers', 'bin', 'superlog-tee.mjs');
+const cli = join(repo, 'tailers', 'bin', 'superlog.mjs');
 const door = join(repo, 'tailers', 'bin', 'superlog-login.mjs');
 const URL_RE = /https:\/\/super-log\.com\/connect/;
 
@@ -28,7 +28,7 @@ const run = (bin, args) => execFileSync('node', [bin, ...args],
   { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] });
 
 test('`superlog login` prints the cloud URL and exits without hanging', () => {
-  assert.match(run(tee, ['login', '--print']), URL_RE);
+  assert.match(run(cli, ['login', '--print']), URL_RE);
 });
 
 test('the door is reachable directly and prints the same URL', () => {
