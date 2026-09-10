@@ -92,22 +92,49 @@ std::vector<std::string> no_egress_from_env()
     return out;
 }
 
-// A pattern is a bare "*" (everything - the whole-hub cut), an exact topic, or
-// a "prefix.*" glob: "secrets.*" matches the topic "secrets" and anything under
-// "secrets.". Deliberately small - a topic is [a-z0-9._-], so there is no
-// general glob to get wrong. "*" is the fire alarm: SUPER_LOG_NO_EGRESS=* makes
-// the hub accept everything and rebroadcast nothing, so composability is off.
+static std::vector<std::string> split_dots(const std::string& s)
+{
+    std::vector<std::string> segs;
+    std::size_t start = 0;
+    for (std::size_t i = 0; i <= s.size(); ++i)
+        if (i == s.size() || s[i] == '.') { segs.emplace_back(s, start, i - start); start = i + 1; }
+    return segs;
+}
+
+// A "*" segment matches exactly one topic segment, EXCEPT a trailing "*" which
+// matches the rest (zero or more). So "secrets.*" still cuts "secrets" and
+// everything under it, and "host.*.versions" - the form the docs recommend -
+// cuts one host at a time, matching the segment in the middle.
+static bool seg_match(const std::vector<std::string>& p, std::size_t pi,
+                      const std::vector<std::string>& t, std::size_t ti)
+{
+    if (pi == p.size())
+        return ti == t.size();
+    if (p[pi] == "*") {
+        if (pi + 1 == p.size())                 // trailing * : the rest, any length
+            return true;
+        if (ti == t.size())                     // middle * : needs exactly one segment
+            return false;
+        return seg_match(p, pi + 1, t, ti + 1);
+    }
+    if (ti == t.size() || t[ti] != p[pi])
+        return false;
+    return seg_match(p, pi + 1, t, ti + 1);
+}
+
+// A pattern is a bare "*" (everything - the whole-hub cut), an exact topic, or a
+// glob with "*" as a wildcard SEGMENT in any position: "secrets.*" cuts anything
+// under secrets, and "host.*.versions" cuts every host's version inventory (a
+// CVE roadmap). Earlier this only understood a trailing ".*", so the middle-glob
+// form the docs recommend silently matched nothing while the banner said the cut
+// was active - the exact "reports success, enforces nothing" shape.
 bool topic_matches(const std::string& topic, const std::string& pat)
 {
     if (pat == "*")
         return true;
-    if (pat.size() >= 2 && pat[pat.size() - 2] == '.' && pat.back() == '*') {
-        const std::string prefix(pat, 0, pat.size() - 2);   // "secrets" from "secrets.*"
-        return topic == prefix ||
-               (topic.size() > prefix.size() && topic[prefix.size()] == '.' &&
-                topic.compare(0, prefix.size(), prefix) == 0);
-    }
-    return topic == pat;
+    if (pat.find('*') == std::string::npos)
+        return topic == pat;                    // exact - the common case, no split
+    return seg_match(split_dots(pat), 0, split_dots(topic), 0);
 }
 
 bool is_no_egress(const std::string& topic, const std::vector<std::string>& pats)

@@ -60,14 +60,15 @@ async function wsTopics(url, { act, ms = 800 } = {}) {
   return topics;
 }
 
-let hubOpen, hubCut, hubAll;
+let hubOpen, hubCut, hubAll, hubGlob;
 
 before(async () => {
   hubOpen = await startHub();                                           // no policy
   hubCut = await startHub({ env: { SUPER_LOG_NO_EGRESS: 'secrets.*,vault.*' } });
   hubAll = await startHub({ env: { SUPER_LOG_NO_EGRESS: '*' } });       // the fire alarm
+  hubGlob = await startHub({ env: { SUPER_LOG_NO_EGRESS: 'host.*.versions' } }); // the docs' middle glob
 });
-after(async () => { await hubOpen?.stop(); await hubCut?.stop(); await hubAll?.stop(); });
+after(async () => { await hubOpen?.stop(); await hubCut?.stop(); await hubAll?.stop(); await hubGlob?.stop(); });
 
 describe('egress: the per-topic scalpel', () => {
   it('CONTROL: with no policy, the secret topic IS served on /recent (the test can see a leak)', async () => {
@@ -78,6 +79,21 @@ describe('egress: the per-topic scalpel', () => {
     assert.ok(txt.includes(NORMAL), 'a normal topic is served');
     assert.ok(txt.includes(SECRET),
       'without a policy the secret topic IS served - so the treatment assertions below are real');
+  });
+
+  it('a MIDDLE glob (host.*.versions - the form the docs recommend) cuts every matching host', async () => {
+    // The regression: this pattern used to match nothing while the banner said
+    // the cut was active. A version inventory is a CVE roadmap.
+    await post(hubGlob.url, 'host.bench.versions', 'CVE-ROADMAP-MUST-NOT-LEAK');
+    await post(hubGlob.url, 'host.pi4.versions', 'ALSO-MUST-NOT-LEAK');
+    await post(hubGlob.url, 'normal.control', 'CONTROL-MUST-APPEAR');
+    await new Promise((r) => setTimeout(r, 200));
+    const txt = await recentText(hubGlob.url);
+    assert.ok(txt.includes('CONTROL-MUST-APPEAR'), 'the control proves the hub is serving data');
+    assert.ok(!txt.includes('host.bench.versions') && !txt.includes('CVE-ROADMAP-MUST-NOT-LEAK'),
+      'host.bench.versions must be cut by host.*.versions');
+    assert.ok(!txt.includes('host.pi4.versions') && !txt.includes('ALSO-MUST-NOT-LEAK'),
+      'host.pi4.versions must be cut too - a middle glob matches every host');
   });
 
   it('with SUPER_LOG_NO_EGRESS, the no-egress topic is served to NOTHING on /recent', async () => {
