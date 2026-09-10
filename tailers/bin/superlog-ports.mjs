@@ -61,6 +61,12 @@ const dest = opt('ssh');
 const procWatch = (opt('procs', env.SUPER_LOG_PORTS_PROCS ?? '') || '')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
+// POSIX single-quote escaping, as the sibling tailers use it: a --procs value
+// (or SUPER_LOG_PORTS_PROCS from a discovered .env) is untrusted and reaches a
+// shell - locally, or a REMOTE shell under --ssh. Without this, one poisoned
+// .env is command execution across a fleet.
+const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
 const sanitize = (s) => s.split('.')[0].toLowerCase().replace(/[^a-z0-9._-]/g, '-');
 const host = dest ? sanitize(dest.includes('@') ? dest.split('@')[1] : dest) : sanitize(hostname());
 const topic = opt('topic', `net.${host}.listeners`);
@@ -188,7 +194,7 @@ async function firewallRules() {
 async function processPids(names) {
   const found = new Map();
   for (const n of names) {
-    const r = await run(`pgrep -d, -x ${n} 2>/dev/null || pgrep -d, -f ${n} 2>/dev/null`);
+    const r = await run(`pgrep -d, -x ${shq(n)} 2>/dev/null || pgrep -d, -f ${shq(n)} 2>/dev/null`);
     const pids = r.out.trim().split(',').filter(Boolean);
     if (pids.length) found.set(n, pids.sort().join(','));
   }
