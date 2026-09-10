@@ -90,7 +90,7 @@
     "node": ">=18"
   },
   "bin": {
-    "superlog": "tailers/bin/superlog-tee.mjs",
+    "superlog": "tailers/bin/superlog.mjs",
     "superlog-tee": "tailers/bin/superlog-tee.mjs",
     "superlog-git": "tailers/bin/superlog-git.mjs",
     "superlog-github": "tailers/bin/superlog-github.mjs",

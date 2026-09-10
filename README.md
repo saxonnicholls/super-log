@@ -59,7 +59,7 @@ super-log converges all of it on one process and one screen:
 | **builds and repos**     | cmake, clang, gcc, rustc, swiftc, npm, xcodebuild, Vivado and Quartus — plus sanitizer and valgrind findings captured whole, local git, and GitHub Actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | **blockchain**           | watched addresses on any EVM chain, with transfers decoded and token decimals read per contract; operational key balances with edge-triggered fund-now alarms - EVM (gas or ERC-20), **Solana** (SOL or SPL), **Tron** (TRX or TRC-20, USDT included), and **Bitcoin** (any Esplora API, your own node included)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | **trading, FIX**         | FIX session logs (QuickFIX, FIX8, or any engine that writes the standard message log): every message decoded from the SOH-delimited `tag=value` wire and **levelled so the quiet failures shout** — a Reject or a rejected fill is ERROR **with its reason**, a Logout or sequence gap is WARN (the session that stopped filling mid-day), a Heartbeat is DEBUG — with ClOrdID, Symbol, Side, OrderQty, Price and OrdStatus riding as fields; one `fix.<begin>-<sender>-<target>` topic per session, derived from the message itself, never the filename                                                                                                                                                                                                                                                          |
-| **anything that prints** | `your-command 2>&1 \| superlog` — a drop-in `tee`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **anything that prints** | `your-command 2>&1 \| superlog tee` — a drop-in `tee`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | **alarms, webhooks**     | rules over the bench (level, rate, silence, combos) plus a tunnelled public webhook for production — deduped by key, repeat-counted, heartbeat dead-man — landing in both viewers' sparse alarm blotters, delivered through one channel registry (desktop, webhook; Telegram/Twilio/email config-gated); public endpoints provisioned one per click or many per manifest file, each with its own ping clock and health light, every route round-trip-tested by the test button, the live URLs written to`endpoints.env`; **webhook testing** built in — capture Stripe/GitHub deliveries as `wh.*` events, verify Stripe signatures on arrival, or relay each delivery to your local handler with its real response returned (`stripe listen`, with a record) |
 
 Every producer speaks one small wire protocol
@@ -93,12 +93,28 @@ sudo apt install -y ./super-log_0.3.0_arm64.deb
 Then see it work in two lines — the hub is already running on `:7333`:
 
 ```sh
-echo "the bench is live" | superlog --topic hello
+echo "the bench is live" | superlog tee --topic hello
 curl -s "http://127.0.0.1:7333/recent?topic=hello"
 ```
 
 Fedora/RHEL, npm, vcpkg, building from source, and the web + native viewers are
 in [Install](#install) below.
+
+## The `superlog` CLI
+
+One command reads the bench, manages the tailers, and pipes streams onto the hub:
+
+```
+superlog status            what's running, and the hub's health
+superlog alarms            firing alarms   (every read command is NDJSON when piped — | jq)
+superlog versions          the version inventory, per host
+superlog start vitals      start a tailer in the background
+superlog stop vitals       stop it
+superlog tee               a stream onto the hub   (make 2>&1 | superlog tee --topic build)
+superlog login             open super-log Cloud in your browser
+```
+
+Full reference: **[docs/CLI.md](docs/CLI.md)**. Or `superlog help`.
 
 ## What it does for you
 
@@ -222,7 +238,7 @@ otherwise scroll past as INFO; they, Apple's `Undefined symbols` and
 `duplicate symbol`, lld, `collect2`, and the driver's own
 `clang: error: linker command failed` all land as ERROR. Debuggers ride the
 same rails: pipe a batch session through the tee —
-`gdb --batch -ex run -ex bt ./app 2>&1 | superlog --topic dbg.app --classify`
+`gdb --batch -ex run -ex bt ./app 2>&1 | superlog tee --topic dbg.app --classify`
 (lldb likewise) — or tail gdb's `set logging` file like any other.
 
 **Massive downloads, watched.** A 70B model from Hugging Face is fifteen
@@ -569,13 +585,13 @@ brew install saxonnicholls/tap/super-log     # the hub + all the tailers
 
 # See it work in three lines:
 brew services start super-log                        # hub on :7333
-echo "the bench is live" | superlog --topic hello    # a line of your own
+echo "the bench is live" | superlog tee --topic hello    # a line of your own
 curl -s "http://127.0.0.1:7333/recent?topic=hello"   # read it back
 
 # Then put your machine on the bench — any of these, immediately:
 superlog-netstate      # gateway, Wi-Fi, VPN, resolvers — changes only
 superlog-otlp          # OpenTelemetry inlet on :4318
-your-build 2>&1 | superlog --topic build    # anything that prints
+your-build 2>&1 | superlog tee --topic build    # anything that prints
 ```
 
 Other channels, each landing the hub and the tailers:
@@ -1076,7 +1092,7 @@ npm run git -- --ssh web1 --repo /srv/app   # ...a deployed checkout
 npm run github -- --repo owner/name         # CI runs, PRs, releases
 npm run watch -- --dir src                  # files created, modified, deleted
 npm run watch -- --dir config --diff        # ...and the changed LINES, hunk by hunk
-make 2>&1 | npx superlog --topic build.local # superlog-tee: a drop-in tee
+make 2>&1 | npx superlog tee --topic build.local # superlog-tee: a drop-in tee
 npm run ws -- wss://stream.binance.com:9443/ws/btcusdt@trade
 npm run serial -- --list                    # boards plugged in
 npm run serial -- --port /dev/ttyUSB0       # the serial console, as events
@@ -1327,7 +1343,11 @@ stripe login --project-name acme    # a second account, then --account acme
 authorised for it. CLI keys also expire — if a stream goes quiet after a few
 months, re-run `stripe login` before suspecting the tailer.
 
-### Why there is no login
+### Why the hub has no auth
+
+(`superlog login` is a browser door to the optional [Cloud](#super-logcom--analysis-and-ai-for-teams) — it adds no
+authentication to the local hub and makes no network call of its own. This is
+about the hub itself.)
 
 The bar this aims at is deliberately modest and deliberately explicit: **be
 no less safe than the logs a developer already has**, and never more
