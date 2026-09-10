@@ -307,9 +307,14 @@ SUPERLOG_API void superlog_kv(superlog_t *lg, const char *level, const char *msg
            (val = va_arg(ap, const char *)) != NULL) {
         superlog__esc(k, sizeof k, key);
         superlog__esc(v, sizeof v, val);
-        o += (size_t)snprintf(extra + o, sizeof extra - o, "%s\"%s\":\"%s\"",
-                              o ? "," : ",\"fields\":{", k, v);
-        if (o >= sizeof extra - 2) break;
+        /* snprintf returns what it WOULD have written; adding that unclamped let
+         * o walk past sizeof extra, after which `extra + o` and the wrapped
+         * `sizeof extra - o` write out of bounds. Clamp: if the field does not
+         * fit, stop BEFORE o moves, dropping the overflowing field. */
+        int n = snprintf(extra + o, sizeof extra - o, "%s\"%s\":\"%s\"",
+                         o ? "," : ",\"fields\":{", k, v);
+        if (n < 0 || (size_t)n >= sizeof extra - o) break;
+        o += (size_t)n;
     }
     va_end(ap);
     if (o) snprintf(extra + o, sizeof extra - o, "}");
