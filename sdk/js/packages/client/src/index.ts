@@ -204,21 +204,30 @@ function detectRuntime(): string {
   return p === 'react-native' ? 'react-native' : p === 'node' ? 'node' : 'js';
 }
 
-// Credentials live in query strings more often than anyone admits. The URL
-// is worth having; the token in it is not worth shipping to a dev bench.
-const SECRET_PARAM = /^(token|access_token|id_token|refresh_token|key|api[-_]?key|secret|password|pwd|auth|signature|sig|session)$/i;
+// A credential is as often a path segment as a query param - Infura, Alchemy and
+// QuickNode all put the key in the path, and a URL with no `?` used to sail
+// through untouched. So: strip user:pass@, blank EVERY query value (a blocklist
+// of param names silently leaks the day a provider picks a new one), drop the
+// fragment, and redact key-shaped path segments in any position.
+const looksSecret = (s: string): boolean =>
+  s.length >= 16 && /[A-Za-z]/.test(s) && /\d/.test(s) && /^[\w-]+$/.test(s);
 
 function redactUrl(url: string): string {
-  const q = url.indexOf('?');
-  if (q < 0) return url.slice(0, 512);
-  const base = url.slice(0, q);
-  const parts = url.slice(q + 1).split('&').map((kv) => {
-    const eq = kv.indexOf('=');
-    if (eq < 0) return kv;
-    const k = kv.slice(0, eq);
-    return SECRET_PARAM.test(decodeURIComponent(k)) ? `${k}=<redacted>` : kv;
-  });
-  return `${base}?${parts.join('&')}`.slice(0, 512);
+  try {
+    const relative = !/^[a-z][a-z0-9+.-]*:/i.test(url);
+    const u = new URL(url, relative ? 'http://_redacted_base_' : undefined);
+    if (u.username || u.password) { u.username = ''; u.password = ''; }
+    u.pathname = u.pathname.split('/').map((s) => (looksSecret(s) ? '<key>' : s)).join('/');
+    const keys: string[] = [];
+    u.searchParams.forEach((_v, k) => keys.push(k));   // .keys() iterator not in this lib target
+    for (const k of keys) u.searchParams.set(k, '<redacted>');
+    if (u.hash) u.hash = '';
+    let out = u.toString();
+    if (relative) out = out.replace(/^http:\/\/_redacted_base_/, '');
+    return out.slice(0, 512);
+  } catch {
+    return url.slice(0, 512);
+  }
 }
 
 function safeString(v: unknown): string {
