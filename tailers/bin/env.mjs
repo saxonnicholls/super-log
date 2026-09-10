@@ -49,19 +49,28 @@ export function loadEnv(explicit) {
   return { ...out, ...process.env, __envFile: path ?? undefined };
 }
 
+// A path segment that looks like a credential: long, and mixed letters+digits
+// (a real provider key is high-entropy), but not a readable slug or a plain id.
+// Infura/Alchemy/QuickNode all put the key in the path, not a query param.
+const looksSecret = (s) =>
+  s.length >= 16 && /[A-Za-z]/.test(s) && /\d/.test(s) && /^[\w-]+$/.test(s);
+
 /** Never print a URL with a provider key in it. Logs get shared, pasted and
- *  screenshotted, and an RPC key is spendable. */
+ *  screenshotted, and an RPC key is spendable. Strips user:pass@, blanks every
+ *  query value, drops the fragment, and redacts key-shaped path segments in any
+ *  position. Handles a relative URL (a path with no scheme) too. */
 export function redactUrl(u) {
   if (!u) return '';
   try {
-    const url = new URL(u);
-    const parts = url.pathname.split('/').filter(Boolean);
-    // Providers put the key in the last path segment (alchemy, quicknode)
-    // or in a query param (infura-style).
-    if (parts.length) parts[parts.length - 1] = '<key>';
-    url.pathname = '/' + parts.join('/');
+    const relative = !/^[a-z][a-z0-9+.-]*:/i.test(u);
+    const url = new URL(u, relative ? 'http://_redacted_base_' : undefined);
+    if (url.username || url.password) { url.username = ''; url.password = ''; }
+    url.pathname = url.pathname.split('/').map((s) => looksSecret(s) ? '<key>' : s).join('/');
     for (const k of [...url.searchParams.keys()]) url.searchParams.set(k, '<redacted>');
-    return url.toString();
+    if (url.hash) url.hash = '';
+    let out = url.toString();
+    if (relative) out = out.replace(/^http:\/\/_redacted_base_/, '');
+    return out.slice(0, 512);
   } catch {
     return '<unparseable url>';
   }

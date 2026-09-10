@@ -32,6 +32,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { hostname } from 'node:os';
 import { URL } from 'node:url';
+import { redactUrl } from './env.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -139,9 +140,10 @@ const server = http.createServer((req, res) => {
       capture(upRes, (resBytes, resBody) => {
         void reqInfo.then(({ bytes: reqBytes, body: reqBody }) => {
           const dur = Date.now() - started;
+          const safeUrl = redactUrl(req.url ?? '');
           const fields = {
             method: req.method ?? '?',
-            path: (req.url ?? '').slice(0, 512),
+            path: safeUrl,
             status: String(upRes.statusCode ?? 0),
             ms: String(dur),
             req_bytes: String(reqBytes),
@@ -155,7 +157,7 @@ const server = http.createServer((req, res) => {
           }
           emit(
             levelForStatus(upRes.statusCode ?? 0),
-            `${req.method} ${req.url} → ${upRes.statusCode} in ${dur}ms`,
+            `${req.method} ${safeUrl} → ${upRes.statusCode} in ${dur}ms`,
             fields,
           );
         });
