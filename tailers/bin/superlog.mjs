@@ -123,6 +123,22 @@ async function restart(name) {
   start(name, st?.args ?? rest.slice(1));
 }
 
+// Every superlog-<name> process on the machine, however it was started - by
+// `superlog start`, launchd, a fleet runner, `npm run`, or by hand - so status
+// shows the whole bench and not just what this CLI launched.
+function scanRunningTailers() {
+  try {
+    const out = spawnSync('ps', ['-axww', '-o', 'pid=,etime=,args='],
+      { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).stdout || '';
+    const rows = [];
+    for (const line of out.split('\n')) {
+      const m = line.match(/^\s*(\d+)\s+(\S+)\s+.*\bsuperlog-([a-z0-9-]+)\.mjs\b(.*)$/);
+      if (m) rows.push({ name: m[3], pid: Number(m[1]), etime: m[2], args: m[4].trim() });
+    }
+    return rows;
+  } catch { return []; }
+}
+
 async function status(name) {
   // The hub first: a bench with no hub is the "is it down, or just quiet" question.
   let hub = 'down';
@@ -132,17 +148,27 @@ async function status(name) {
   } catch { /* down */ }
   console.log(`hub ${HUB}: ${hub}\n`);
 
-  const live = running().filter((s2, i, a) => a.findIndex((x) => x.log === s2.log) === i);
-  const show = name ? live.filter((s) => logPath(name) === s.log) : live;
-  if (!show.length) {
-    console.log(name ? `${name} is not running` : "no tailers started by superlog are running ('superlog start <tailer>')");
+  const managed = new Set(running()
+    .map((s) => s.log.match(/([a-z0-9-]+)\.log$/)?.[1]).filter(Boolean));
+  let procs = scanRunningTailers();
+  if (name) procs = procs.filter((p) => p.name === name);
+  if (!procs.length) {
+    console.log(name ? `${name} is not running`
+      : "no superlog tailers are running ('superlog list', then 'superlog start <tailer>')");
     return;
   }
-  const label = (s) => (s.log.match(/([a-z0-9-]+)\.log$/)?.[1]) ?? '?';
-  const width = show.reduce((w, s) => Math.max(w, label(s).length), 0);
-  for (const s of show)
-    console.log(`  up   ${label(s).padEnd(width)}  pid ${String(s.pid).padEnd(7)} ${ago(s.started)}` +
-                (s.args?.length ? `  ${s.args.join(' ')}` : ''));
+  procs.sort((a, b) => a.name.localeCompare(b.name) || a.pid - b.pid);
+  const width = procs.reduce((w, p) => Math.max(w, p.name.length), 0);
+  for (const p of procs)
+    console.log(`  up   ${p.name.padEnd(width)}  pid ${String(p.pid).padEnd(7)} ${p.etime.padStart(9)}  ` +
+                `${managed.has(p.name) ? 'superlog' : 'external'}` +
+                (p.args ? `  ${redactArgs(p.args).slice(0, 48)}` : ''));
+}
+
+// status prints a process's args; never echo a secret from a command line.
+function redactArgs(a) {
+  return a.replace(/^--url \S+ ?/, '')
+    .replace(/(--(?:token|secret|auth|key|password|pass)[= ]?)\S+/gi, '$1<redacted>');
 }
 
 function logs(name) {
