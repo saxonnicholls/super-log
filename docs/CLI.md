@@ -46,9 +46,23 @@ act on.
 | `superlog start <tailer> [opts]` | start a tailer in the background |
 | `superlog stop <tailer>`         | stop it |
 | `superlog restart <tailer>`      | stop, then start with the same options |
-| `superlog status [tailer]`       | what is running, and the hub's health |
+| `superlog enable <tailer> [opts]`| **always**: keep it alive across crashes *and* reboots |
+| `superlog disable <tailer>`      | turn that off |
+| `superlog status [tailer]`       | what is running (every `superlog-*` process, however started), and the hub's health |
 | `superlog logs <tailer>`         | follow a running tailer's log (`tail -f`) |
 | `superlog list`                  | every tailer there is, with a one-line description |
+
+`enable` is the persistent counterpart to `start`: it installs a keep-alive
+service the platform's own manager supervises — a **launchd** agent
+(`~/Library/LaunchAgents/com.super-log.<tailer>.plist`, `KeepAlive`) on macOS, a
+**systemd** `--user` unit (`Restart=always`) on Linux — so the tailer restarts on
+crash and comes back at login. On Linux, `loginctl enable-linger` makes it
+survive logout/reboot without a session. `disable` stops and removes it.
+
+```console
+$ superlog enable versions --ssh web1     # keep this one alive, forever
+$ superlog disable versions
+```
 
 ```console
 $ superlog start vitals
