@@ -1,11 +1,29 @@
 {
   "name": "@super-log/tailers",
   "version": "0.3.0",
-  "description": "super-log tailers: 40+ zero-dependency log sources for one hub - devices, services, chains, network, OpenTelemetry and more",
+  "description": "Log sources for a super-log hub \u2014 devices, servers, containers, chains, GPUs. Zero dependencies.",
+  "license": "MIT",
   "author": "Saxon Herschel Nicholls",
+  "homepage": "https://github.com/saxonnicholls/super-log#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saxonnicholls/super-log.git",
+    "directory": "tailers"
+  },
+  "bugs": {
+    "url": "https://github.com/saxonnicholls/super-log/issues"
+  },
+  "keywords": [
+    "logging",
+    "observability",
+    "super-log",
+    "tailer",
+    "opentelemetry",
+    "syslog"
+  ],
   "type": "module",
   "bin": {
-    "superlog": "bin/superlog-tee.mjs",
+    "superlog": "bin/superlog.mjs",
     "superlog-alarm": "bin/superlog-alarm.mjs",
     "superlog-alert": "bin/superlog-alert.mjs",
     "superlog-bridge": "bin/superlog-bridge.mjs",
@@ -52,20 +70,5 @@
   },
   "files": [
     "bin"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/saxonnicholls/super-log.git",
-    "directory": "tailers"
-  },
-  "homepage": "https://github.com/saxonnicholls/super-log#readme",
-  "license": "MIT",
-  "keywords": [
-    "logging",
-    "observability",
-    "super-log",
-    "tailer",
-    "opentelemetry",
-    "syslog"
   ]
 }
