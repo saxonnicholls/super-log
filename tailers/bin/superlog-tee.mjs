@@ -35,18 +35,8 @@
 import { createWriteStream } from 'node:fs';
 import { hostname } from 'node:os';
 import { loadEnv } from './env.mjs';
-import { runLogin } from './superlog-login.mjs';
 
 const argv = process.argv.slice(2);
-
-// `superlog login` is not a tee invocation - it is the door to super-log Cloud.
-// The `superlog` command IS this tee, so the subcommand is dispatched here, and
-// it MUST come before anything touches stdin: a bare `superlog login` would
-// otherwise be read as a filename and sit forever waiting on input.
-if (argv[0] === 'login') {
-  runLogin(argv.slice(1));
-  process.exit(0);
-}
 const flagsWithValues = new Set(['--topic', '--level', '--url', '--app', '--trace']);
 const opt = (name, dflt) => {
   const i = argv.indexOf(`--${name}`);
@@ -54,13 +44,13 @@ const opt = (name, dflt) => {
 };
 
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.error(`superlog-tee - tee(1) with the hub as an extra output
+  console.error(`superlog tee - tee(1) with the hub as an extra output
 
-  <command> | superlog-tee [--topic NAME] [--level LEVEL] [--classify]
+  <command> | superlog tee [--topic NAME] [--level LEVEL] [--classify]
                            [--app NAME] [--trace ID] [-a] [--quiet] [FILE...]
 
-  make 2>&1 | superlog-tee --topic build.local
-  ./deploy.sh 2>&1 | superlog-tee --topic deploy --classify out.log
+  make 2>&1 | superlog tee --topic build.local
+  ./deploy.sh 2>&1 | superlog tee --topic deploy --classify out.log
 
 stdin is copied to stdout unchanged and to any FILEs, exactly as tee does;
 each line is also published to the hub.`);

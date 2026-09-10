@@ -5,6 +5,29 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**A real `superlog` CLI: read the bench, manage the tailers, pipe a stream.**
+`superlog` used to be only a `tee`, and a bare `superlog` on a terminal hung
+waiting on stdin — the first thing a new user typed did nothing. It is now a
+proper CLI, shaped after the tools that got this right (docker, systemctl, pm2):
+
+- **Read the bench, piped to jq.** `superlog alarms`, `versions`, `servers`,
+  `prs`, `rpc`, `topology`, `connections`, `ports`, `webhooks`, `agents`,
+  `devices`, `gpu` show the latest state per key — readable on a terminal, NDJSON
+  when piped, so `superlog alarms | jq` just works. `superlog status` shows what
+  is running and the hub's health.
+- **Manage tailers.** `superlog start <tailer>` runs one in the background with
+  its pid and log tracked under `~/.superlog`; `stop`, `restart`, `logs` and
+  `list` follow. Options pass straight through (`superlog start versions --ssh
+  web1`). Every tailer still runs directly as `npm run <name>`.
+- **Streams and cloud.** `<cmd> | superlog tee` is the tee (moved off the bare
+  command); `superlog login` opens Cloud in a browser; `superlog billing` says
+  **free forever** unless the optional cloud client is installed. `superlog` and
+  `superlog help` print the command list rather than hanging.
+
+The tailer and read lists are generated from disk, so help can never drift from
+what is installed. The `superlog` bin now points at tailers/bin/superlog.mjs;
+`superlog tee` is the tee. Full reference in docs/CLI.md.
+
 **The journal no longer dies when the hub restarts.** superlog-journal is the
 bench's durable record and a `/ws` subscriber that dedups on the hub's seq — but
 the seq resets to 0 when the hub restarts, so a cursor carried across that
