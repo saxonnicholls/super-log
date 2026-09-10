@@ -61,7 +61,7 @@ before(async () => {
      '--notify', '', '--url', hub.url, '--provision', manifest,
      '--endpoints-file', join(work, 'endpoints.env')],
     { env: { SUPER_LOG_TUNNEL_FAKE: `${hub.url}/healthz|60` } });
-  await gw.waitForStderr(/gateway on :7391/);
+  await gw.waitForStderr(/gateway on \S+:7391/);
 });
 
 after(async () => {

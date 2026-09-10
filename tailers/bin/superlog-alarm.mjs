@@ -993,15 +993,16 @@ const server = createServer(async (req, res) => {
       note += fields.sig === 'verified' ? ', sig ok' : ', sig BAD';
     }
 
-    // A configured secret is a REQUIREMENT, not an annotation: only a fully
-    // verified signature is relayed, published or answered. A failed, stale or
-    // missing signature is rejected HERE - never handed to the operator's local
-    // handler, never published as if it were genuine, never answered.
-    if (secret && fields.sig !== 'verified')
-      return json(res, 401, { ok: false, error: `webhook signature ${fields.sig ?? 'missing'}` });
+    // A configured secret is a REQUIREMENT, not an annotation. A webhook whose
+    // signature is not verified is still RECORDED - so a tampering attempt is
+    // visible on the bench (WARN) - but is NEVER handed to the operator's local
+    // handler, never forwarded on, and never answered with the handler's
+    // response. Only a fully verified signature (or no configured secret) does
+    // those. This is the B2 fix: the forged body must not reach the handler.
+    const sigOk = !secret || fields.sig === 'verified';
 
     let relayed = null;
-    if (ep?.relay) {
+    if (ep?.relay && sigOk) {
       try {
         const fw = { ...req.headers };
         for (const h of ['host', 'content-length', 'connection', 'transfer-encoding'])
@@ -1029,6 +1030,10 @@ const server = createServer(async (req, res) => {
       method: 'POST', headers: { 'content-type': 'application/x-ndjson' }, body: line,
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
+    // A forged webhook is recorded above, but goes no further: not forwarded on,
+    // not answered with a handler response - the sender gets a plain 401.
+    if (!sigOk)
+      return json(res, 401, { ok: false, error: `webhook signature ${fields.sig ?? 'missing'}` });
     forwardOn(`/hook/${name}`, body, Number(req.headers['x-superlog-hop']) || 0);
     if (relayed) {
       const text = await relayed.text().catch(() => '');
