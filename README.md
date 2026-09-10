@@ -1262,6 +1262,10 @@ makes it for you.
 
 ## Security posture
 
+The full model — the MIT tool's threat model and how it differs from super-log
+Cloud's — is **[docs/SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md)**.
+In short:
+
 No auth, no TLS: anyone who can reach the port can read every stream and
 publish to any topic. The defaults are arranged so exposure is a choice, not
 an accident:
