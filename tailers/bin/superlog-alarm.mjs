@@ -951,6 +951,11 @@ const server = createServer(async (req, res) => {
   if (hookMatch) {
     const name = hookMatch[1];
     const ep = provisioned.get(sanitize(name));
+    // The endpoint must have been provisioned. Without this, any name matching
+    // the route injects a wh.<name> event into an arbitrary topic from anywhere
+    // on the internet - the listener binds 0.0.0.0 and is deliberately
+    // tunnel-exposed - independent of any signature.
+    if (!ep) return json(res, 404, { ok: false, error: 'no such endpoint - provision it first' });
     const body = await readBody(req);
     const keep = ['content-type', 'user-agent', 'stripe-signature', 'x-github-event'];
     const heads = Object.fromEntries(keep.filter((h) => req.headers[h])
@@ -987,6 +992,13 @@ const server = createServer(async (req, res) => {
       if (fields.sig !== 'verified') level = 'WARN';
       note += fields.sig === 'verified' ? ', sig ok' : ', sig BAD';
     }
+
+    // A configured secret is a REQUIREMENT, not an annotation: only a fully
+    // verified signature is relayed, published or answered. A failed, stale or
+    // missing signature is rejected HERE - never handed to the operator's local
+    // handler, never published as if it were genuine, never answered.
+    if (secret && fields.sig !== 'verified')
+      return json(res, 401, { ok: false, error: `webhook signature ${fields.sig ?? 'missing'}` });
 
     let relayed = null;
     if (ep?.relay) {
@@ -1099,8 +1111,14 @@ const server = createServer(async (req, res) => {
   return json(res, 404, { ok: false, error: 'POST /alarm/<name>, /heartbeat/<name>, /test, /selftest or GET /healthz' });
 });
 
-server.listen(port, '0.0.0.0', () => {
-  console.error(`superlog-alarm: gateway on :${port} (tunnel: ${tunnel.kind}, notify: ${notifyNames.join(',') || 'none'}) -> ${hubUrl}`);
+// Loopback by default: the Cloudflare/zrok tunnel connects to 127.0.0.1:port,
+// so a public webhook still works, without the endpoint being directly
+// reachable on the LAN. Binding 0.0.0.0 is opt-in (--lan / SUPER_LOG_ALARM_LAN).
+const bindAddr = (opt('lan') || env.SUPER_LOG_ALARM_LAN) ? '0.0.0.0' : '127.0.0.1';
+server.listen(port, bindAddr, () => {
+  console.error(`superlog-alarm: gateway on ${bindAddr}:${port} (tunnel: ${tunnel.kind}, notify: ${notifyNames.join(',') || 'none'}) -> ${hubUrl}`);
+  if (bindAddr === '0.0.0.0')
+    console.error('superlog-alarm: WARNING bound 0.0.0.0 - the webhook door is reachable on your LAN, not just the tunnel');
   if (!env.SUPER_LOG_ALARM_TOKEN && !opt('token'))
     console.error(`superlog-alarm: generated token ${token} - set SUPER_LOG_ALARM_TOKEN to keep it stable`);
   void startTunnel();
