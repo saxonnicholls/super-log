@@ -244,7 +244,9 @@ inline bool embeddable_json_object(const std::string& s) noexcept
         return false;
     int depth = 0;
     bool in_string = false, escaped = false;
-    for (const char c : s) {
+    const auto letter = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); };
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
         if (in_string) {
             if (escaped)          escaped = false;
             else if (c == '\\')   escaped = true;
@@ -253,11 +255,24 @@ inline bool embeddable_json_object(const std::string& s) noexcept
                 return false;                   // a raw control char is never legal in a JSON string
             continue;
         }
-        switch (c) {
-        case '"': in_string = true; break;
-        case '{': case '[': if (++depth > 64) return false; break;   // absurd nesting is not ours to relay
-        case '}': case ']': if (--depth < 0) return false; break;
-        default: break;
+        if (c == '"') { in_string = true; continue; }
+        if (c == '{' || c == '[') { if (++depth > 64) return false; continue; }  // absurd nesting not ours to relay
+        if (c == '}' || c == ']') { if (--depth < 0) return false; continue; }
+        // A bareword outside a string must be a JSON literal (true/false/null),
+        // OR a number's exponent letter (a lone e/E after a digit or dot). Any
+        // other bareword - crucially nan, inf, -inf, infinity, what printf emits
+        // for a non-finite double - is NOT valid JSON, and relaying one verbatim
+        // breaks every reader's parse of the WHOLE /recent response. So reject it
+        // here and let the line be wrapped as a string instead.
+        if (letter(c)) {
+            std::size_t j = i;
+            while (j < s.size() && letter(s[j])) ++j;
+            const std::string word = s.substr(i, j - i);
+            const bool exponent = word.size() == 1 && (word[0] == 'e' || word[0] == 'E') &&
+                                  i > 0 && ((s[i - 1] >= '0' && s[i - 1] <= '9') || s[i - 1] == '.');
+            if (!exponent && word != "true" && word != "false" && word != "null")
+                return false;
+            i = j - 1;
         }
     }
     return depth == 0 && !in_string;

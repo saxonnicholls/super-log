@@ -107,8 +107,14 @@ inline std::string to_event_json(const snicholls::log::record& r,
     if (r.is_metric) {
         // The record's message is the metric name; it stays in msg too, so a
         // reader that only looks at metric.name is not blind and vice versa.
+        // JSON has no NaN or Infinity, so a diverged computation would otherwise
+        // emit "value":nan - a line no reader can parse, at the exact moment you
+        // need it most. %.17g round-trips a finite double exactly; a non-finite
+        // one is clamped to 0, matching make_metric_json below. (This path is the
+        // one every SN_LOG metric takes.)
         char v[40];
-        std::snprintf(v, sizeof v, "\",\"value\":%.17g}", r.value);
+        const bool finite = r.value == r.value && r.value < 1e308 && r.value > -1e308;
+        std::snprintf(v, sizeof v, "\",\"value\":%.17g}", finite ? r.value : 0.0);
         j += ",\"metric\":{\"name\":\"";
         detail::json_escape(r.message, j);
         j += v;
