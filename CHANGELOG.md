@@ -5,6 +5,20 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**The journal no longer dies when the hub restarts.** superlog-journal is the
+bench's durable record and a `/ws` subscriber that dedups on the hub's seq — but
+the seq resets to 0 when the hub restarts, so a cursor carried across that
+restart sat above every new frame and the journal dropped the entire new
+lifetime as "replay". It went silently dead exactly when the hub bounced, which
+is when its evidence matters most: observed live on this bench — **11 hours of
+nothing recorded while `launchctl` still reported the service healthy** and the
+crash a developer needed had aged out of the minutes-deep ring. It now reads the
+hub's `epoch` on `/healthz` before subscribing (the `/ws` frames carry no epoch
+yet) and resets its cursor when the epoch changes, so a restart is recorded from
+its first frame. VERIFIED: tests/journal.test.mjs restarts a real hub on the same
+port and asserts the post-restart lifetime is journaled; neuter-gated (disabling
+the reset drops the second lifetime and fails the test).
+
 **Crash capture keeps the whole stack — and the component stack too.** A React
 Native red-box runs 100+ frames through the bridge and its component path is
 often what actually names the broken screen, but the SDK clipped the JS stack to

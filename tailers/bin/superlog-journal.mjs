@@ -110,8 +110,28 @@ openFile();
 let ws;
 let closed = false;
 let lastSeq = -1; // hub seq is the total order; replay after reconnect is <= this
+let lastEpoch = null; // the hub lifetime lastSeq belongs to
 
-function connect() {
+async function connect() {
+  // The hub's seq resets to 0 when it restarts, so a cursor carried across that
+  // restart sits far above every frame the new hub will ever emit - and this
+  // journal would drop the whole stream as "reconnect replay", going silently
+  // dead at exactly the moment its evidence matters most (observed: 11 hours of
+  // nothing while launchd still reported the service healthy). The hub mints a
+  // fresh `epoch` per lifetime; read it on /healthz BEFORE subscribing (the /ws
+  // frames carry no epoch yet), and a changed epoch means the cursor belongs to
+  // a dead hub - reset it so the new lifetime is recorded from its first frame.
+  try {
+    const h = await fetch(`${url}/healthz`).then((r) => r.json());
+    if (h?.epoch) {
+      if (lastEpoch !== null && h.epoch !== lastEpoch) {
+        console.error(`superlog-journal: hub epoch ${lastEpoch} -> ${h.epoch}, cursor reset`);
+        lastSeq = -1;
+      }
+      lastEpoch = h.epoch;
+    }
+  } catch { /* no /healthz (hub down mid-reconnect) - the ws open will fail and retry */ }
+
   const wsUrl = url.replace(/^http/, 'ws') + `/ws?topic=${encodeURIComponent(topic)}`;
   ws = new WebSocket(wsUrl);
   ws.onopen = () => console.error(`superlog-journal: subscribed ${wsUrl}`);
