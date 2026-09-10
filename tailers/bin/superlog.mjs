@@ -38,6 +38,8 @@ const BIN = dirname(fileURLToPath(import.meta.url));            // tailers/bin
 const HOME = join(homedir(), '.superlog');
 const RUN = join(HOME, 'run');                                  // <name>.json state
 const LOGDIR = join(HOME, 'log');                               // <name>.log output
+const AGENTS = join(homedir(), 'Library', 'LaunchAgents');      // macOS keep-alive
+const SYSTEMD = join(homedir(), '.config', 'systemd', 'user');  // Linux keep-alive
 const HUB = process.env.SUPER_LOG_URL || 'http://127.0.0.1:7333';
 
 const argv = process.argv.slice(2);
@@ -171,6 +173,90 @@ function redactArgs(a) {
     .replace(/(--(?:token|secret|auth|key|password|pass)[= ]?)\S+/gi, '$1<redacted>');
 }
 
+// enable = "always": a keep-alive service that restarts the tailer on crash AND
+// brings it back at login/boot - launchd on macOS, systemd --user on Linux, the
+// managers each platform already trusts. disable turns it off. This is the
+// persistent counterpart to the transient start/stop.
+const macLabel = (name) => `com.super-log.${name}`;
+const linuxUnit = (name) => `superlog-${name}.service`;
+const xmlEsc = (s) => s.replace(/[<&>]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+function enable(name, args) {
+  requireTailer(name);
+  mkdirSync(LOGDIR, { recursive: true });
+  const script = join(BIN, `superlog-${name}.mjs`);
+  const log = logPath(name);
+  if (process.platform === 'darwin') {
+    mkdirSync(AGENTS, { recursive: true });
+    const label = macLabel(name);
+    const plistPath = join(AGENTS, `${label}.plist`);
+    const argv = [process.execPath, script, ...args]
+      .map((a) => `      <string>${xmlEsc(a)}</string>`).join('\n');
+    writeFileSync(plistPath,
+`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>${label}</string>
+  <key>ProgramArguments</key><array>
+${argv}
+  </array>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${xmlEsc(log)}</string>
+  <key>StandardErrorPath</key><string>${xmlEsc(log)}</string>
+</dict></plist>
+`);
+    const gui = `gui/${process.getuid()}`;
+    spawnSync('launchctl', ['bootout', `${gui}/${label}`], { stdio: 'ignore' });   // replace if present
+    const r = spawnSync('launchctl', ['bootstrap', gui, plistPath], { encoding: 'utf8' });
+    if (r.status !== 0) return die(`launchctl bootstrap failed: ${(r.stderr || '').trim()}`, 1);
+    spawnSync('launchctl', ['enable', `${gui}/${label}`], { stdio: 'ignore' });
+    console.log(`enabled ${name} - launchd agent ${label}: restarts on crash and at login`);
+  } else if (process.platform === 'linux') {
+    mkdirSync(SYSTEMD, { recursive: true });
+    const unit = linuxUnit(name);
+    const exec = [process.execPath, script, ...args].map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ');
+    writeFileSync(join(SYSTEMD, unit),
+`[Unit]
+Description=super-log ${name} tailer
+After=network.target
+
+[Service]
+ExecStart=${exec}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`);
+    spawnSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'ignore' });
+    const r = spawnSync('systemctl', ['--user', 'enable', '--now', unit], { encoding: 'utf8' });
+    if (r.status !== 0) return die(`systemctl --user enable failed: ${(r.stderr || '').trim()}`, 1);
+    console.log(`enabled ${name} - systemd --user ${unit}: Restart=always`);
+    console.log(`  to survive logout/reboot too: loginctl enable-linger ${process.env.USER ?? ''}`.trimEnd());
+  } else {
+    return die(`enable is supported on macOS (launchd) and Linux (systemd), not ${process.platform}`, 1);
+  }
+  console.log(`  logs: superlog logs ${name}    off: superlog disable ${name}`);
+}
+
+function disable(name) {
+  requireTailer(name);
+  if (process.platform === 'darwin') {
+    const label = macLabel(name);
+    spawnSync('launchctl', ['bootout', `gui/${process.getuid()}/${label}`], { stdio: 'ignore' });
+    rmSync(join(AGENTS, `${label}.plist`), { force: true });
+  } else if (process.platform === 'linux') {
+    const unit = linuxUnit(name);
+    spawnSync('systemctl', ['--user', 'disable', '--now', unit], { stdio: 'ignore' });
+    rmSync(join(SYSTEMD, unit), { force: true });
+    spawnSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'ignore' });
+  } else {
+    return die(`disable is supported on macOS and Linux, not ${process.platform}`, 1);
+  }
+  console.log(`disabled ${name}`);
+}
+
 function logs(name) {
   requireTailer(name);
   if (!existsSync(logPath(name))) die(`no logs for ${name} yet - has it been started?`, 1);
@@ -232,6 +318,8 @@ TAILERS (managed in the background; logs under ~/.superlog/log)
   start <tailer> [opts]     start a tailer        e.g. superlog start vitals
   stop <tailer>             stop it
   restart <tailer>          stop, then start with the same options
+  enable <tailer> [opts]    always: keep it alive across crashes AND reboots
+  disable <tailer>          turn that off
   logs <tailer>             follow a running tailer's log
   list                      every tailer, with a one-line description (${tailerNames().length} of them)
 
@@ -301,6 +389,8 @@ async function main() {
     case 'start': return start(rest[0], rest.slice(1));
     case 'stop': return stop(rest[0]);
     case 'restart': return restart(rest[0]);
+    case 'enable': return enable(rest[0], rest.slice(1));
+    case 'disable': return disable(rest[0]);
     case 'status': return status(rest[0]);
     case 'logs': return logs(rest[0]);
     case 'list': return list();
