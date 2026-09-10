@@ -59,20 +59,31 @@ for the one tool that decides what leaves your machine: the person whose machine
 it is can read it. What leaves is enumerable, and cuttable.
 
 **Enrolment is a consent, not a credential.** Two entry points, one shape
-(after `gh`'s device flow):
+(after `gh`'s device flow), and the string a human ever handles is a short-lived,
+single-use **code** — never a token:
 
 - *A machine you are sitting at* arrives from the browser having signed up and
-  paid; the page shows a **single-use enrolment code, valid fifteen minutes**
-  (`superlog-cloud login --code …`). The string pasted is not a secret — it is a
-  one-time claim on a consent already given in the browser, worth nothing in a
-  shell history after it is redeemed or expires.
+  paid; the page shows a **single-use code, good for fifteen minutes**
+  (`superlog-cloud login --code …`).
 - *A headless machine* (a Pi, a server, a container) runs `superlog-cloud login`,
-  which prints a code and a URL to approve on any other device.
-- *CI and images* use an org-owned, expiring `SUPERLOG_CLOUD_TOKEN`.
+  which prints a **code good for ten minutes** and a URL to approve on any other
+  device.
+- *CI, images and fleets* skip the ceremony with an org-owned, expiring token in
+  the `SUPERLOG_CLOUD_TOKEN` environment variable.
 
-**The bench token never travels in the open.** It comes back on the enrolment
-connection, is written `0600` to `~/.superlog/cloud.json`, and is **never
-displayed, never passed as an argument, never put on a clipboard.**
+A code is single-use and, on redemption *or denial*, is **removed** — so a spent
+code and a code that never existed are indistinguishable to an attacker,
+deliberately. Why a code and not a token? A long-lived token pasted from a web
+page is ngrok's model: it rides the clipboard into `~/.zsh_history` and outlives
+the moment. A code worth nothing minutes later does not. Same user experience,
+different object.
+
+**The bench token stays out of sight in the flow that mints it.** It returns on
+the enrolment connection itself and is written `0600` to `~/.superlog/cloud.json`;
+the enrolment flow never displays it, never puts it on a command line, and never
+asks anyone to copy it. (Unattended installs are the deliberate exception: they
+supply an org-owned token through `SUPERLOG_CLOUD_TOKEN` — a CI/fleet trade, not
+the interactive path.)
 
 **The uplink composes; it does not collect.** `secure-superlogd` subscribes to
 the loopback hub's firehose and forwards frames verbatim — it runs no tailers,
