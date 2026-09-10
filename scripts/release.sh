@@ -15,13 +15,18 @@
 #               `add-apt-repository ppa:super-log/stable && apt install
 #               super-log` works, arm64 (Raspberry Pi) included.
 #
-# The version is read from package.json - bump it there (and the rest of the
-# keystone: CMake VERSION, the other package.jsons, the rpm/deb changelogs)
-# before releasing. This script does NOT invent a version.
+# The version is read from package.json. Bump it EVERYWHERE first with one
+# command - `scripts/bump-version.sh 0.4.0` - which sets the five package.json,
+# CMake, vcpkg, the rpm/deb build scripts, the PPA changelog and the README
+# download URLs; then move CHANGELOG.md's "Unreleased" heading and commit. This
+# script does NOT invent a version, and refuses to run on a dirty tree or off
+# main.
 #
-#   scripts/release.sh                # both: GitHub release + PPA upload
+#   scripts/bump-version.sh 0.4.0     # FIRST: set the version everywhere
+#   scripts/release.sh                # all channels: GitHub + PPA + npm
 #   scripts/release.sh github         # just the GitHub release + binaries
 #   scripts/release.sh launchpad      # just the signed PPA source upload
+#   scripts/release.sh npm            # just the npm publish (verified first)
 #   DPUT_OPTS=-s scripts/release.sh launchpad   # dry run (simulate the upload)
 #
 # The Debian tooling runs in throwaway containers; the GPG SIGNING happens
@@ -54,6 +59,12 @@ say() { printf '\n=== release: %s ===\n' "$*"; }
 
 preflight() {
     say "super-log $VERSION (tag $TAG, ppa $PPA, series $SERIES)"
+    # A release ships what is COMMITTED: a dirty tree means the artefacts and the
+    # tag would disagree with your working copy. Refuse, rather than ship the gap.
+    [ -z "$(git status --porcelain)" ] \
+      || { echo "release: working tree is dirty - commit or stash first" >&2; git status --short >&2; exit 1; }
+    BR="$(git rev-parse --abbrev-ref HEAD)"
+    [ "$BR" = main ] || { echo "release: on branch '$BR', not main - checkout main first" >&2; exit 1; }
     command -v docker >/dev/null || { echo "release: docker is required" >&2; exit 1; }
     if [ "$STAGE" = all ] || [ "$STAGE" = github ]; then
         command -v gh >/dev/null || { echo "release: gh (GitHub CLI) is required for the github stage" >&2; exit 1; }
@@ -175,11 +186,24 @@ do_launchpad() {
     say "Launchpad: uploaded - watch https://launchpad.net/~super-log/+archive/ubuntu/stable"
 }
 
+# ---------------------------------------------------------------------- npm
+# publish_npm.sh does the verification that matters - it PACKS each package,
+# installs the tarball into a clean environment, and runs the command a stranger
+# would run - before anything reaches the registry. That is the check that would
+# have caught the `superlog`-bin-hang. --publish is irreversible after 72h, which
+# is exactly why the verification runs first.
+do_npm() {
+    say "npm: verify (pack + clean-install + run) then publish"
+    sh "$REPO_ROOT/scripts/publish_npm.sh" --publish
+    say "npm: done"
+}
+
 preflight
 case "$STAGE" in
-    all)       do_github; do_launchpad ;;
+    all)       do_github; do_launchpad; do_npm ;;
     github)    do_github ;;
     launchpad) do_launchpad ;;
-    *) echo "usage: scripts/release.sh [all|github|launchpad]" >&2; exit 2 ;;
+    npm)       do_npm ;;
+    *) echo "usage: scripts/release.sh [all|github|launchpad|npm]" >&2; exit 2 ;;
 esac
 say "release complete: $VERSION"
