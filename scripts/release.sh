@@ -5,15 +5,27 @@
 # Copyright 2026 Saxon Herschel Nicholls
 # SPDX-License-Identifier: MIT
 #
-# One version, two homes, kept in sync:
+# One version, FIVE homes, kept in sync:
 #
 #   GitHub    - a tagged release with prebuilt binaries attached (.deb for
 #               amd64 and arm64, .rpm for x86_64), for a direct download +
-#               `apt install ./file` / `dnf install <url>`.
+#               `apt install ./file` / `dnf install <url>`. The tag it pushes
+#               is what Homebrew and vcpkg below hash, so github runs first.
 #   Launchpad - a signed SOURCE upload to ppa:super-log/stable; Launchpad
 #               then builds the binaries itself for every architecture, so
 #               `add-apt-repository ppa:super-log/stable && apt install
 #               super-log` works, arm64 (Raspberry Pi) included.
+#   npm       - the JS packages (@super-log/*), each PACKED, installed into a
+#               clean environment and RUN before anything reaches the registry.
+#   Homebrew  - the formula's url + sha256 bumped to this tag and pushed to the
+#               tap repo, so `brew install saxonnicholls/tap/super-log` works.
+#   vcpkg     - the port's SHA512 bumped to this tag; publishing is a PR to a
+#               vcpkg registry (a fork + PR to microsoft/vcpkg, or an overlay),
+#               which waits on upstream review - the port is prepared here.
+#
+# Homebrew and vcpkg both hash the GitHub source tarball, which does not exist
+# until `github` has pushed the tag - so `all` runs github first and these two
+# last, and they never gate the three channels that do not depend on the tag.
 #
 # The version is read from package.json. Bump it EVERYWHERE first with one
 # command - `scripts/bump-version.sh 0.4.0` - which sets the five package.json,
@@ -23,11 +35,19 @@
 # main.
 #
 #   scripts/bump-version.sh 0.4.0     # FIRST: set the version everywhere
-#   scripts/release.sh                # all channels: GitHub + PPA + npm
+#   scripts/release.sh                # all: github, launchpad, npm, homebrew, vcpkg
 #   scripts/release.sh github         # just the GitHub release + binaries
 #   scripts/release.sh launchpad      # just the signed PPA source upload
 #   scripts/release.sh npm            # just the npm publish (verified first)
+#   scripts/release.sh homebrew       # just the tap formula bump + push
+#   scripts/release.sh vcpkg          # just the port SHA512 bump (then PR it)
 #   DPUT_OPTS=-s scripts/release.sh launchpad   # dry run (simulate the upload)
+#
+# Publish targets that are not a secret but must be configured (see
+# scripts/release.env.example): SUPER_LOG_TAP_REPO (a local clone of the
+# Homebrew tap) and SUPER_LOG_VCPKG_REPO (a local clone of your vcpkg registry
+# fork). If unset, the formula/port is updated in-repo and the push is left to
+# you rather than guessed.
 #
 # The Debian tooling runs in throwaway containers; the GPG SIGNING happens
 # here on the host, where your gpg-agent/Keychain can unlock the key - so the
@@ -65,13 +85,18 @@ preflight() {
       || { echo "release: working tree is dirty - commit or stash first" >&2; git status --short >&2; exit 1; }
     BR="$(git rev-parse --abbrev-ref HEAD)"
     [ "$BR" = main ] || { echo "release: on branch '$BR', not main - checkout main first" >&2; exit 1; }
-    command -v docker >/dev/null || { echo "release: docker is required" >&2; exit 1; }
+    if [ "$STAGE" = all ] || [ "$STAGE" = github ] || [ "$STAGE" = launchpad ]; then
+        command -v docker >/dev/null || { echo "release: docker is required for the github/launchpad stages" >&2; exit 1; }
+    fi
     if [ "$STAGE" = all ] || [ "$STAGE" = github ]; then
         command -v gh >/dev/null || { echo "release: gh (GitHub CLI) is required for the github stage" >&2; exit 1; }
     fi
     if [ "$STAGE" = all ] || [ "$STAGE" = launchpad ]; then
         gpg --list-secret-keys "$KEYID" >/dev/null 2>&1 \
           || { echo "release: signing key $KEYID not in this keyring" >&2; exit 1; }
+    fi
+    if [ "$STAGE" = all ] || [ "$STAGE" = homebrew ] || [ "$STAGE" = vcpkg ]; then
+        command -v curl >/dev/null || { echo "release: curl is required for the homebrew/vcpkg stages" >&2; exit 1; }
     fi
 }
 
@@ -198,12 +223,72 @@ do_npm() {
     say "npm: done"
 }
 
+# ------------------------------------------------------------------ tarball
+# Both Homebrew and vcpkg hash the GitHub-generated source tarball for the tag.
+# It only exists once do_github has pushed the tag, so these fetch it fresh.
+tag_tarball_url() { echo "https://github.com/saxonnicholls/super-log/archive/refs/tags/${TAG}.tar.gz"; }
+fetch_tag_tarball() {
+    URL="$(tag_tarball_url)"
+    OUT="$(mktemp)"
+    curl -fsSL "$URL" -o "$OUT" \
+      || { echo "release: could not fetch $URL - has 'github' pushed the tag $TAG yet?" >&2; rm -f "$OUT"; exit 1; }
+    echo "$OUT"
+}
+
+# ------------------------------------------------------------------ Homebrew
+# Bump the formula's url + sha256 to this tag, then push it to the tap repo -
+# Homebrew installs from the TAP, not from this repo, so an unset tap updates
+# the formula here and stops rather than guessing where to push it.
+do_homebrew() {
+    say "Homebrew: formula url + sha256 for $TAG"
+    RB="$REPO_ROOT/packaging/homebrew/super-log.rb"
+    TB="$(fetch_tag_tarball)"
+    SHA="$(shasum -a 256 "$TB" | cut -d' ' -f1)"; rm -f "$TB"
+    URL="$(tag_tarball_url)"
+    URL="$URL" SHA="$SHA" perl -i -pe 's#^  url ".*"#  url "$ENV{URL}"#; s#^  sha256 ".*"#  sha256 "$ENV{SHA}"#' "$RB"
+    grep -q "$SHA" "$RB" || { echo "release: failed to write sha256 into $RB" >&2; exit 1; }
+    say "Homebrew: $RB -> url $TAG, sha256 $SHA"
+    if [ -n "${SUPER_LOG_TAP_REPO:-}" ]; then
+        cp "$RB" "$SUPER_LOG_TAP_REPO/Formula/super-log.rb"
+        ( cd "$SUPER_LOG_TAP_REPO" && git add Formula/super-log.rb \
+            && git commit -m "super-log $VERSION" && git push )
+        say "Homebrew: pushed to tap $SUPER_LOG_TAP_REPO - brew install saxonnicholls/tap/super-log"
+    else
+        say "Homebrew: SUPER_LOG_TAP_REPO unset - formula updated in-repo only; copy it into your tap and push"
+    fi
+}
+
+# --------------------------------------------------------------------- vcpkg
+# Bump the port's SHA512 to this tag's tarball (REF is already v${VERSION}).
+# Publishing a port is a PR to a registry that waits on review, so this prepares
+# the port and stages it into a registry clone if one is configured; it does not
+# pretend the PR is merged.
+do_vcpkg() {
+    say "vcpkg: portfile SHA512 for $TAG"
+    PF="$REPO_ROOT/packaging/vcpkg/ports/super-log/portfile.cmake"
+    TB="$(fetch_tag_tarball)"
+    SHA="$(shasum -a 512 "$TB" | cut -d' ' -f1)"; rm -f "$TB"
+    SHA="$SHA" perl -i -pe 's#^(\s*SHA512\s+)[0-9a-f]+#$1$ENV{SHA}#' "$PF"
+    grep -q "$SHA" "$PF" || { echo "release: failed to write SHA512 into $PF" >&2; exit 1; }
+    say "vcpkg: $PF -> SHA512 $SHA (REF is v\${VERSION} = $TAG)"
+    if [ -n "${SUPER_LOG_VCPKG_REPO:-}" ]; then
+        DEST="$SUPER_LOG_VCPKG_REPO/ports/super-log"
+        mkdir -p "$DEST"
+        cp "$REPO_ROOT"/packaging/vcpkg/ports/super-log/* "$DEST/"
+        say "vcpkg: staged into $SUPER_LOG_VCPKG_REPO - commit, then PR to the registry (waits on review)"
+    else
+        say "vcpkg: SUPER_LOG_VCPKG_REPO unset - port updated in-repo only; open a PR to your registry to publish"
+    fi
+}
+
 preflight
 case "$STAGE" in
-    all)       do_github; do_launchpad; do_npm ;;
+    all)       do_github; do_launchpad; do_npm; do_homebrew; do_vcpkg ;;
     github)    do_github ;;
     launchpad) do_launchpad ;;
     npm)       do_npm ;;
-    *) echo "usage: scripts/release.sh [all|github|launchpad|npm]" >&2; exit 2 ;;
+    homebrew)  do_homebrew ;;
+    vcpkg)     do_vcpkg ;;
+    *) echo "usage: scripts/release.sh [all|github|launchpad|npm|homebrew|vcpkg]" >&2; exit 2 ;;
 esac
 say "release complete: $VERSION"
