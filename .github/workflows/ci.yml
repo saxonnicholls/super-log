@@ -18,7 +18,7 @@ on:
   pull_request:
 
 env:
-  TS_MOVEABLES_TAG: f9f25875b5508bdf660fe51d852d0d7e973a782f
+  TS_MOVEABLES_TAG: 3f8e412dfd3644e91017fbf6dc943e665a0b754d  # v1.1.2 (Origin check)
 
 jobs:
   cpp-linux:

@@ -5,6 +5,29 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**The hub now checks `Origin` on both doors — a web page can no longer read or
+forge your streams.** Browsers do not apply the same-origin policy to
+WebSockets, and a `text/plain` `POST` is a CORS-simple request with no
+preflight — so any page you happened to have open could open
+`ws://127.0.0.1:7333/ws` and read every stream, or forge events into any topic
+with a no-cors `POST`, against a loopback-bound hub that checked nothing. Both
+the `/ws` upgrade and the `/ingest` publish now check the `Origin` header before
+they act, secure by default: no `Origin` (a CLI, an SDK, a webhook sender) and a
+loopback `Origin` (your viewer) are allowed, any other site gets `403`. The
+check lives in ts-moveables (pinned to **v1.1.2**, `3f8e412`); the hub's own
+`/ingest` route, which shadows ts-moveables' guarded one, applies the same
+policy. No CORS handshake and no change to the browser SDK's no-cors write were
+needed — a browser attaches `Origin` and page script cannot suppress it, so
+checking it is enough. This is **not** a defence against a non-browser process
+already on the machine (no-`Origin` is allowed, and such a process has local
+code execution) — a boundary this check was never at; see SECURITY.md. With
+ts-moveables now bounding the replay ring by bytes too (`ring_bytes`, 8MB
+default), `ring_capacity` returns to 1024. VERIFIED: tests/ws-origin.test.mjs
+drives a real hub with a raw RFC6455 handshake and a forged `POST` — a foreign
+`Origin` is refused at both doors (and never reaches `/recent`), a loopback
+lookalike (`127.0.0.1.evil.example`) is refused, and the no-`Origin`/loopback
+controls still connect and write.
+
 **A real `superlog` CLI: read the bench, manage the tailers, pipe a stream.**
 `superlog` used to be only a `tee`, and a bare `superlog` on a terminal hung
 waiting on stdin — the first thing a new user typed did nothing. It is now a
