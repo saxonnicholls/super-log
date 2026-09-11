@@ -26,6 +26,11 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "build-deb: building the hub"
+# Fresh build dir every time. This runs bind-mounted at /src, so a build-deb/
+# left by a local run - carrying a FetchContent _deps pinned to an OLDER
+# ts-moveables - would be reused and silently misbuild against the wrong
+# version. A release must fetch the pinned ts-moveables, not whatever was here.
+rm -rf build-deb
 cmake -S . -B build-deb -DCMAKE_BUILD_TYPE=Release \
     -DSUPER_LOG_INSTALL=ON -DSUPER_LOG_BUILD_IMGUI_VIEWER=OFF \
     -DCMAKE_INSTALL_PREFIX=/usr >/dev/null
@@ -41,7 +46,7 @@ for f in "$STAGE"/usr/lib/super-log/superlog-*.mjs; do
     printf '#!/bin/sh\nexec node /usr/lib/super-log/%s "$@"\n' "$(basename "$f")" > "$STAGE/usr/bin/$name"
     chmod 0755 "$STAGE/usr/bin/$name"
 done
-printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog-tee.mjs "$@"\n' > "$STAGE/usr/bin/superlog"
+printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog.mjs "$@"\n' > "$STAGE/usr/bin/superlog"
 chmod 0755 "$STAGE/usr/bin/superlog"
 
 # The systemd unit and the control metadata.
