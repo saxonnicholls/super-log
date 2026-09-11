@@ -1,6 +1,6 @@
 {
   "name": "@super-log/client",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Forward console and structured logs to a super-log hub - React Native, browser, Node",
   "author": "Saxon Herschel Nicholls",

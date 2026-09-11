@@ -1,6 +1,6 @@
 {
   "name": "@super-log/mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server: let a coding agent query the super-log bench",
   "author": "Saxon Herschel Nicholls",
   "type": "module",

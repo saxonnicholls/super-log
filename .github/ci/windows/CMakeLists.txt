@@ -1,6 +1,6 @@
 # Windows CI fixture: compile the SDK headers straight from the checkout with
 # MSVC, so a green run proves the Winsock port of the transports - the released
-# vcpkg port still points at v0.3.0 (pre-Winsock), so we test the working tree,
+# vcpkg port still points at v0.4.0 (pre-Winsock), so we test the working tree,
 # not the release. ts-moveables comes from the vcpkg overlay port.
 #
 # Both build modes are built: DEVELOPMENT (the real wire) and PRODUCTION (the
