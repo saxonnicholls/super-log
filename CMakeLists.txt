@@ -21,8 +21,11 @@ set(TS_MOVEABLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TSMoveables"
 # happened to be that day - so a break upstream would land on a stranger's
 # first clone and look like a fault in super-log. Keep this in step with
 # TS_MOVEABLES_TAG in .github/workflows/ci.yml; bump both deliberately.
-set(TS_MOVEABLES_GIT_TAG "f9f25875b5508bdf660fe51d852d0d7e973a782f"
-    CACHE STRING "ts-moveables tag/SHA for the FetchContent fallback")
+# v1.1.2 (the Origin-check release: both /ws and /ingest reject a foreign
+# Origin before they act, secure by default). Pinned as the release commit,
+# not the tag - a tag can be moved or deleted, a commit cannot.
+set(TS_MOVEABLES_GIT_TAG "3f8e412dfd3644e91017fbf6dc943e665a0b754d"
+    CACHE STRING "ts-moveables tag/SHA for the FetchContent fallback (v1.1.2)")
 
 set(TS_MOVEABLES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 if(EXISTS "${TS_MOVEABLES_DIR}/CMakeLists.txt")

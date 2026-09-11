@@ -464,10 +464,11 @@ int main()
     // freshly-opened viewer needs to look non-blank, which is all this ring
     // is for. Real history lives in /recent (its own per-topic ring) and in
     // the journal, both of which are cheaper per event than a retained chunk.
-    // This goes back to 1024 the moment ts-moveables bounds the ring by BYTES
-    // as well as by count - the two bound different things and only together
-    // bound the right one. Until then the count carries the whole budget.
-    hcfg.ring_capacity   = size_from_env("SUPER_LOG_REPLAY_CHUNKS", 128);
+    // ts-moveables now bounds the ring by BYTES as well as by count (ring_bytes,
+    // default 8MB), which caps the memory a big chunk can cost - so the count is
+    // back to 1024 (thousands of events of replay) without the gigabyte-per-topic
+    // worst case the count-only bound allowed.
+    hcfg.ring_capacity   = size_from_env("SUPER_LOG_REPLAY_CHUNKS", 1024);
     hcfg.max_queue_msgs  = 4096;            // a viewer paused in a debugger
     http::ws_broadcast_hub hub{hcfg};
 
@@ -488,7 +489,18 @@ int main()
     // shadowed. It records each event, then publishes the chunk verbatim -
     // the hub still sees exactly what a producer sent, and the WS feed is
     // byte-for-byte what it always was.
-    srv.post("/ingest/:topic", [&hub, &recent, &no_egress](const http::request& req, http::responder r) {
+    srv.post("/ingest/:topic", [&hub, &recent, &no_egress, origin = hcfg.origin](const http::request& req, http::responder r) {
+        // The write door. A browser can POST here cross-origin with a
+        // CSRF-simple body (text/plain, no preflight), so a drive-by page
+        // could forge events into any topic if we let it. Same Origin policy
+        // as the /ws read door - secure by default: no Origin or a loopback
+        // Origin is allowed (CLI, SDK, the local viewer), a foreign site is
+        // refused. Checked here because this custom route shadows the hub's
+        // own already-guarded /ingest (ws_broadcast_hub.hpp).
+        if (!origin.allows(req.header("origin"))) {
+            r.send(403, "text/plain", "403 Forbidden (origin)\n");
+            return;
+        }
         const std::string topic = req.has_param("topic") ? req.param("topic") : std::string("*");
         // The scalpel: a no-egress topic is accepted (202) but served to
         // nothing - not broadcast on /ws and not recorded for /recent, so it

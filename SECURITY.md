@@ -37,12 +37,25 @@ The full model, and how it differs from super-log Cloud, is in
 
 ## Known limitations
 
-- **A browser is not fully a boundary.** Because browsers do not apply the
-  same-origin policy to WebSockets, a web page can attempt to reach a
-  loopback-bound hub. Treat the machine running the hub as you would the machine
-  holding your `/var/log`: software already on it is inside the boundary. Origin
-  restrictions on the hub's WebSocket are being tightened; until then, be aware
-  that "loopback" protects you from the network, not from your own browser.
+- **The hub checks `Origin` on both doors, but a no-`Origin` client is trusted.**
+  Browsers do not apply the same-origin policy to WebSockets, and a `text/plain`
+  `POST` is a CORS-"simple" request that needs no preflight — so without a check a
+  web page you happened to have open could open `ws://127.0.0.1:7333/ws` and read
+  every stream, or forge events into any topic with a no-cors `POST`. The hub now
+  rejects both before it acts: the WebSocket upgrade and the `/ingest` publish each
+  check the `Origin` header, secure by default — no `Origin` is allowed (a CLI, an
+  SDK, a webhook sender), a loopback `Origin` is allowed (your local viewer), and
+  any other site gets `403`. A browser attaches `Origin` on these requests and page
+  script cannot suppress it, so checking it is sufficient; no CORS handshake is
+  involved. A page served from loopback — the local viewer, or a dev server on
+  `localhost` — counts as an allowed origin and connects untouched; the MIT hub
+  ships with no knob to allow *other* origins, so pointing a browser app on a
+  real domain at the hub is a super-log Cloud concern, not this build's.
+  **This is not a defence against a non-browser process already on the machine:**
+  no-`Origin` is deliberately allowed, and anything running locally can
+  send no `Origin`. Such a process already has local code execution — a boundary
+  this check was never at. Treat the machine running the hub as you would the one
+  holding your `/var/log`: software already on it is inside the boundary.
 - **The hub keeps recent events in memory** (a bounded ring) plus an optional
   on-disk journal. It is not durable storage and not an audit log.
 
