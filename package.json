@@ -1,6 +1,6 @@
 {
   "name": "super-log",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "One hub for every log stream on the dev bench",
   "license": "MIT",
   "author": "Saxon Herschel Nicholls",

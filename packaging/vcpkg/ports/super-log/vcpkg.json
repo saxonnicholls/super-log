@@ -1,6 +1,6 @@
 {
   "name": "super-log",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "super-log SDK: log to a super-log hub over one small wire protocol. The default install is the zero-dependency C header; the [cpp] feature adds the header-only C++ SDK (event model, SN_LOG). The spdlog sink header is included; add spdlog yourself (or the [spdlog] feature) to compile it.",
   "homepage": "https://github.com/saxonnicholls/super-log",
   "license": "MIT",
@@ -15,7 +15,13 @@
     "spdlog": {
       "description": "Pull spdlog so the included spdlog sink header (super_log/spdlog_sink.hpp) compiles out of the box.",
       "dependencies": [
-        { "name": "super-log", "default-features": false, "features": ["cpp"] },
+        {
+          "name": "super-log",
+          "default-features": false,
+          "features": [
+            "cpp"
+          ]
+        },
         "spdlog"
       ]
     }

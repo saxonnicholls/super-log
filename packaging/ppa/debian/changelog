@@ -1,3 +1,9 @@
+super-log (0.4.0-1~noble1) noble; urgency=medium
+
+  * New upstream release 0.4.0.
+
+ -- Saxon Herschel Nicholls <me@saxonnicholls.com>  Fri, 11 Sep 2026 12:35:25 +1000
+
 super-log (0.3.0-1~noble1) noble; urgency=medium
 
   * Initial PPA packaging: the hub daemon (superlogd) as a systemd service,

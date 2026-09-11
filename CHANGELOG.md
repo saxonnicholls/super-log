@@ -3,7 +3,7 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
-## Unreleased
+## 0.4.0 — 2026-09-11
 
 **The hub now checks `Origin` on both doors — a web page can no longer read or
 forge your streams.** Browsers do not apply the same-origin policy to

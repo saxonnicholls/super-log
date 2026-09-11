@@ -17,7 +17,7 @@
 #
 set -eu
 cd "$(dirname "$0")/../.."
-VERSION="${SUPER_LOG_VERSION:-0.3.0}"
+VERSION="${SUPER_LOG_VERSION:-0.4.0}"
 TOP="$(mktemp -d)"
 trap 'rm -rf "$TOP"' EXIT
 mkdir -p "$TOP/BUILD" "$TOP/RPMS" "$TOP/SPECS"

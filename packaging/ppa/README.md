@@ -66,7 +66,7 @@ dput ppa:<owner>/super-log ../super-log_<ver>-1~noble1_source.changes
 
 A `.changes` targets one series (the `debian/changelog` distribution — here
 `noble`, 24.04). For another series, copy the top changelog entry with a new
-`~seriesN` version and its distribution (e.g. `0.3.0-1~jammy1` / `jammy`),
+`~seriesN` version and its distribution (e.g. `0.4.0-1~jammy1` / `jammy`),
 rebuild `-S`, and `dput` again. Launchpad keeps them side by side.
 
 ## Once it is live

@@ -1,7 +1,7 @@
 {
   "name": "@super-log/tailers",
-  "version": "0.3.0",
-  "description": "Log sources for a super-log hub \u2014 devices, servers, containers, chains, GPUs. Zero dependencies.",
+  "version": "0.4.0",
+  "description": "Log sources for a super-log hub — devices, servers, containers, chains, GPUs. Zero dependencies.",
   "license": "MIT",
   "author": "Saxon Herschel Nicholls",
   "homepage": "https://github.com/saxonnicholls/super-log#readme",
