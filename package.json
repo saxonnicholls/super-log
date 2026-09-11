@@ -12,7 +12,7 @@
     "demo/js"
   ],
   "scripts": {
-    "viewer": "npm run dev --workspace @super-log/viewer",
+    "viewer": "npm run dev --workspace @super-log/viewer-react",
     "tail:android": "node tailers/bin/superlog-tail.mjs android",
     "tail:ios-sim": "node tailers/bin/superlog-tail.mjs ios-sim",
     "tail:os": "node tailers/bin/superlog-tail.mjs os",
@@ -31,7 +31,7 @@
     "demo:ios": "node demo/js/clock.mjs ios",
     "demo:android": "node demo/js/clock.mjs android",
     "demo:web": "node demo/web/serve.mjs",
-    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer",
+    "check": "npm run check --workspace @super-log/client && npm run build --workspace @super-log/viewer-react",
     "chain": "node tailers/bin/superlog-chain.mjs",
     "dns": "node tailers/bin/superlog-dns.mjs",
     "ports": "node tailers/bin/superlog-ports.mjs",
