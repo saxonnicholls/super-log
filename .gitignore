@@ -80,3 +80,4 @@ build-rpm/
 
 # release signing identity (personal)
 scripts/release.env
+CLAUDE.md
