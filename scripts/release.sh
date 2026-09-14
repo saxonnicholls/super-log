@@ -239,7 +239,9 @@ do_launchpad() {
 # is exactly why the verification runs first.
 do_npm() {
     say "npm: verify (pack + clean-install + run) then publish"
-    sh "$REPO_ROOT/scripts/publish_npm.sh" --publish
+    # publish_npm.sh is bash (mapfile, process substitution) - invoke it with
+    # bash, not sh: macOS /bin/sh is POSIX and chokes on those at parse time.
+    bash "$REPO_ROOT/scripts/publish_npm.sh" --publish
     say "npm: done"
 }
 
