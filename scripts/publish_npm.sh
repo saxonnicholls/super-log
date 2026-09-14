@@ -105,7 +105,10 @@ fi
 
 # ------------------------------------------------------------ package list
 
-mapfile -t PKG_DIRS < <(
+# macOS ships bash 3.2, which has no mapfile/readarray (a bash 4+ builtin), so
+# read the list with a portable while-loop that runs on the Mac and on Linux.
+PKG_DIRS=()
+while IFS= read -r _pkgdir; do PKG_DIRS+=("$_pkgdir"); done < <(
   find "$REPO_ROOT" -name package.json -not -path "*/node_modules/*" -maxdepth 5 -print0 2>/dev/null \
   | xargs -0 -I{} dirname {} | sort
 )
