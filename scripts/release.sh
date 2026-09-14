@@ -145,9 +145,23 @@ do_github() {
 # key never has to enter a container.
 do_launchpad() {
     say "Launchpad: source package -> $PPA (signed on host; key never leaves this machine)"
-    sh packaging/ppa/make-orig-tarball.sh
     ORIG="$REPO_ROOT/../super-log_${VERSION}.orig.tar.gz"
-    [ -f "$ORIG" ] || { echo "release: orig tarball not produced at $ORIG" >&2; exit 1; }
+    # Launchpad requires the upstream .orig.tar.gz to be byte-for-byte identical
+    # across every Debian revision of one upstream version. A packaging-only
+    # re-upload (e.g. 0.4.0-1~noble2) must therefore REUSE the exact orig already
+    # published, not regenerate it - a fresh tarball differs (mtimes, and any
+    # source change since) and Launchpad rejects it as "different contents".
+    # Set SUPER_LOG_ORIG_TARBALL to that file (download it from the PPA's
+    # +sourcefiles) and this builds with -sd: reference the orig, don't re-upload.
+    if [ -n "${SUPER_LOG_ORIG_TARBALL:-}" ]; then
+        say "Launchpad: reusing published orig $SUPER_LOG_ORIG_TARBALL (packaging-only revision, -sd)"
+        cp "$SUPER_LOG_ORIG_TARBALL" "$ORIG"
+        SRCOPT="-sd"
+    else
+        sh packaging/ppa/make-orig-tarball.sh
+        SRCOPT="-sa"
+    fi
+    [ -f "$ORIG" ] || { echo "release: orig tarball not present at $ORIG" >&2; exit 1; }
 
     STG="$(mktemp -d)"; trap 'rm -rf "$STG"' EXIT
     cp "$ORIG" "$STG/"
@@ -158,7 +172,7 @@ do_launchpad() {
 
     # 1) Container: build the UNSIGNED source package. No key inside.
     say "Launchpad: building the unsigned source package"
-    docker run --rm --platform linux/amd64 -e VERSION="$VERSION" -v "$STG:/stage" "$IMG_DEB" sh -c '
+    docker run --rm --platform linux/amd64 -e VERSION="$VERSION" -e SRCOPT="$SRCOPT" -v "$STG:/stage" "$IMG_DEB" sh -c '
         set -e; export DEBIAN_FRONTEND=noninteractive
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq devscripts debhelper dpkg-dev >/dev/null 2>&1
@@ -167,10 +181,11 @@ do_launchpad() {
         cp "/stage/super-log_${VERSION}.orig.tar.gz" /work/
         cp -r /stage/debian "/work/super-log-${VERSION}/debian"
         cd "/work/super-log-${VERSION}"
-        # -S source-only, -sa include the orig, -us -uc unsigned (we sign on
+        # -S source-only, $SRCOPT is -sa (include the orig - new upstream) or -sd
+        # (reference it - packaging-only re-upload), -us -uc unsigned (we sign on
         # the host), -d skip the build-dep check (a source build compiles
         # nothing, so cmake/g++ need not be present here).
-        dpkg-buildpackage -S -sa -us -uc -d
+        dpkg-buildpackage -S $SRCOPT -us -uc -d
         cp ../super-log_${VERSION}-*.dsc ../super-log_${VERSION}-*_source.changes \
            ../super-log_${VERSION}-*.debian.tar.* ../super-log_${VERSION}-*.buildinfo /stage/
     '
