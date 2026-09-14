@@ -51,7 +51,7 @@ class SuperLog < Formula
     end
     (bin/"superlog").write <<~SH
       #!/bin/sh
-      exec "#{formula_opt_bin("node")}/node" "#{libexec}/superlog-tee.mjs" "$@"
+      exec "#{formula_opt_bin("node")}/node" "#{libexec}/superlog.mjs" "$@"
     SH
     chmod 0755, bin/"superlog"
   end

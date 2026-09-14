@@ -72,7 +72,12 @@ IMG_RPM="fedora:41"
 
 VERSION="$(node -p "require('./package.json').version")"
 TAG="v$VERSION"
-DEBREV="1~${SERIES}1"
+# The Debian revision comes from debian/changelog's top stanza, not a guess, so
+# a packaging-only re-upload (e.g. 0.4.0-1~noble2, same upstream version) is
+# just a new changelog stanza and this script builds and names exactly what
+# dpkg-buildpackage will - no duplicate-version rejection from Launchpad.
+DEBREV="$(sed -n '1s/^super-log ([^-]*-\([^)]*\)).*/\1/p' packaging/ppa/debian/changelog)"
+: "${DEBREV:=1~${SERIES}1}"
 STAGE="${1:-all}"
 
 say() { printf '\n=== release: %s ===\n' "$*"; }

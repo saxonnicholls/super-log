@@ -1,3 +1,10 @@
+super-log (0.4.0-1~noble2) noble; urgency=medium
+
+  * Packaging fix: /usr/bin/superlog now runs the CLI (superlog.mjs), not the
+    tee, so `superlog` no longer hangs waiting on stdin. No upstream change.
+
+ -- Saxon Herschel Nicholls <me@saxonnicholls.com>  Sat, 12 Sep 2026 07:40:44 +1000
+
 super-log (0.4.0-1~noble1) noble; urgency=medium
 
   * New upstream release 0.4.0.

@@ -38,7 +38,7 @@ override_dh_auto_install:
 	        > "debian/super-log/usr/bin/$$name"; \
 	    chmod 0755 "debian/super-log/usr/bin/$$name"; \
 	done
-	printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog-tee.mjs "$$@"\n' \
+	printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog.mjs "$$@"\n' \
 	    > debian/super-log/usr/bin/superlog
 	chmod 0755 debian/super-log/usr/bin/superlog
 	# The systemd unit; dh_installsystemd (run in the dh sequence) finds it
