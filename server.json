@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.super-log/super-log",
+  "description": "Query your local super-log bench from an AI agent - read-only tools over a local hub: tail and search live streams, search the on-disk journal, wait for an event, and read per-topic guides.",
+  "repository": {
+    "url": "https://github.com/saxonnicholls/super-log",
+    "source": "github"
+  },
+  "version": "0.4.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@super-log/mcp",
+      "version": "0.4.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SUPER_LOG_URL",
+          "description": "Base URL of the super-log hub (default http://127.0.0.1:7333)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

@@ -325,6 +325,19 @@ deliberate, narrow exception: agent telemetry, which can land only on
 `agent.*` status topics (see the agents blotter below) — and
 dependency-free — MCP over stdio is newline-delimited JSON-RPC 2.0.
 
+**Not just Claude — any MCP client.** The same server drops into every
+MCP-capable tool; the config is always `npx -y @super-log/mcp`:
+
+```jsonc
+// the universal server entry — Cursor, VS Code, Cline, Windsurf, Zed, Gemini CLI, …
+{ "command": "npx", "args": ["-y", "@super-log/mcp"], "env": { "SUPER_LOG_URL": "http://127.0.0.1:7333" } }
+```
+
+Listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as
+`com.super-log/super-log`, so it is discoverable in-app and installable by name.
+Per-client setup — Claude, Cursor, VS Code, Cline, Windsurf, Zed, Continue,
+LibreChat and Gemini CLI — is in **[docs/CONNECT.md](docs/CONNECT.md)**.
+
 **Already on OpenTelemetry? Join with one exporter stanza, no new SDK.**
 `superlog-otlp` is an OTLP/HTTP server on the standard `127.0.0.1:4318`,
 so pointing an existing exporter at it needs zero endpoint config:
