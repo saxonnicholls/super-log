@@ -624,6 +624,15 @@ Pick the `.deb` for your architecture (`dpkg --print-architecture`). On a
 systemd host the hub starts on install; in a container without systemd, run
 `superlogd` yourself.
 
+On install the hub binds **loopback (`127.0.0.1`)** — right for a dev box, but
+if this machine is the **collector** other devices ship logs to over the LAN (a
+common Raspberry Pi role), they cannot reach it until you bind the network: set
+`SUPER_LOG_LAN=1` (or `SUPER_LOG_BIND=0.0.0.0`) in the service environment and
+restart `superlogd`. The failure is silent at both ends — the device shows
+"never reported" and the hub logs nothing — so if you are standing one up as a
+LAN sink, see [docs/DEVICES.md](docs/DEVICES.md) for the "loopback trap" and how
+to make the LAN binding persist across restarts.
+
 The MCP server also runs straight from npx, no install:
 `claude mcp add super-log -- npx -y @super-log/mcp`. The **viewers** (native
 and web) come with a clone — see Quick start below. Packaging sources and
