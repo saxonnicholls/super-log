@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.super-log/super-log",
-  "description": "Query your local super-log bench from an AI agent - read-only tools over a local hub: tail and search live streams, search the on-disk journal, wait for an event, and read per-topic guides.",
+  "description": "Query your local super-log bench from an AI agent - read-only log tools over the hub.",
   "repository": {
     "url": "https://github.com/saxonnicholls/super-log",
     "source": "github"
