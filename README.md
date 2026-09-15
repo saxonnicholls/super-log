@@ -333,10 +333,20 @@ MCP-capable tool; the config is always `npx -y @super-log/mcp`:
 { "command": "npx", "args": ["-y", "@super-log/mcp"], "env": { "SUPER_LOG_URL": "http://127.0.0.1:7333" } }
 ```
 
-Listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as
-`com.super-log/super-log`, so it is discoverable in-app and installable by name.
-Per-client setup — Claude, Cursor, VS Code, Cline, Windsurf, Zed, Continue,
-LibreChat and Gemini CLI — is in **[docs/CONNECT.md](docs/CONNECT.md)**.
+Three ways to add it:
+
+- **MCP Registry** — listed as `com.super-log/super-log`, discoverable in-app and
+  installable by name (`claude mcp add com.super-log/super-log`); it propagates
+  to the Cursor / VS Code / Glama / PulseMCP catalogs on its own.
+- **Claude Code plugin** — `/plugin marketplace add saxonnicholls/super-log` then
+  `/plugin install super-log@super-log` (adds the server **and** a
+  `/super-log:stream-guide` skill).
+- **Claude Desktop** — double-click the `.mcpb` from the
+  [release](https://github.com/saxonnicholls/super-log/releases), no CLI.
+
+Per-client setup for Cursor, VS Code, Cline, Windsurf, Zed, Continue, LibreChat
+and Gemini CLI — plus the OpenAI Agents SDK / Google ADK recipes — is in
+**[docs/CONNECT.md](docs/CONNECT.md)**.
 
 **Already on OpenTelemetry? Join with one exporter stanza, no new SDK.**
 `superlog-otlp` is an OTLP/HTTP server on the standard `127.0.0.1:4318`,
