@@ -35,6 +35,36 @@ import { createGunzip } from 'node:zlib';
 const HUB = process.env.SUPER_LOG_URL ?? 'http://127.0.0.1:7333';
 const JOURNAL = process.env.SUPER_LOG_JOURNAL ?? './superlog-journal';
 
+// This is an MCP stdio server - an MCP client launches it and speaks JSON-RPC
+// over stdin/stdout, so run by a human with no client it produces nothing and
+// looks hung. Answer --help/--version (and exit) so it does not read as broken.
+if (process.argv.slice(2).some((a) => a === '--help' || a === '-h')) {
+  process.stdout.write(
+`superlog-mcp - the super-log bench as MCP tools (stdio JSON-RPC 2.0).
+
+An MCP server: a client launches it and speaks over stdin/stdout. It wraps the
+hub's /recent and /healthz and the on-disk journal in read-only tools, so an
+agent can ask what the logs just said without a human pasting lines.
+
+Usage:
+  claude mcp add super-log -- npx -y @super-log/mcp
+  SUPER_LOG_URL=http://127.0.0.1:7333 superlog-mcp
+
+Environment:
+  SUPER_LOG_URL      hub base URL          (default http://127.0.0.1:7333)
+  SUPER_LOG_JOURNAL  journal for history   (default ./superlog-journal)
+
+Wire contract: docs/PROTOCOL.md
+`);
+  process.exit(0);
+}
+if (process.argv.slice(2).includes('--version')) {
+  const pkg = JSON.parse(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
+  process.stdout.write(`${pkg.version}\n`);
+  process.exit(0);
+}
+
 // ---- the agents blotter's feed -----------------------------------------
 //
 // This server is read-only by construction, with ONE deliberate, narrow
