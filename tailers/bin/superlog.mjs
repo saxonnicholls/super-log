@@ -17,6 +17,7 @@
 //    superlog status [tailer]         what is running, and the hub's health
 //    superlog logs <tailer>           follow a running tailer's log
 //    superlog list                    every tailer, with a one-line description
+//    superlog viewer [opts]           open the native viewer (builds it once)
 //    <command> | superlog tee [opts]  tee(1): pass a stream through, onto the hub
 //    superlog login                   open super-log Cloud in your browser
 //    superlog help | --help | -h      this
@@ -105,6 +106,38 @@ function start(name, args) {
   child.unref();
   writeFileSync(statePath(name), JSON.stringify({ pid: child.pid, args, started: Date.now(), log: logPath(name) }));
   console.log(`started ${name} (pid ${child.pid})  logs: superlog logs ${name}`);
+}
+
+// `superlog viewer` - open the native ImGui viewer, building it once if needed.
+// Not a managed tailer: it is a GUI window, launched detached and not pid-tracked
+// under ~/.superlog. It speaks WebSocket, so the hub's http(s) URL is handed over
+// as ws(s). Options pass straight through to the binary.
+function viewer(args) {
+  const hit = spawnSync('pgrep', ['-f', 'superlog_viewer'], { encoding: 'utf8' });
+  if (hit.status === 0 && hit.stdout.trim())
+    return console.log(`viewer already running (pid ${hit.stdout.trim().split(/\s+/)[0]})`);
+
+  const REPO = join(BIN, '..', '..');
+  const built = join(REPO, 'build', 'viewer', 'imgui', 'superlog_viewer');
+  let bin = existsSync(built) ? built : null;
+
+  if (!bin) {
+    if (!existsSync(join(REPO, 'viewer', 'imgui', 'CMakeLists.txt')))
+      die('no viewer binary here, and no viewer sources to build one - run from a super-log clone');
+    console.log('viewer: not built yet - building it once (cmake; a minute or two)...');
+    const conf = spawnSync('cmake', ['-S', REPO, '-B', join(REPO, 'build'),
+      '-DSUPER_LOG_BUILD_IMGUI_VIEWER=ON', '-DCMAKE_BUILD_TYPE=Release'], { stdio: 'inherit' });
+    if (conf.status !== 0) die('viewer: cmake configure failed - submodules present? (git submodule update --init)');
+    const b = spawnSync('cmake', ['--build', join(REPO, 'build'), '--target', 'superlog_viewer', '-j'],
+      { stdio: 'inherit' });
+    if (b.status !== 0 || !existsSync(built)) die('viewer: build failed');
+    bin = built;
+  }
+
+  const ws = HUB.replace(/^http/, 'ws');                         // http->ws, https->wss
+  const child = spawn(bin, args, { detached: true, stdio: 'ignore', env: { ...process.env, SUPER_LOG_URL: ws } });
+  child.unref();
+  console.log(`viewer started (pid ${child.pid}) -> ${ws}`);
 }
 
 async function stop(name) {
@@ -323,6 +356,9 @@ TAILERS (managed in the background; logs under ~/.superlog/log)
   logs <tailer>             follow a running tailer's log
   list                      every tailer, with a one-line description (${tailerNames().length} of them)
 
+THE BENCH
+  viewer [opts]             open the native viewer (builds it once if needed)
+
 STREAMS & CLOUD
   tee [opts] [FILE...]      tee(1) onto the hub    e.g. make 2>&1 | superlog tee --topic build
   login                     open super-log Cloud in your browser
@@ -394,6 +430,7 @@ async function main() {
     case 'status': return status(rest[0]);
     case 'logs': return logs(rest[0]);
     case 'list': return list();
+    case 'viewer': return viewer(rest);
     case 'tee': return void spawnInherit('superlog-tee.mjs', rest);
     case 'login': return runLogin(rest);
     case 'billing': return billing();

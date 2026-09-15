@@ -110,6 +110,7 @@ superlog alarms            firing alarms   (every read command is NDJSON when pi
 superlog versions          the version inventory, per host
 superlog start vitals      start a tailer in the background
 superlog stop vitals       stop it
+superlog viewer            open the native viewer  (builds it once if needed)
 superlog tee               a stream onto the hub   (make 2>&1 | superlog tee --topic build)
 superlog login             open super-log Cloud in your browser
 ```

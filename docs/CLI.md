@@ -72,6 +72,20 @@ $ superlog status
 $ superlog stop vitals
 ```
 
+## The viewer
+
+| Command | Does |
+|---------|------|
+| `superlog viewer [opts]` | open the native ImGui viewer, building it once if it is not compiled yet |
+
+The viewer is a GUI window, not a managed tailer — it is launched detached and
+not tracked under `~/.superlog`. If it is already running, `superlog viewer`
+says so and does nothing. It reads the hub over WebSocket (`ws://127.0.0.1:7333`
+by default — the hub URL as `ws(s)://`; set `SUPER_LOG_URL` to point elsewhere).
+Building it needs the vendored imgui/glfw submodules and a C++ toolchain, so it
+works from a clone; the native viewer is not shipped in the `.deb`/`.rpm`
+packages.
+
 ## Streams and cloud
 
 | Command | Does |
