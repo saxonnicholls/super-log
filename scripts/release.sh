@@ -124,15 +124,22 @@ do_github() {
     DEB_ARM="packaging/deb/super-log_${VERSION}_arm64.deb"
     RPM="$(ls packaging/rpm/super-log-${VERSION}-1.*.x86_64.rpm | head -1)"
 
+    # The Claude Desktop bundle (.mcpb) - a host-side node+zip build (no docker),
+    # versioned by the mcp package, which may lead the suite, so find it by glob
+    # rather than by "$VERSION".
+    say "GitHub: building the Claude Desktop bundle (.mcpb)"
+    sh packaging/mcpb/build-mcpb.sh >/dev/null
+    MCPB="$(ls packaging/mcpb/super-log-*.mcpb | head -1)"
+
     if gh release view "$TAG" >/dev/null 2>&1; then
         say "GitHub: release $TAG exists - adding any missing assets (best effort; immutable releases stay as-is)"
-        gh release upload "$TAG" "$DEB_AMD" "$DEB_ARM" "$RPM" --clobber 2>/dev/null \
+        gh release upload "$TAG" "$DEB_AMD" "$DEB_ARM" "$RPM" "$MCPB" --clobber 2>/dev/null \
           || echo "release: could not add assets (immutable release?) - leaving as-is"
     else
         say "GitHub: creating release $TAG with binaries"
-        gh release create "$TAG" "$DEB_AMD" "$DEB_ARM" "$RPM" \
+        gh release create "$TAG" "$DEB_AMD" "$DEB_ARM" "$RPM" "$MCPB" \
           --title "super-log $VERSION" \
-          --notes "See CHANGELOG.md. Install: sudo apt install ./super-log_${VERSION}_<arch>.deb (Debian/Ubuntu/Pi) or sudo dnf install ./super-log-${VERSION}-1.*.x86_64.rpm (Fedora/RHEL)."
+          --notes "See CHANGELOG.md. Install: sudo apt install ./super-log_${VERSION}_<arch>.deb (Debian/Ubuntu/Pi), sudo dnf install ./super-log-${VERSION}-1.*.x86_64.rpm (Fedora/RHEL), or double-click the .mcpb into Claude Desktop."
     fi
     say "GitHub: done"
 }

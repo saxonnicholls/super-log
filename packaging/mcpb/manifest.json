@@ -1,0 +1,44 @@
+{
+  "manifest_version": "0.3",
+  "name": "super-log",
+  "display_name": "super-log",
+  "version": "@VERSION@",
+  "description": "Query your local super-log bench from an AI agent - read-only log tools over the hub.",
+  "author": {
+    "name": "Saxon Herschel Nicholls",
+    "url": "https://github.com/saxonnicholls"
+  },
+  "homepage": "https://github.com/saxonnicholls/super-log",
+  "documentation": "https://github.com/saxonnicholls/super-log/blob/main/docs/CONNECT.md",
+  "license": "MIT",
+  "keywords": ["logging", "observability", "mcp", "super-log"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/bin/superlog-mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/bin/superlog-mcp.mjs"],
+      "env": { "SUPER_LOG_URL": "${user_config.hub_url}" }
+    }
+  },
+  "user_config": {
+    "hub_url": {
+      "type": "string",
+      "title": "Hub URL",
+      "description": "Base URL of the super-log hub the server queries",
+      "default": "http://127.0.0.1:7333",
+      "required": false
+    }
+  },
+  "tools": [
+    { "name": "hub_status", "description": "Is the hub up, and what streams are live" },
+    { "name": "list_streams", "description": "Which topics are live, their level mix and error counts" },
+    { "name": "tail_logs", "description": "Recent events by topic/level/text, with a cursor" },
+    { "name": "search_logs", "description": "Find recent events by text" },
+    { "name": "search_history", "description": "Search the on-disk journal - hours or days" },
+    { "name": "wait_for", "description": "Block until a matching event arrives" },
+    { "name": "list_webhooks", "description": "Alarm-gateway routes with public URLs and health" },
+    { "name": "agent_report", "description": "Post your agent status to the agents blotter" },
+    { "name": "stream_guide", "description": "Per-topic docs and playbooks, on demand" }
+  ]
+}

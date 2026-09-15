@@ -81,3 +81,6 @@ build-rpm/
 # release signing identity (personal)
 scripts/release.env
 CLAUDE.md
+
+# MCPB Claude Desktop bundle (built by packaging/mcpb/build-mcpb.sh, attached to the release)
+packaging/mcpb/*.mcpb
