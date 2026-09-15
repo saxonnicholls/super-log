@@ -1,0 +1,12 @@
+{
+  "name": "super-log",
+  "description": "Read the super-log bench from Claude: tail and search live streams, search the on-disk journal, wait for events, and query per-topic guides. Adds the super-log MCP server and a stream-guide skill.",
+  "version": "0.4.1",
+  "author": {
+    "name": "Saxon Herschel Nicholls",
+    "url": "https://github.com/saxonnicholls"
+  },
+  "homepage": "https://github.com/saxonnicholls/super-log",
+  "repository": "https://github.com/saxonnicholls/super-log.git",
+  "license": "MIT"
+}

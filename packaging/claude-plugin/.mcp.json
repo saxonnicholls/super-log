@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "super-log": {
+      "command": "npx",
+      "args": ["-y", "@super-log/mcp"],
+      "env": {
+        "SUPER_LOG_URL": "http://127.0.0.1:7333"
+      }
+    }
+  }
+}

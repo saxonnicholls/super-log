@@ -1,0 +1,14 @@
+{
+  "name": "super-log",
+  "owner": {
+    "name": "Saxon Herschel Nicholls",
+    "url": "https://github.com/saxonnicholls"
+  },
+  "plugins": [
+    {
+      "name": "super-log",
+      "source": "./packaging/claude-plugin",
+      "description": "Read your local super-log bench from Claude - the MCP server (tail/search/history tools) plus a stream-guide skill for what each topic means."
+    }
+  ]
+}
