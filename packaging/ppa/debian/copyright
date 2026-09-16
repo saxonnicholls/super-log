@@ -56,8 +56,10 @@ License: MIT
  DEALINGS IN THE SOFTWARE.
 
 License: Basseterre-icon
- The super-log application icon (viewer/imgui/assets/icon.png and icon.svg, and
- the pixel data generated from them into viewer/imgui/src/app_icon.h) is a
+ The super-log logo (viewer/imgui/assets/icon.png, icon.svg and logo-400.png,
+ and the pixel data generated from them into viewer/imgui/src/app_icon.h) is a
  trademark and brand asset of Basseterre LLC. All rights reserved. It is NOT
- covered by the MIT license and may NOT be used for commercial purposes. It is
- bundled solely so the super-log viewer can display its own application icon.
+ covered by the MIT license. Basseterre LLC provides it ROYALTY-FREE: it may be
+ used and redistributed to identify or refer to super-log, but not to imply
+ endorsement or affiliation or to misrepresent its origin, and ownership is
+ retained by Basseterre LLC.

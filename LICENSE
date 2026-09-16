@@ -22,12 +22,15 @@ SOFTWARE.
 
 ----------------------------------------------------------------------
 
-EXCEPTION — the application icon is NOT covered by the MIT license above.
+EXCEPTION — the super-log logo is NOT covered by the MIT license above.
 
-The files viewer/imgui/assets/icon.png, viewer/imgui/assets/icon.svg, and the
-icon pixel data generated from them into viewer/imgui/src/app_icon.h are a
-trademark and brand asset of Basseterre LLC, all rights reserved. They are NOT
-licensed under the MIT terms above, and may NOT be used for commercial
-purposes. They are bundled only so the super-log viewer can display its own
-application icon. If you redistribute the viewer under another name, replace
-these files. See viewer/imgui/assets/NOTICE.
+The files viewer/imgui/assets/icon.png, viewer/imgui/assets/icon.svg,
+viewer/imgui/assets/logo-400.png, and the icon pixel data generated from them
+into viewer/imgui/src/app_icon.h are the property of Basseterre LLC — a
+trademark and brand asset, all rights reserved. They are NOT licensed under the
+MIT terms above. Basseterre LLC provides them ROYALTY-FREE: you may use and
+redistribute them to identify or refer to super-log — including the viewer
+displaying its own application icon, and listing super-log in directories and
+marketplaces — but you may NOT use them to imply endorsement or affiliation, or
+misrepresent their origin, and ownership is retained by Basseterre LLC. See
+viewer/imgui/assets/NOTICE.
