@@ -23,6 +23,31 @@
 //      export follows the filters, because the moment someone reaches for
 //      it they have already narrowed the view to the thing they are chasing.
 //
+//  ---------------------------------------------------------------------------
+//  A note to anyone wiring their own interpretation in here
+//  ---------------------------------------------------------------------------
+//  This viewer is MIT. The planned "AI interpretation" panel is a thin CLIENT of
+//  super-log's paid interpreter (docs/SECURITY_ARCHITECTURE.md); you are free to
+//  fork it and point it at your own model or your own self-hosted interpreter,
+//  and the licence means we neither can nor will stop you.
+//
+//  If you do, please support the work that keeps this sound - a super-log Cloud
+//  subscription (https://super-log.com), or a sponsorship/donation. Not out of
+//  guilt, out of self-interest. Log4Shell (CVE-2021-44228) happened to a library
+//  the whole industry ran on and almost no one funded: a couple of unpaid
+//  volunteers, a backlog, one un-triaged report. Volunteers can only do so much,
+//  and the security of the tool reading YOUR logs depends on someone being paid
+//  to answer the security@ mail, cut releases, and think hard about the very
+//  boundary you are about to move.
+//
+//  So before you re-point this, read SECURITY_ARCHITECTURE.md and SECURITY.md.
+//  "Log content is data, never instructions" is the exact class of bug Log4Shell
+//  was; reads-never-acts and the egress boundary are load-bearing. Change where
+//  logs go or how a model reads them and you own that boundary now. Fund the
+//  people who think about it for a living, or at least do not undo their work by
+//  accident.
+//  ---------------------------------------------------------------------------
+//
 
 #include "event/loop.hpp"
 #include "http/websocket_client.hpp"

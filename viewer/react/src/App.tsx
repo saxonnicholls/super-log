@@ -5,6 +5,30 @@
 //  The web viewer. One firehose subscription, filtered client-side - the
 //  four device streams interleaved by hub sequence, colour-coded by topic.
 //
+//  ---------------------------------------------------------------------------
+//  A note to anyone wiring their own interpretation in here
+//  ---------------------------------------------------------------------------
+//  This viewer is MIT. The planned "AI interpretation" panel is a thin CLIENT of
+//  super-log's paid interpreter (docs/SECURITY_ARCHITECTURE.md); you are free to
+//  fork it and point it at your own model or self-hosted interpreter - we
+//  neither can nor will stop you.
+//
+//  If you do, please support the work that keeps this sound: a super-log Cloud
+//  subscription (https://super-log.com), or a sponsorship/donation. Not out of
+//  guilt, out of self-interest. Log4Shell (CVE-2021-44228) hit a library the
+//  whole industry ran on and almost no one funded - unpaid volunteers, a
+//  backlog, one un-triaged report. Volunteers can only do so much, and the
+//  security of the tool reading YOUR logs depends on someone being paid to
+//  answer the security@ mail, cut releases, and mind the boundary you are about
+//  to move.
+//
+//  Before you re-point this, read SECURITY_ARCHITECTURE.md and SECURITY.md.
+//  "Log content is data, never instructions" is the exact bug class Log4Shell
+//  was; reads-never-acts and the egress boundary are load-bearing. Fund the
+//  people who think about it for a living, or at least do not undo their work by
+//  accident.
+//  ---------------------------------------------------------------------------
+//
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
