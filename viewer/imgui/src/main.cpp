@@ -60,6 +60,7 @@
 #include <GLFW/glfw3.h>
 
 #include "app_icon.h"                       // the embedded application icon
+#include "ai_panel.hpp"                      // the AI-interpretation panel (Cloud client)
 #ifdef __APPLE__
 // glfwSetWindowIcon is a no-op on Cocoa; this sets the dock icon (mac_icon.mm).
 extern "C" void superlog_set_dock_icon(const unsigned char* png, int len);
@@ -972,7 +973,8 @@ constexpr const char* fallback_menu = R"MENU([
     {"key":"menu.view.prs","label":"PRs (GitHub)","action":"toggle.prs","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.rpc","label":"RPC nodes","action":"toggle.rpc","attributes":["CHECKBOX"],"checked":true},
     {"key":"menu.view.alarms","label":"Alarms (production)","action":"toggle.alarms","attributes":["CHECKBOX"],"checked":true},
-    {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true}]},
+    {"key":"menu.view.webhooks","label":"Webhooks (development)","action":"toggle.webhooks","attributes":["CHECKBOX"],"checked":true},
+    {"key":"menu.view.ai","label":"AI interpretation","action":"toggle.ai","attributes":["CHECKBOX"],"checked":true}]},
   {"key":"menu.actions","label":"Actions","attributes":["SUBMENU"],"children":[
     {"key":"menu.actions.test","label":"Test the alarm path","action":"selftest","attributes":["NORMAL"]}]}
 ])MENU";
@@ -1498,6 +1500,10 @@ int main()
                ":7336";
     }();
 
+    // The AI-interpretation panel's state - long-lived so its detached curl
+    // worker threads never outlive it. A thin client of super-log Cloud.
+    ai_state ai;
+
     while (!glfwWindowShouldClose(win)) {
         glfwPollEvents();
 
@@ -1757,6 +1763,9 @@ int main()
         // lives next door: both are webhooks, but one is an incident
         // surface and the other is a development tool, and a screen that
         // mixes them teaches the eye to skim past alarms.
+        if (menu.toggles["toggle.ai"])
+            render_ai_panel(ai);
+
         if (menu.toggles["toggle.alarms"]) {
             int firing = 0;
             for (const auto& a : blotter)
