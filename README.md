@@ -401,6 +401,29 @@ forwarded port that answers 502 is reported as "tunnel up, your service is
 not", and a watch-only URL passes on any HTTP answer, because any answer
 proves the wire.
 
+**And straight from code: `SN_ALARM`.** The gateway is the door for a
+production system across a network; for an alarm the running program itself
+wants to raise — an assertion that should wake someone, a dependency gone dark —
+every SDK has a first-class primitive that skips the log and lands in the
+blotter directly:
+
+```cpp
+SN_ALARM("settlement engine unreachable");        // C++: P0, fires in the panel
+SN_ALARM_CLEAR("settlement engine unreachable");  // clears it
+```
+
+The same call is in **every language super-log speaks** — `sn_alarm()`,
+`sn_alarm!`, `.alarm()` and their kin — because an alarm you can only raise from
+one language is a gap an incident finds. It emits on `alert.native.<key>`, which
+the rules engine ignores by design (so it never trips a rule), keyed and
+edge-triggered so a hot loop is one alarm and not a flood; CRITICAL fires it, an
+INFO `RECOVERED` closes it. It posts straight to the hub — immediate and local;
+the gateway's cross-process dedup and repeat-counting are for alarms that cross
+a network. And it is deliberately **not** gated by PRODUCTION mode: an alarm you
+asked for is the one thing that must not go quiet in production
+(`SUPER_LOG_ALARMS=0` mutes it if you must). Every demo client fires one so you
+can watch it land.
+
 The gateway is also an **endpoint factory**, and the viewers split its two
 audiences: **alarms (production)** — the sparse blotter plus the alarm
 path's own routes — and **webhooks (development)** — the endpoint grid and

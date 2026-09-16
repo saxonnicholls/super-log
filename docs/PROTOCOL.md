@@ -112,6 +112,7 @@ host-side tailer scraping the same device:
 | `agent.<name>`        | an agent on the bench: LISTENING (MCP connect, announced by the server itself), REQUESTING (tool calls, DEBUG), and REPORTING (the agent_report contract: `fields.llm` names the model, `task`/`pct` the job, `interval_s` the promised cadence - the blotter greys an agent that misses 2x its own promise) |
 | `alert.<rule>`        | an alert rule that fired (level, rate, silence, or a combo of conditions in one window), so alerts sit beside their cause |
 | `alert.inbound.<name>`| a production system's webhook alarm through superlog-alarm: deduped by `fields.key` with `fields.repeat` counts, recovery as INFO, `monitor_dead:*` when a checker's heartbeat stops |
+| `alert.native.<key>`  | a first-class alarm raised straight from application code (`SN_ALARM` in C++ and its equivalent in every SDK): the deliberate "this is an alarm", not a WARN a rule must catch. CRITICAL (P0) to fire, INFO `RECOVERED: <key>` to clear, `fields.key` the dedup key, `tag:"alarm"`. Posted straight to the hub, so it lands in the Alarms panel at once - the cross-process dedup/repeat/recovery accounting is the superlog-alarm gateway's job, not this door's. The rules engine ignores `alert.*` (loop guard), so a native alarm never trips a rule |
 
 Lowercase, dot-separated, `[a-z0-9._-]`. New streams add rows here.
 

@@ -21,6 +21,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/version.h>
+#include <super_log/alarm.hpp>
 #include <super_log/forward_sink.hpp>
 #include <super_log/spdlog_sink.hpp>
 
@@ -117,6 +118,15 @@ int main()
         ++n;
         SN_LOGGER_INFO(lg).field("tick", n) << "tick " << n << " - the time is " << hms;
         slg->info("tick {} - the time is {}", n, hms);
+
+        // A demo ALARM so the viewers' Alarms panel has something from C++ to
+        // show: raise on the 20-tick mark (P0, lands on alert.native.cpp.demo),
+        // recover ten ticks later. In real code a bare SN_ALARM("...") - keyed
+        // by call site and edge-triggered - is usually all you reach for.
+        if (n % 20 == 5)
+            SN_ALARM_KEY("cpp.demo", "cpp demo: settlement lag over budget");
+        else if (n % 20 == 15)
+            SN_ALARM_CLEAR("cpp.demo");
     });
 
     // run_once with a bounded wait, so the signal atomic is polled without

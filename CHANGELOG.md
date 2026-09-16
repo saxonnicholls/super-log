@@ -5,6 +5,24 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**`SN_ALARM` — raise a first-class alarm straight from code, in any language.**
+Until now the Alarms panel filled only from `superlog-alert`'s rules or a
+production webhook through the `superlog-alarm` gateway; from code the best you
+could do was write a WARN and hope a rule caught it. `SN_ALARM("…")` (and its
+per-language equivalent) says it outright — it emits on `alert.native.<key>`,
+the third `alert.*` source beside the rules engine and the gateway, which the
+viewers' blotter reads and dedups by `fields.key`. CRITICAL fires it, an INFO
+`RECOVERED` clears it; the bare form keys off the call site and edge-triggers, so
+a hot loop is one alarm, not a flood. It posts straight to the hub (immediate,
+local — cross-process dedup/repeat/recovery is still the gateway's job) and is
+deliberately not silenced by PRODUCTION mode, because an alarm you asked for must
+not go quiet in production. This ships the **C++ reference** (`sn_alarm` +
+`SN_ALARM`/`SN_ALARM_KEY`/`SN_ALARM_CLEAR`, header-only) wired into the C++ demo
+clock; the same primitive lands in every SDK next, and every demo fires one.
+VERIFIED: tests/sn-alarm.test.mjs runs the real C++ demo against a real hub and
+asserts a CRITICAL lands on `alert.native.cpp.demo` with `tag:"alarm"` and the
+dedup key, and an INFO `RECOVERED` closes it — where the blotter reads.
+
 **A busy bench no longer leaves the viewers' state windows blank — a firehose
 can't crush the quiet streams out of view.** The hub's ring is per-topic, so a
 600-line/second producer is expensive only to itself — but the wildcard replay
