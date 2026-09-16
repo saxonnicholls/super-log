@@ -270,10 +270,11 @@ export async function run(script, args = [], opts = {}) {
 
 // ------------------------------------------------------------------ /recent
 
-function recentQuery({ topic, limit = 1000, since = 0, level, trace } = {}) {
+function recentQuery({ topic, limit = 1000, since = 0, level, trace, snapshot } = {}) {
   const q = new URLSearchParams();
   q.set('limit', String(limit));
-  q.set('since', String(since));
+  if (snapshot) q.set('snapshot', '1');       // seed mode: `limit` is the per-topic cap
+  else q.set('since', String(since));
   if (topic) q.set('topic', topic);
   if (level) q.set('level', level);
   if (trace) q.set('trace', trace);

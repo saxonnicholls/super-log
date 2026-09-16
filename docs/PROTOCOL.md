@@ -242,6 +242,7 @@ GET, which is what scripts, cron jobs and agents actually want.
 | `limit`  | `200`   | maximum events (hard cap 1000 — a reader is never handed the firehose) |
 | `topic`  | all     | exact topic, or a prefix ending in `.` (`cpp.` matches `cpp.clock`), or `*` |
 | `level`  | all     | minimum level: `TRACE` `DEBUG` `INFO` `WARN` `ERROR` `CRITICAL` |
+| `snapshot` | off   | seed the whole board: the newest `limit` of **every** topic, per-topic fair (see below) |
 
 ```json
 {
@@ -269,6 +270,19 @@ GET, which is what scripts, cron jobs and agents actually want.
   is also on `/healthz`, so a `/ws`-only consumer can read it on connect.
 - `missed` — true when the ring moved past `since`: that reader lost events.
   Ring depth is 5000 events (`SUPER_LOG_RECENT`).
+
+**`snapshot=1` — the fair board seed.** The ring is per-topic, so a firehose is
+expensive only to itself — but a plain `since=0&limit=N` read throws that
+fairness away: it returns the newest `N` events *globally*, and a
+600-line/second neighbour crowds a once-every-five-minutes `host.<h>.versions`
+row out of every wildcard read. `snapshot=1` instead returns each topic's own
+newest slice: `limit` becomes the **per-topic** cap (default 50, max 200), so a
+viewer that just loaded sees every stream at once — the state windows (versions,
+usb, topology, servers) populate immediately instead of staying blank until each
+quiet producer next speaks. It carries no `since` — it is a seed, not a tail:
+take it on connect, then poll with the `next` it returns (or ride `/ws`) for the
+live edge. `topic` and `level` still narrow it; `truncated`/`missed` are always
+false.
 
 Default port **7333** (`SUPER_LOG_PORT` overrides).
 

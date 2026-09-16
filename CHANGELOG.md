@@ -3,6 +3,30 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
+## Unreleased
+
+**A busy bench no longer leaves the viewers' state windows blank — a firehose
+can't crush the quiet streams out of view.** The hub's ring is per-topic, so a
+600-line/second producer is expensive only to itself — but the wildcard replay
+ride a single global ring, and a plain `GET /recent?limit=N` returns the newest
+`N` events *globally*, so a once-every-five-minutes `host.<h>.versions`,
+`usb.<h>` or `net.<h>.topology` row was crowded out of every wildcard read.
+Behind a live bench the viewers' Versions, Devices and Topology windows sat
+blank even though the hub still held the data. New: `GET /recent?snapshot=1`
+hands back each topic's *own* newest slice (`limit` becomes the per-topic cap),
+a fair board seed. Both viewers fetch it on connect so a window that just opened
+is as populated as the hub can make it; the web viewer additionally keeps a
+per-topic ring so the state/board panels read a fair view the firehose can never
+evict, leaving only the Log firehose on the raw global tail. VERIFIED:
+tests/snapshot.test.mjs drives a real hub — a global `limit=50` read drops a
+quiet topic a 120-event firehose buried, while `snapshot=1` keeps it and its
+payload intact and carries a live cursor; the protocol and epoch suites stay
+green after `recent_ring::query()` was refactored onto the shared serializer;
+on a live bench `snapshot=1` returns the versions/usb/topology rows a global
+read omits, and the restarted ImGui viewer seeds all of them on connect. NOT
+covered by an automated UI test: that the rendered panels then fill — confirmed
+by hand.
+
 ## 0.4.0 — 2026-09-11
 
 **The hub now checks `Origin` on both doors — a web page can no longer read or

@@ -71,7 +71,7 @@ function topicColor(topic: string): string {
 }
 
 export default function App() {
-  const { rows, connected, clear } = useLogFeed(HUB);
+  const { rows, stateRows, connected, clear } = useLogFeed(HUB);
   // The menu seeds the window toggles; viewer/menu.json is the same file
   // the ImGui viewer renders, so both screens carry the same bar.
   const [toggles, setToggles] = useState<Record<string, boolean>>(menuDefaults);
@@ -114,7 +114,9 @@ export default function App() {
   // so the captured reference stays exactly as it was.
   const frozen = useRef<LogRow[]>([]);
 
-  const topics = useMemo(() => [...new Set(rows.map((r) => r.topic))].sort(), [rows]);
+  // The stream filter lists every topic the fair ring has seen, so a quiet
+  // stream is selectable even while the firehose dominates `rows`.
+  const topics = useMemo(() => [...new Set(stateRows.map((r) => r.topic))].sort(), [stateRows]);
 
   const source = paused ? frozen.current : rows;
   const visible = useMemo(() => {
@@ -289,18 +291,21 @@ export default function App() {
       {/* Production and development, separated: the alarm blotter (sparse,
           one row per key) and the webhook workbench (endpoints, deliveries,
           signature verdicts). Both toggle from the View menu. */}
-      {toggles['toggle.servers'] !== false && <ServerPanel rows={rows} />}
-      {toggles['toggle.devices'] !== false && <DevicePanel rows={rows} />}
-      {toggles['toggle.topology'] !== false && <TopologyPanel rows={rows} />}
-      {toggles['toggle.versions'] !== false && <VersionsPanel rows={rows} />}
-      {toggles['toggle.agents'] !== false && <AgentPanel rows={rows} />}
-      {toggles['toggle.prs'] !== false && <PRPanel rows={rows} />}
-      {toggles['toggle.rpc'] !== false && <RpcPanel rows={rows} />}
+      {/* State/board panels read the FAIR per-topic ring, so the firehose can
+          never crush their quiet streams out of view (see useLogFeed). Only
+          the Log firehose above reads the raw `rows` tail. */}
+      {toggles['toggle.servers'] !== false && <ServerPanel rows={stateRows} />}
+      {toggles['toggle.devices'] !== false && <DevicePanel rows={stateRows} />}
+      {toggles['toggle.topology'] !== false && <TopologyPanel rows={stateRows} />}
+      {toggles['toggle.versions'] !== false && <VersionsPanel rows={stateRows} />}
+      {toggles['toggle.agents'] !== false && <AgentPanel rows={stateRows} />}
+      {toggles['toggle.prs'] !== false && <PRPanel rows={stateRows} />}
+      {toggles['toggle.rpc'] !== false && <RpcPanel rows={stateRows} />}
       {toggles['toggle.alarms'] !== false &&
-        <AlarmBlotter rows={rows} hub={HUB} test={test}
+        <AlarmBlotter rows={stateRows} hub={HUB} test={test}
                       onTest={() => void runTest()} verdictFor={verdictFor} />}
       {toggles['toggle.webhooks'] !== false &&
-        <WebhookPanel rows={rows} hub={HUB} verdictFor={verdictFor} />}
+        <WebhookPanel rows={stateRows} hub={HUB} verdictFor={verdictFor} />}
       {toggles['toggle.ai'] !== false && <AiPanel />}
       </div>
     </div>

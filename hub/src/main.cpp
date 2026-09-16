@@ -359,31 +359,6 @@ public:
             picked.erase(picked.begin(),
                          picked.begin() + static_cast<std::ptrdiff_t>(picked.size() - limit));
 
-        std::string out = "{\"events\":[";
-        bool first = true;
-        for (const recent_event* e : picked) {
-            if (!first)
-                out += ',';
-            first = false;
-            out += "{\"id\":" + std::to_string(e->id) +
-                   ",\"seq\":" + std::to_string(e->seq) + ",\"topic\":\"";
-            snicholls::utils::json_escape(e->topic, out);
-            out += "\",\"event\":";
-            // PROTOCOL.md's tolerant-reader rule makes a non-JSON payload
-            // line legal, and a tailer relays plenty of them. Embedding one
-            // verbatim made this whole response unparseable and broke every
-            // consumer at once - the viewers, the MCP server, any script.
-            // So relay JSON as JSON, and wrap anything else the way the
-            // rule says a reader should: {"msg": "<the raw line>"}.
-            if (embeddable_json_object(e->line)) {
-                out += e->line;
-            } else {
-                out += "{\"msg\":\"";
-                snicholls::utils::json_escape(e->line, out);
-                out += "\"}";
-            }
-            out += '}';
-        }
         // Advance the cursor past everything considered, not just what was
         // returned, so a filtered poll does not rescan the quiet events.
         // When truncated, stop at what was actually handed over.
@@ -392,18 +367,43 @@ public:
         // A reader away longer than the ring is deep has missed events; say
         // so rather than let it believe it saw everything.
         const bool gap = oldest != 0 && since != 0 && since + 1 < oldest;
-        // `epoch` identifies this hub lifetime. `id`/`seq` reset to zero on a
-        // restart, so a poller that saved `next` across one MUST notice the
-        // epoch change and reset its cursor - otherwise the old cursor sits
-        // above every new event and the whole stream reads as replay.
-        out += "],\"next\":" + std::to_string(next) +
-               ",\"count\":" + std::to_string(picked.size()) +
-               ",\"oldest\":" + std::to_string(oldest) +
-               ",\"newest\":" + std::to_string(last_id_) +
-               ",\"epoch\":\"" + epoch_ + "\"" +
-               ",\"truncated\":" + (truncated ? "true" : "false") +
-               ",\"missed\":" + (gap ? "true" : "false") + '}';
-        return out;
+        return serialize_locked(picked, next, oldest, truncated, gap);
+    }
+
+    // The latest events of EVERY topic, up to per_topic each - a FAIR
+    // current-state seed for a viewer that just loaded. The per-topic rings
+    // already make a firehose expensive only to itself; query()'s global
+    // newest-N cap quietly throws that fairness away (a 600-line/second
+    // neighbour crowds a once-every-5-minutes versions row out of any wildcard
+    // read), and so does a single global wildcard replay ring. This hands the
+    // reader the per-topic fairness directly: each topic contributes its own
+    // newest slice, so a quiet state stream is never crushed out of the
+    // backfill. No `since`: it is a snapshot, not a tail - seed from it, then
+    // poll /recent?since=<next> or ride /ws for the live edge.
+    std::string snapshot(const std::string& topic, int min_level,
+                         std::size_t per_topic) const
+    {
+        if (per_topic == 0)
+            per_topic = 1;
+        std::lock_guard<std::mutex> g(m_);
+        std::vector<const recent_event*> picked;
+        std::uint64_t oldest = 0;
+        for (const auto& [name, q] : topics_) {
+            if (!q.empty() && (oldest == 0 || q.front().id < oldest))
+                oldest = q.front().id;
+            if (!topic_matches(topic, name))
+                continue;
+            std::size_t taken = 0;
+            for (auto it = q.rbegin(); it != q.rend() && taken < per_topic; ++it) {
+                if (it->level < min_level)
+                    continue;
+                picked.push_back(&*it);
+                ++taken;
+            }
+        }
+        std::sort(picked.begin(), picked.end(),
+                  [](const recent_event* a, const recent_event* b) { return a->id < b->id; });
+        return serialize_locked(picked, last_id_, oldest, false, false);
     }
 
 private:
@@ -414,6 +414,49 @@ private:
             return true;
         return want.back() == '.' && name.size() > want.size() &&
                name.compare(0, want.size(), want) == 0;
+    }
+
+    // Shared events-array + trailer writer for query() and snapshot(); caller
+    // holds m_. `epoch` marks this hub lifetime - a poller that saved `next`
+    // across a restart must see it change and reset, or the old cursor sits
+    // above every new event and the whole stream reads as replay.
+    std::string serialize_locked(const std::vector<const recent_event*>& picked,
+                                 std::uint64_t next, std::uint64_t oldest,
+                                 bool truncated, bool missed) const
+    {
+        std::string out = "{\"events\":[";
+        bool first = true;
+        for (const recent_event* e : picked) {
+            if (!first)
+                out += ',';
+            first = false;
+            out += "{\"id\":" + std::to_string(e->id) +
+                   ",\"seq\":" + std::to_string(e->seq) + ",\"topic\":\"";
+            snicholls::utils::json_escape(e->topic, out);
+            out += "\",\"event\":";
+            // PROTOCOL.md's tolerant-reader rule makes a non-JSON payload line
+            // legal, and a tailer relays plenty of them. Embedding one verbatim
+            // made this whole response unparseable and broke every consumer at
+            // once - the viewers, the MCP server, any script. So relay JSON as
+            // JSON, and wrap anything else the way the rule says a reader
+            // should: {"msg": "<the raw line>"}.
+            if (embeddable_json_object(e->line)) {
+                out += e->line;
+            } else {
+                out += "{\"msg\":\"";
+                snicholls::utils::json_escape(e->line, out);
+                out += "\"}";
+            }
+            out += '}';
+        }
+        out += "],\"next\":" + std::to_string(next) +
+               ",\"count\":" + std::to_string(picked.size()) +
+               ",\"oldest\":" + std::to_string(oldest) +
+               ",\"newest\":" + std::to_string(last_id_) +
+               ",\"epoch\":\"" + epoch_ + "\"" +
+               ",\"truncated\":" + (truncated ? "true" : "false") +
+               ",\"missed\":" + (missed ? "true" : "false") + '}';
+        return out;
     }
 
     mutable std::mutex m_;
@@ -534,15 +577,29 @@ int main()
     // Poll with the `next` from the previous answer and nothing is missed
     // or repeated; `missed` says the ring moved past you.
     srv.get("/recent", [&recent](const http::request& req, http::responder r) {
+        const std::string level = req.query_param("level");
+        const int min_level = level.empty() ? 1 : level_rank(level);
+        // snapshot=1 seeds a viewer that just loaded: the newest `limit` of
+        // EVERY topic (per-topic, so a firehose cannot crush a quiet state
+        // stream out of the backfill), instead of the newest `limit` globally.
+        // Here `limit` is the per-topic cap, kept small so many topics stay
+        // bounded. Seed from it, then poll with the `next` it returns.
+        const std::string snap = req.query_param("snapshot");
+        if (!snap.empty() && snap != "0" && snap != "false") {
+            std::size_t per = static_cast<std::size_t>(u64_param(req, "limit", 50));
+            if (per == 0 || per > 200)
+                per = 200;                  // per topic; the whole answer is still bounded
+            r.send(200, "application/json",
+                   recent.snapshot(req.query_param("topic"), min_level, per));
+            return;
+        }
         const std::uint64_t since = u64_param(req, "since", 0);
         std::size_t limit = static_cast<std::size_t>(u64_param(req, "limit", 200));
         if (limit == 0 || limit > 1000)
             limit = 1000;                   // an agent must not be handed the firehose
-        const std::string level = req.query_param("level");
         r.send(200, "application/json",
                recent.query(since, limit, req.query_param("topic"),
-                            level.empty() ? 1 : level_rank(level),
-                            req.query_param("trace")));
+                            min_level, req.query_param("trace")));
     });
 
     // uptime, version and epoch answer the question the counters cannot: "did

@@ -1380,9 +1380,43 @@ int main()
     feed fd;
     snicholls::event_loop loop;
     snicholls::http::websocket_client ws;   // auto-reconnect + jittered backoff built in
-    ws.on_open([&fd] {
-        std::lock_guard<std::mutex> g(fd.m);
-        fd.connected = true;
+
+    // Seed the feed from the hub's FAIR per-topic backfill (/recent?snapshot=1)
+    // on every (re)connect, so a viewer that just opened is populated at once
+    // instead of blank until each quiet producer next speaks. WS replay-on-
+    // connect rides a single wildcard ring the firehose dominates; the snapshot
+    // hands over each topic's own newest slice. curl on a detached worker (the
+    // helpers from ai_panel.hpp) - never block the event loop.
+    const bool hub_tls = origin.compare(0, 6, "wss://") == 0 ||
+                         origin.compare(0, 8, "https://") == 0;
+    const std::string http_base = std::string(hub_tls ? "https://" : "http://") + hub_label;
+    auto seed_snapshot = [&fd, http_base] {
+        std::thread([&fd, http_base] {
+            const std::string out = ai_run(
+                "curl -s -m 5 " + ai_shq(http_base + "/recent?snapshot=1&limit=60") + " 2>/dev/null");
+            const auto j = nlohmann::json::parse(out, nullptr, false);
+            if (j.is_discarded() || !j.is_object() ||
+                !j.contains("events") || !j["events"].is_array())
+                return;
+            std::lock_guard<std::mutex> g(fd.m);
+            for (const auto& e : j["events"]) {
+                if (!e.is_object() || !e.contains("topic") || !e.contains("event"))
+                    continue;
+                const std::uint64_t sq = e.contains("seq") && e["seq"].is_number_unsigned()
+                    ? e["seq"].get<std::uint64_t>() : 0;
+                fd.rows.push_back(parse_row(e["event"].dump(), e.value("topic", std::string()), sq));
+            }
+            while (fd.rows.size() > max_rows)
+                fd.rows.pop_front();
+        }).detach();
+    };
+
+    ws.on_open([&fd, &seed_snapshot] {
+        {
+            std::lock_guard<std::mutex> g(fd.m);
+            fd.connected = true;
+        }
+        seed_snapshot();                    // fair backfill beside the live feed
     });
     ws.on_close([&fd](snicholls::http::ws_client_status) {
         std::lock_guard<std::mutex> g(fd.m);
