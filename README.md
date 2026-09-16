@@ -684,6 +684,7 @@ npm run demo                     # see demo/README.md for the tour
 SUPER_LOG_LANGS="go python java swift fortran shell" npm run demo
 
 # Or piece by piece:
+./scripts/build_all.sh           # rebuild everything (hub, native + web viewers, SDK tests)
 ./scripts/dev.sh                 # build + run the hub
 npm install && npm run viewer    # web viewer on http://localhost:7334
 npm run tail:android             # first stream: the Android emulator
@@ -1549,7 +1550,7 @@ See the Auth/TLS section of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Path              | What                                                                                                                               |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `hub/`          | `superlogd` - the one process everything meets at                                                                                |
-| `scripts/`      | `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`                                            |
+| `scripts/`      | `build_all.sh` (rebuild everything), `setup.sh` (add super-log to a project), `smoke.sh`, `verify-sdks.sh`, `dev.sh`                                            |
 | `tests/`        | 106 tests: the tools driven as subprocesses against a real hub                                                                     |
 | `sdk/cpp/`      | header-only: forward sink, spdlog sink, terminate handler                                                                          |
 | `sdk/c/`        | `superlog.h`: one stb-style header, zero-alloc, POSIX sockets; production compiles to nothing                                    |
