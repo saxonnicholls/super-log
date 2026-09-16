@@ -27,6 +27,15 @@ read omits, and the restarted ImGui viewer seeds all of them on connect. NOT
 covered by an automated UI test: that the rendered panels then fill — confirmed
 by hand.
 
+**The MCP server now reports its real version.** `serverInfo.version` in the
+`initialize` handshake was hardcoded `0.1.0` while the package and the registry
+shipped `0.4.x`; an agent that reasons about the server from its version was
+reading a lie. It now tracks the package version (the same value `--version`
+prints), and `stream_guide`'s advertised entry list is built from the guide
+itself, so it can never fall behind the 29 streams / 8 playbooks it can actually
+answer. VERIFIED: tests/agents.test.mjs asserts the handshake version equals the
+package version over real MCP stdio.
+
 ## 0.4.0 — 2026-09-11
 
 **The hub now checks `Origin` on both doors — a web page can no longer read or

@@ -58,10 +58,18 @@ Wire contract: docs/PROTOCOL.md
 `);
   process.exit(0);
 }
+// Read once so it can never drift: this same value answers `--version`, and it
+// fills serverInfo.version in the MCP handshake - a hardcoded number there was
+// stale (0.1.0 while the package and the registry shipped 0.4.x), and an agent
+// that reasons about the server from its version was reading a lie.
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version;
+  } catch { return '0.0.0'; }
+})();
 if (process.argv.slice(2).includes('--version')) {
-  const pkg = JSON.parse(
-    readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'));
-  process.stdout.write(`${pkg.version}\n`);
+  process.stdout.write(`${VERSION}\n`);
   process.exit(0);
 }
 
@@ -738,7 +746,11 @@ TOOLS.push({
     properties: {
       name: {
         type: 'string',
-        description: 'A stream entry (power, dl, build, fs, vitals, gpu, os-app, net, history) or a playbook (triage, follow-a-trace, silent-stream, power-incident, watch-a-download)',
+        // Built from the guide itself so the advertised entries can never fall
+        // behind what stream_guide can actually answer.
+        description: `A stream entry (${Object.keys(GUIDE.streams).join(', ')}) `
+          + `or a playbook (${Object.keys(GUIDE.playbooks).join(', ')}). `
+          + 'No argument lists them all.',
       },
     },
     additionalProperties: false,
@@ -782,7 +794,7 @@ async function handle(msg) {
     return reply(id, {
       protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
       capabilities: { tools: {}, prompts: {} },
-      serverInfo: { name: 'super-log', version: '0.1.0' },
+      serverInfo: { name: 'super-log', version: VERSION },
       instructions:
         `Log streams from the super-log bench at ${HUB}. Start with hub_status or ` +
         `list_streams to see what is running, then tail_logs/search_logs narrowed by ` +

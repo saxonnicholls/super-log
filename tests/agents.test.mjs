@@ -14,18 +14,35 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 import { assertValidEvent, startHub, waitFor } from './harness.mjs';
 
-let hub, mcp;
+let hub, mcp, mcpOut = '';
 
 const rpc = (msg) => mcp.stdin.write(JSON.stringify(msg) + '\n');
+
+// The server's own JSON-RPC replies come back on stdout; collect them so a
+// test can read a response, not just the blotter side-effect on the hub.
+async function response(id, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const line of mcpOut.split('\n')) {
+      if (!line.trim()) continue;
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      if (m.id === id && m.result) return m;
+    }
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  throw new Error(`no response for id ${id}`);
+}
 
 before(async () => {
   hub = await startHub();
   mcp = spawn(process.execPath, ['sdk/js/packages/mcp/bin/superlog-mcp.mjs'],
               { env: { ...process.env, SUPER_LOG_URL: hub.url },
                 stdio: ['pipe', 'pipe', 'pipe'] });
+  mcp.stdout.on('data', (d) => { mcpOut += d; });
   rpc({ jsonrpc: '2.0', id: 1, method: 'initialize',
         params: { protocolVersion: '2024-11-05', capabilities: {},
                   clientInfo: { name: 'Blotter Test Client', version: '1.0' } } });
@@ -38,6 +55,15 @@ after(async () => {
 });
 
 describe('the agents blotter feed', () => {
+  it('the initialize handshake reports the real package version', async () => {
+    const pkg = JSON.parse(readFileSync('sdk/js/packages/mcp/package.json', 'utf8'));
+    const init = await response(1);
+    assert.equal(init.result.serverInfo.name, 'super-log');
+    // Not a hardcoded literal: serverInfo.version tracks the package, so it can
+    // never drift back to a stale number the way 0.1.0 did.
+    assert.equal(init.result.serverInfo.version, pkg.version);
+  });
+
   it('connecting over MCP alone puts a LISTENING agent on the blotter', async () => {
     const recs = await waitFor(hub.url,
       (rs) => rs.some((r) => /connected - listening/.test(r.event?.msg ?? '')),
