@@ -110,3 +110,15 @@ hand-off, and it is deliberate and commented.
 So the complete honest statement is: **the MIT tool never phones home; the only
 bytes that leave are the ones the Cloud uplink sends — a tool you install
 separately, can read in full, and can cut any topic from at the hub.**
+
+**Planned — the viewers' AI-interpretation panel follows the same rule.** The
+React and ImGui viewers will gain an "AI interpretation" panel that reads your
+logs back in plain English. It is a **client**, not the interpreter: like
+`superlog login`, the MIT code only makes the call and renders the result.
+Interpretation is a paid super-log Cloud feature (and, later, a licensed
+self-hosted one), gated by a validated token; with no valid subscription the
+panel simply upsells a free seat through the same `/connect` door. Sending lines
+for interpretation is explicit, opt-in egress — nothing is interpreted silently,
+and "your logs stay on your machine" holds until you ask. Because the paywall is
+enforced by the interpreter and never by this open client, the public source
+changes nothing about who may use the paid feature.
