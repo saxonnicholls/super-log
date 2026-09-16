@@ -13,7 +13,8 @@
       { "key": "menu.view.prs", "label": "PRs (GitHub)", "action": "toggle.prs", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.rpc", "label": "RPC nodes", "action": "toggle.rpc", "attributes": ["CHECKBOX"], "checked": true },
       { "key": "menu.view.alarms", "label": "Alarms (production)", "action": "toggle.alarms", "attributes": ["CHECKBOX"], "checked": true },
-      { "key": "menu.view.webhooks", "label": "Webhooks (development)", "action": "toggle.webhooks", "attributes": ["CHECKBOX"], "checked": true }
+      { "key": "menu.view.webhooks", "label": "Webhooks (development)", "action": "toggle.webhooks", "attributes": ["CHECKBOX"], "checked": true },
+      { "key": "menu.view.ai", "label": "AI interpretation", "action": "toggle.ai", "attributes": ["CHECKBOX"], "checked": true }
     ]
   },
   {

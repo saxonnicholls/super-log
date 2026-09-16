@@ -41,6 +41,7 @@ import { VersionsPanel } from './VersionsPanel';
 import { AgentPanel } from './AgentPanel';
 import { PRPanel } from './PRPanel';
 import { RpcPanel } from './RpcPanel';
+import { AiPanel } from './AiPanel';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { COPY_LINE_CHOICES, capForCopy, copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
@@ -300,6 +301,7 @@ export default function App() {
                       onTest={() => void runTest()} verdictFor={verdictFor} />}
       {toggles['toggle.webhooks'] !== false &&
         <WebhookPanel rows={rows} hub={HUB} verdictFor={verdictFor} />}
+      {toggles['toggle.ai'] !== false && <AiPanel />}
       </div>
     </div>
   );

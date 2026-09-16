@@ -243,6 +243,13 @@ inline void render_ai_panel(ai_state& s)
     ai_state::tier tiers_copy_storage;
     std::lock_guard<std::mutex> g(s.m);
 
+    // Center a single line of text horizontally in the current column.
+    const auto centered = [](const std::string& t) {
+        const float w = ImGui::CalcTextSize(t.c_str()).x;
+        const float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > w) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - w) * 0.5f);
+    };
+
     if (s.entitled == 1) {
         // ---- Entitled: interpret the bench ------------------------------
         ImGui::TextDisabled("%s%s", s.org_name.empty() ? "signed in" : s.org_name.c_str(),
@@ -280,32 +287,81 @@ inline void render_ai_panel(ai_state& s)
             ImGui::TextDisabled("Ask the bench what just happened - pick an audience and Interpret.");
         }
     } else {
-        // ---- Not entitled: the server's upsell (all copy server-driven) --
-        if (!s.have_offer) {
-            ImGui::TextDisabled("%s", s.error.empty() ? "loading..." : s.error.c_str());
-        } else {
-            if (!s.headline.empty())
-                ImGui::TextColored(ImVec4(0.48f, 0.64f, 0.97f, 1), "%s", s.headline.c_str());
-            if (!s.body.empty()) {
-                ImGui::PushTextWrapPos(0.0f);
-                ImGui::TextUnformatted(s.body.c_str());
-                ImGui::PopTextWrapPos();
-            }
-            ImGui::Spacing();
+        // ---- Not entitled: sell it. Server copy when the Cloud sent it, a
+        // built-in pitch otherwise - this branch must NEVER render blank or an
+        // error. This is the moment the whole feature earns its keep. ----
+        const ImVec4 blue(0.48f, 0.64f, 0.97f, 1);
+
+        // A small ASCII badge. Pure ASCII on purpose - ProggyClean carries no
+        // box-drawing glyphs - and the border is sized from the wordmark row so
+        // it always lines up.
+        static const std::string art_row = "   .:-=I=-:.   super-log   .:-=I=-:.   ";
+        static const std::string art_bar = "+" + std::string(art_row.size(), '-') + "+";
+        static const std::string art_mid = "|" + art_row + "|";
+        for (const std::string* ln : { &art_bar, &art_mid, &art_bar }) {
+            centered(*ln);
+            ImGui::TextColored(blue, "%s", ln->c_str());
+        }
+        ImGui::Spacing();
+
+        const bool srv = s.have_offer;
+        const std::string headline = srv && !s.headline.empty()
+            ? s.headline : std::string("Turn your logs into answers");
+        const std::string body = srv && !s.body.empty() ? s.body : std::string(
+            "You're already watching every stream on the bench. Flip this on and "
+            "super-log reads them for you: click Interpret and get a plain-English "
+            "account of the last fifteen minutes - what changed, what broke, and "
+            "what to look at first. A technical read for the engineers, a management "
+            "read for the room. Start with two free seats. No card - sign in and it works.");
+
+        centered(headline);
+        ImGui::TextColored(blue, "%s", headline.c_str());
+        ImGui::Spacing();
+
+        // Body: wrapped inside a centered column so the paragraph sits in the middle.
+        {
+            const float avail = ImGui::GetContentRegionAvail().x;
+            const float col = avail < 460.0f ? avail : 460.0f;
+            const float x0 = ImGui::GetCursorPosX() + (avail - col) * 0.5f;
+            ImGui::SetCursorPosX(x0);
+            ImGui::PushTextWrapPos(x0 + col);
+            ImGui::TextUnformatted(body.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::Spacing();
+
+        if (srv) {
             for (const auto& t : s.tiers) {
                 std::string line = t.name;
                 if (t.seats >= 0) line += "  -  " + std::to_string(t.seats) + " seat(s)";
                 if (!t.price.empty()) line += "  -  " + t.price;
-                ImGui::BulletText("%s", line.c_str());
-                if (!t.blurb.empty()) { ImGui::SameLine(); ImGui::TextDisabled("%s", t.blurb.c_str()); }
+                if (!t.blurb.empty()) line += "  -  " + t.blurb;
+                centered(line);
+                ImGui::TextDisabled("%s", line.c_str());
             }
-            ImGui::Spacing();
-            const std::string url = s.cta_url.empty() ? s.connect_url : s.cta_url;
-            if (ImGui::Button(s.cta_label.empty() ? "Start free" : s.cta_label.c_str()))
-                ai_open_url(url);
-            ImGui::SameLine();
-            ImGui::TextDisabled("opens %s", url.c_str());
+        } else {
+            const std::string line = "Free  -  2 seats  -  two seats on us, enough for a small bench";
+            centered(line);
+            ImGui::TextDisabled("%s", line.c_str());
         }
+        ImGui::Spacing();
+
+        // Two ways in: press the button, or type the command. Same destination.
+        const std::string cta = srv && !s.cta_label.empty() ? s.cta_label
+                                                            : std::string("Start free - 2 seats");
+        const std::string url = s.cta_url.empty() ? s.connect_url : s.cta_url;
+        {
+            const ImVec2 ts = ImGui::CalcTextSize(cta.c_str());
+            const float bw = ts.x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            const float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > bw) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - bw) * 0.5f);
+        }
+        if (ImGui::Button(cta.c_str())) ai_open_url(url);
+
+        ImGui::Spacing();
+        const std::string hint = "or run  superlog login  in your terminal";
+        centered(hint);
+        ImGui::TextDisabled("%s", hint.c_str());
     }
     (void)tiers_copy_storage;
     ImGui::End();
