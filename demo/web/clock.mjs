@@ -47,6 +47,10 @@ setInterval(() => {
   n += 1;
   console.log(`tick ${n} - the time is ${hms()}`); // the console IS the pipe
   tickEl.textContent = `tick ${n} - the time is ${hms()}`;
+  // A demo ALARM so the viewers' Alarms panel has something from the browser:
+  // raise on the 5-tick mark, recover ten ticks later.
+  if (n % 20 === 5) slog.alarm('web demo: main-thread jank over budget', 'web.demo');
+  else if (n % 20 === 15) slog.alarmClear('web.demo');
 }, 1000);
 
 document.getElementById('log').onclick = () => console.log('hello from the browser console');

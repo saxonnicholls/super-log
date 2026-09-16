@@ -97,6 +97,14 @@ const RANK: Record<Level, number> = {
 };
 const OFF_RANK = 7;
 
+/** A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to
+ *  '-'. Matches the C++ SDK's alarm_key_sanitize so a key means the same
+ *  alert.native.* topic from every language. */
+export function alarmKey(k: string): string {
+  const s = k.toLowerCase().replace(/[^a-z0-9._-]/g, '-');
+  return s || 'alarm';
+}
+
 /** Suppresses repeats and floods. Two limits, because they answer different
  *  problems: dedupe stops the same error saying the same thing a thousand
  *  times, and the bucket stops a thousand *different* errors from a hot
@@ -345,6 +353,33 @@ export class SuperLog {
         metric: { name, value },
       }),
     );
+  }
+
+  /** Raise a first-class ALARM straight into the viewers' Alarms panel - the
+   *  deliberate "this is an alarm", not a WARN you hope a rule catches. It
+   *  lands on alert.native.<key> (which the blotter reads and dedups by
+   *  fields.key), posted immediately, OUTSIDE the batch AND the mode policy:
+   *  an alarm you asked for must not go quiet in production. CRITICAL (P0) by
+   *  default; pass a lower level to soften it. See PROTOCOL.md. */
+  alarm(msg: string, key?: string, level: Level = 'CRITICAL'): void {
+    const k = alarmKey(key ?? msg);
+    const line = JSON.stringify({
+      v: 1, ts: new Date().toISOString(), seq: this.seq++, session: this.session,
+      level, origin: this.origin, tag: 'alarm', msg, fields: { key: k },
+    });
+    const browser = this.origin.runtime === 'js';
+    void Promise.resolve(
+      fetch(`${this.opts.url}/ingest/alert.native.${k}`, {
+        method: 'POST', body: line, keepalive: true,
+        ...(browser ? { mode: 'no-cors' } : { headers: { 'content-type': 'application/x-ndjson' } }),
+      } as RequestInit),
+    ).catch(() => { this.droppedCount++; });
+  }
+
+  /** Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the same
+   *  key. */
+  alarmClear(key: string, msg?: string): void {
+    this.alarm(msg ?? `RECOVERED: ${alarmKey(key)}`, key, 'INFO');
   }
 
   /** Events dropped locally because the buffer was full or a POST failed.

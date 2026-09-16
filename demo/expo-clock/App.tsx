@@ -79,6 +79,10 @@ export default function App() {
       n += 1;
       setTick(n);
       slog.info(`tick ${n} - the time is ${hms()}`, { tick: String(n) });
+      // A demo ALARM so the viewers' Alarms panel has something from Expo:
+      // raise on the 5-tick mark, recover ten ticks later.
+      if (n % 20 === 5) slog.alarm(`${Platform.OS} demo: frame budget blown`, `${Platform.OS}.demo`);
+      else if (n % 20 === 15) slog.alarmClear(`${Platform.OS}.demo`);
     }, 1000);
     return () => clearInterval(t);
   }, []);

@@ -44,6 +44,11 @@ slog.info(`${kind.platform} clock up - one line a second`);
 const timer = setInterval(() => {
   n += 1;
   slog.info(`tick ${n} - the time is ${hms()}`, { tick: String(n) });
+  // A demo ALARM so the viewers' Alarms panel has something from JS to show:
+  // raise on the 5-tick mark (P0, alert.native.<platform>.demo), recover ten
+  // ticks later. In real code slog.alarm(msg) alone is all you reach for.
+  if (n % 20 === 5) slog.alarm(`${kind.platform} demo: checkout latency over budget`, `${kind.platform}.demo`);
+  else if (n % 20 === 15) slog.alarmClear(`${kind.platform}.demo`);
 }, 1000);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
