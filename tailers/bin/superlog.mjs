@@ -114,8 +114,10 @@ function start(name, args) {
 // as ws(s). Options pass straight through to the binary.
 function viewer(args) {
   const hit = spawnSync('pgrep', ['-f', 'superlog_viewer'], { encoding: 'utf8' });
-  if (hit.status === 0 && hit.stdout.trim())
-    return console.log(`viewer already running (pid ${hit.stdout.trim().split(/\s+/)[0]})`);
+  if (hit.status === 0 && hit.stdout.trim()) {
+    raiseViewer();
+    return console.log(`viewer already running (pid ${hit.stdout.trim().split(/\s+/)[0]}) - brought to front`);
+  }
 
   const REPO = join(BIN, '..', '..');
   const built = join(REPO, 'build', 'viewer', 'imgui', 'superlog_viewer');
@@ -138,6 +140,25 @@ function viewer(args) {
   const child = spawn(bin, args, { detached: true, stdio: 'ignore', env: { ...process.env, SUPER_LOG_URL: ws } });
   child.unref();
   console.log(`viewer started (pid ${child.pid}) -> ${ws}`);
+  setTimeout(raiseViewer, 1200);          // let the window appear, then front it
+}
+
+// Bring the viewer window to the front - best effort, per platform. macOS raises
+// it by process name (a plain GLFW window, not a .app bundle); Linux by its
+// "super-log" window title via wmctrl or xdotool, whichever is installed;
+// Windows a fresh window already takes focus, and there is no dependency-free
+// raise for an existing one.
+function raiseViewer() {
+  try {
+    if (process.platform === 'darwin') {
+      spawnSync('osascript', ['-e',
+        'tell application "System Events" to set frontmost of (first process whose name is "superlog_viewer") to true'],
+        { stdio: 'ignore' });
+    } else if (process.platform === 'linux') {
+      if (spawnSync('wmctrl', ['-a', 'super-log'], { stdio: 'ignore' }).error)
+        spawnSync('xdotool', ['search', '--name', '^super-log$', 'windowactivate'], { stdio: 'ignore' });
+    }
+  } catch { /* best effort - never fail `superlog viewer` over a raise */ }
 }
 
 async function stop(name) {
