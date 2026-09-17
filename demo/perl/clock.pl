@@ -42,6 +42,14 @@ while ($running && (!$max_ticks || $tick < $max_ticks)) {
                  . POSIX::strftime('%H:%M:%SZ', gmtime),
                { tick => $tick });
 
+    # A demo ALARM so the viewers' Alarms panel has something from Perl: raise
+    # on the 5-tick mark, recover ten ticks later.
+    if ($tick % 20 == 5) {
+        $log->alarm('perl demo: batch run overran its window', 'perl.demo');
+    } elsif ($tick % 20 == 15) {
+        $log->alarm_clear('perl.demo');
+    }
+
     # Honestly wrong every 7th tick, the same staged failure as every
     # other clock, so one error lines up across every language.
     my $symbol = $tick % 7 == 0 ? 'DOGE' : 'BTC';

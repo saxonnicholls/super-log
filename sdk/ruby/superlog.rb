@@ -87,6 +87,38 @@ class SuperLog
   def error(msg, fields = {}) = log("ERROR", msg, fields)
   def critical(msg, fields = {}) = log("CRITICAL", msg, fields)
 
+  # Raise a first-class ALARM straight into the viewers' Alarms panel - the
+  # deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+  # alert.native.<key> (deduped by fields.key), posted immediately and OUTSIDE
+  # the mode gate: an alarm you asked for must not go quiet in production
+  # (SUPER_LOG_ALARMS=0 mutes it). CRITICAL (P0) by default. See PROTOCOL.md.
+  def alarm(msg, key = nil, level: "CRITICAL")
+    return if ENV["SUPER_LOG_ALARMS"] == "0"
+    k = (key || msg).to_s.downcase.gsub(/[^a-z0-9._-]/, "-")
+    k = "alarm" if k.empty?
+    ev = {
+      v: 1, ts: Time.now.utc.strftime("%Y-%m-%dT%H:%M:%S.%LZ"),
+      seq: (@seq += 1) - 1, session: @session, level: level.to_s,
+      origin: { runtime: "ruby", app: @app, platform: "host", device: @device },
+      tag: "alarm", msg: msg.to_s, fields: { "key" => k },
+    }
+    http = Net::HTTP.new(@uri.host, @uri.port)
+    http.open_timeout = 3
+    http.read_timeout = 5
+    req = Net::HTTP::Post.new("/ingest/alert.native.#{k}",
+                              "content-type" => "application/x-ndjson")
+    req.body = ev.to_json
+    http.request(req)
+  rescue StandardError
+    nil # hub down; an alarm that could not be delivered is not retried here
+  end
+
+  # Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the same key.
+  def alarm_clear(key, msg = nil)
+    k = key.to_s.downcase.gsub(/[^a-z0-9._-]/, "-")
+    alarm(msg || "RECOVERED: #{k}", key, level: "INFO")
+  end
+
   def flush
     batch = @mutex.synchronize { b = @buffer; @buffer = []; b }
     return if batch.empty? || !@active

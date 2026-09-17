@@ -115,6 +115,48 @@ function Log:warn(m, f)     self:log("WARN", m, f)     end
 function Log:error(m, f)    self:log("ERROR", m, f)    end
 function Log:critical(m, f) self:log("CRITICAL", m, f) end
 
+-- A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to '-'.
+local function alarm_key(k)
+  k = tostring(k):lower():gsub("[^a-z0-9._-]", "-")
+  if k == "" then return "alarm" end
+  return k
+end
+
+-- Raise a first-class ALARM straight into the viewers' Alarms panel - the
+-- deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+-- alert.native.<key> (deduped by fields.key), posted immediately and OUTSIDE
+-- the mode gate: an alarm you asked for must not go quiet in production
+-- (SUPER_LOG_ALARMS=0 mutes). CRITICAL (P0) by default. See PROTOCOL.md.
+function Log:alarm(msg, key, level)
+  if os.getenv("SUPER_LOG_ALARMS") == "0" then return end
+  level = level or "CRITICAL"
+  local k = alarm_key(key or msg)
+  local parts = {
+    '{"v":1,"ts":"', os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    '","seq":', self.seq,
+    ',"session":"', self.session,
+    '","level":"', level,
+    '","origin":{"runtime":"lua","app":"', esc(self.app),
+    '","platform":"host","device":"', esc(self.device),
+    '"},"tag":"alarm","msg":"', esc(msg),
+    '","fields":{"key":"', esc(k), '"}}',
+  }
+  self.seq = self.seq + 1
+  local cmd = "curl -s -m 3 -X POST --data-binary @- "
+           .. "-H 'content-type: application/x-ndjson' '"
+           .. self.url .. "/ingest/alert.native." .. k .. "' >/dev/null 2>&1"
+  local p = io.popen(cmd, "w")
+  if p then
+    p:write(table.concat(parts))
+    p:close()
+  end
+end
+
+-- Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the same key.
+function Log:alarm_clear(key, msg)
+  self:alarm(msg or ("RECOVERED: " .. alarm_key(key)), key, "INFO")
+end
+
 function Log:flush()
   if not self.active or #self.buffer == 0 then return end
   local body = table.concat(self.buffer, "\n")

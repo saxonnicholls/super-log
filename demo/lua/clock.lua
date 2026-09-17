@@ -36,6 +36,14 @@ while max_ticks == 0 or tick < max_ticks do
   log:info("tick " .. tick .. " - the time is " .. os.date("!%H:%M:%SZ"),
            { tick = tick })
 
+  -- A demo ALARM so the viewers' Alarms panel has something from Lua: raise on
+  -- the 5-tick mark, recover ten ticks later.
+  if tick % 20 == 5 then
+    log:alarm("lua demo: config reload failed", "lua.demo")
+  elseif tick % 20 == 15 then
+    log:alarm_clear("lua.demo")
+  end
+
   -- Honestly wrong every 7th tick, the same staged failure as every other
   -- clock, so one error lines up across every language.
   local symbol = (tick % 7 == 0) and "DOGE" or "BTC"

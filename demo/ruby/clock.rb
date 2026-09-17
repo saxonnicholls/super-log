@@ -39,6 +39,14 @@ while running && (max_ticks.zero? || tick < max_ticks)
   log.info("tick #{tick} - the time is #{Time.now.utc.strftime('%H:%M:%SZ')}",
            tick: tick)
 
+  # A demo ALARM so the viewers' Alarms panel has something from Ruby: raise
+  # on the 5-tick mark, recover ten ticks later.
+  if (tick % 20) == 5
+    log.alarm("ruby demo: job queue backed up", "ruby.demo")
+  elsif (tick % 20) == 15
+    log.alarm_clear("ruby.demo")
+  end
+
   # Honestly wrong every 7th tick, the same staged failure as every other
   # clock, so one error lines up across every language on the bench.
   symbol = (tick % 7).zero? ? "DOGE" : "BTC"

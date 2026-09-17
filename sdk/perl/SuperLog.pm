@@ -102,6 +102,47 @@ sub warn     { my $s = shift; $s->log('WARN',     @_) }
 sub error    { my $s = shift; $s->log('ERROR',    @_) }
 sub critical { my $s = shift; $s->log('CRITICAL', @_) }
 
+sub _alarm_key {
+    my ($k) = @_;
+    $k = lc "$k";
+    $k =~ s/[^a-z0-9._-]/-/g;
+    return length $k ? $k : 'alarm';
+}
+
+# Raise a first-class ALARM straight into the viewers' Alarms panel - the
+# deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+# alert.native.<key> (deduped by fields.key), posted immediately and OUTSIDE
+# the mode gate: an alarm you asked for must not go quiet in production
+# (SUPER_LOG_ALARMS=0 mutes). CRITICAL (P0) by default. See PROTOCOL.md.
+sub alarm {
+    my ($self, $msg, $key, $level) = @_;
+    return if defined $ENV{SUPER_LOG_ALARMS} && $ENV{SUPER_LOG_ALARMS} eq '0';
+    $level ||= 'CRITICAL';
+    my $k = _alarm_key(defined $key && length $key ? $key : $msg);
+    my %ev = (
+        v => 1, ts => _ts(), seq => $self->{seq}++, session => $self->{session},
+        level => "$level",
+        origin => { runtime => 'perl', app => $self->{app},
+                    platform => 'host', device => $self->{device} },
+        tag => 'alarm', msg => "$msg", fields => { key => $k },
+    );
+    eval {
+        $self->{http}->post(
+            "$self->{url}/ingest/alert.native.$k",
+            { headers => { 'content-type' => 'application/x-ndjson' },
+              content => $JSON->encode(\%ev) });
+    };
+    return;
+}
+
+# Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the same key.
+sub alarm_clear {
+    my ($self, $key, $msg) = @_;
+    my $k = _alarm_key($key);
+    $self->alarm(defined $msg ? $msg : "RECOVERED: $k", $key, 'INFO');
+    return;
+}
+
 sub flush {
     my ($self) = @_;
     my $batch = $self->{buffer};
