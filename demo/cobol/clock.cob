@@ -63,6 +63,20 @@ PROCEDURE DIVISION.
             END-CALL
         END-IF
 
+*>      A demo ALARM so the viewers' Alarms panel has something from COBOL:
+*>      raise on the 5-tick mark, recover ten ticks later.
+        IF FUNCTION MOD(tick, 20) = 5
+            CALL "cobol_superlog_alarm"
+                USING BY CONTENT Z"cobol demo: nightly batch aborted",
+                                 Z"cobol.demo"
+            END-CALL
+        END-IF
+        IF FUNCTION MOD(tick, 20) = 15
+            CALL "cobol_superlog_alarm_clear"
+                USING BY CONTENT Z"cobol.demo"
+            END-CALL
+        END-IF
+
         IF FUNCTION MOD(tick, 5) = 0
             MOVE tick TO uptime
             CALL "cobol_superlog_metric"

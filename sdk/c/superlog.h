@@ -85,6 +85,15 @@ SUPERLOG_API void superlog_kv(superlog_t *lg, const char *level, const char *msg
 SUPERLOG_API void superlog_metric(superlog_t *lg, const char *name, double value)
 { (void)lg; (void)name; (void)value; }
 SUPERLOG_API void superlog_flush(superlog_t *lg) { (void)lg; }
+/* The alarm is inert here too, and it has to be: this SDK's PRODUCTION promise
+ * is zero wire code in the translation unit (CI greps the prod binary for
+ * "ingest"), which a firing alarm would break. So unlike the richer SDKs, the
+ * C native alarm is a DEVELOPMENT-mode signal; a production C service that must
+ * raise one routes it through the superlog-alarm gateway (one curl), or builds
+ * with SUPERLOG_DEVELOPMENT. */
+SUPERLOG_API void superlog_alarm_level(superlog_t *lg, const char *level,
+                                       const char *msg, const char *key)
+{ (void)lg; (void)level; (void)msg; (void)key; }
 
 #else /* SUPERLOG_DEVELOPMENT */
 
@@ -183,14 +192,19 @@ static void superlog__esc(char *dst, size_t n, const char *src)
 /* One TCP connect per flush, the OCaml client's bargain: at logging rates
  * a held socket buys nothing, and every error path lands in "drop the
  * batch, the next one counts again". */
-SUPERLOG_API void superlog_flush(superlog_t *lg)
+/* One POST to `path`, one connect, discarded reply. The socket body stays
+ * INLINE here (getaddrinfo, goto): Zig's @cImport translates a function whose
+ * body it can render and then collides with impl.o's definition of the same
+ * symbol, so every SUPERLOG_API (external-linkage) function must have a body
+ * translate-c will NOT render - which the socket code guarantees. Shared by
+ * the batch flush and the alarm (which posts to a different topic). */
+SUPERLOG_API void superlog__post_path(superlog_t *lg, const char *path,
+                                      const char *body, size_t blen)
 {
     struct addrinfo hints, *res = NULL;
     char portstr[16], header[512];
     superlog__sock fd = SUPERLOG__BADSOCK;
     int hlen;
-
-    if (!lg->active || lg->len == 0) return;
 
 #ifdef _WIN32
     { static int wsa = 0;
@@ -207,18 +221,30 @@ SUPERLOG_API void superlog_flush(superlog_t *lg)
     if (connect(fd, res->ai_addr, (int)res->ai_addrlen) != 0) goto out;
 
     hlen = snprintf(header, sizeof header,
-                    "POST /ingest/%s HTTP/1.1\r\nHost: %s\r\n"
+                    "POST %s HTTP/1.1\r\nHost: %s\r\n"
                     "Content-Type: application/x-ndjson\r\n"
                     "Content-Length: %zu\r\nConnection: close\r\n\r\n",
-                    lg->topic, lg->host, lg->len);
+                    path, lg->host, blen);
     if (send(fd, header, hlen, SUPERLOG__SFLAGS) < 0) goto out;
-    if (send(fd, lg->buf, (int)lg->len, SUPERLOG__SFLAGS) < 0) goto out;
+    if (send(fd, body, (int)blen, SUPERLOG__SFLAGS) < 0) goto out;
     /* Read and discard the reply so the hub never sees a reset mid-answer. */
     (void)!recv(fd, header, (int)sizeof header, 0);
 
 out:
     if (superlog__sockvalid(fd)) superlog__closesock(fd);
     if (res) freeaddrinfo(res);
+}
+
+SUPERLOG_API void superlog_flush(superlog_t *lg)
+{
+    /* The goto keeps translate-c from rendering this body, so Zig's @cImport
+     * takes it as an extern decl and does not collide with impl.o's - the same
+     * reason superlog__post_path keeps its socket code inline. */
+    char path[160];
+    if (!lg->active || lg->len == 0) goto done;
+    snprintf(path, sizeof path, "/ingest/%s", lg->topic);
+    superlog__post_path(lg, path, lg->buf, lg->len);
+done:
     lg->len = 0;                /* delivered or dropped; either way, gone */
 }
 
@@ -332,7 +358,63 @@ SUPERLOG_API void superlog_metric(superlog_t *lg, const char *name, double value
     superlog__event(lg, "DEBUG", msg, extra);
 }
 
+/* A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to '-'. */
+static void superlog__alarm_key(char *out, size_t n, const char *k)
+{
+    size_t o = 0;
+    for (; *k && o + 1 < n; k++) {
+        char c = *k;
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+            c == '.' || c == '_' || c == '-') out[o++] = c;
+        else out[o++] = '-';
+    }
+    if (o == 0 && n > 5) { memcpy(out, "alarm", 5); o = 5; }
+    out[o] = '\0';
+}
+
+/* Raise a first-class ALARM straight into the viewers' Alarms panel - the
+ * deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+ * alert.native.<key> (deduped by fields.key), posted immediately outside the
+ * batch. CRITICAL to fire; a NULL msg means recover (INFO "RECOVERED: <key>").
+ * SUPER_LOG_ALARMS=0 mutes it. Reached through the superlog_alarm /
+ * superlog_alarm_clear macros below. (See the PRODUCTION-branch note: this
+ * SDK's native alarm is dev-mode.) The goto keeps translate-c from rendering
+ * the body, so Zig's @cImport does not collide with impl.o. */
+SUPERLOG_API void superlog_alarm_level(superlog_t *lg, const char *level,
+                                       const char *msg, const char *key)
+{
+    char ts[40], emsg[4096], k[128], path[160], line[8192], rec[192];
+    const char *off = getenv("SUPER_LOG_ALARMS");
+    const char *m = msg;
+    int n;
+    if (!lg->active) goto done;
+    if (off && off[0] == '0' && off[1] == '\0') goto done;
+    superlog__alarm_key(k, sizeof k, (key && key[0]) ? key : (msg ? msg : "alarm"));
+    if (!m) { snprintf(rec, sizeof rec, "RECOVERED: %s", k); m = rec; }
+    superlog__iso(ts, sizeof ts);
+    superlog__esc(emsg, sizeof emsg, m);
+    n = snprintf(line, sizeof line,
+                 "{\"v\":1,\"ts\":\"%s\",\"seq\":%u,\"session\":\"%s\","
+                 "\"level\":\"%s\",\"origin\":{\"runtime\":\"c\",\"app\":\"%s\","
+                 "\"platform\":\"host\",\"device\":\"%s\"},\"tag\":\"alarm\","
+                 "\"msg\":\"%s\",\"fields\":{\"key\":\"%s\"}}",
+                 ts, lg->seq++, lg->session, level, lg->app, lg->device, emsg, k);
+    if (n <= 0 || (size_t)n >= sizeof line) goto done;
+    snprintf(path, sizeof path, "/ingest/alert.native.%s", k);
+    superlog__post_path(lg, path, line, (size_t)n);
+done:
+    return;
+}
+
 #endif /* mode */
+
+/* The ergonomic alarm API, both modes: macros (never symbols, so Zig's
+ * @cImport can never collide over them) onto the one primitive. Call
+ * superlog_alarm_level directly from an FFI language that cannot use C macros
+ * (the Zig demo does). */
+#define superlog_alarm(lg, msg, key)   superlog_alarm_level((lg), "CRITICAL", (msg), (key))
+#define superlog_alarm_clear(lg, key)  superlog_alarm_level((lg), "INFO", (const char *)0, (key))
 
 /* Level helpers, both modes: they expand onto the stubs in production. */
 #define superlog_trace(lg, ...)    superlog_logf((lg), "TRACE",    __VA_ARGS__)

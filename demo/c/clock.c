@@ -75,6 +75,12 @@ int main(int argc, char **argv)
                         "symbol", symbol, "tick", buf, NULL);
         }
 
+        /* A demo ALARM so the viewers' Alarms panel has something from C:
+         * raise on the 5-tick mark, recover ten ticks later. (Dev-mode: the
+         * production build ships no wire code, so its alarm is a no-op.) */
+        if (tick % 20 == 5) superlog_alarm(&lg, "c demo: ring buffer overrun", "c.demo");
+        else if (tick % 20 == 15) superlog_alarm_clear(&lg, "c.demo");
+
         if (tick % 5 == 0) superlog_metric(&lg, "clock.uptime_s", (double)tick);
 
         superlog_flush(&lg);

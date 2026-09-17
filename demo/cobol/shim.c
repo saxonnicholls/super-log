@@ -40,3 +40,13 @@ void cobol_superlog_flush(void)
 {
     superlog_flush(&lg);
 }
+
+void cobol_superlog_alarm(const char *msg, const char *key)
+{
+    superlog_alarm(&lg, msg, key);
+}
+
+void cobol_superlog_alarm_clear(const char *key)
+{
+    superlog_alarm_clear(&lg, key);
+}

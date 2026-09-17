@@ -44,6 +44,16 @@ pub fn main() void {
             c.superlog_logf(&lg, "DEBUG", "pricing pass %d", tick);
         }
 
+        // A demo ALARM so the viewers' Alarms panel has something from Zig:
+        // raise on the 5-tick mark, recover ten ticks later. Zig calls the
+        // primitive directly (superlog_alarm/_clear are C macros, which
+        // @cImport cannot translate); a null msg means recover.
+        if (@rem(tick, 20) == 5) {
+            c.superlog_alarm_level(&lg, "CRITICAL", "zig demo: allocator arena exhausted", "zig.demo");
+        } else if (@rem(tick, 20) == 15) {
+            c.superlog_alarm_level(&lg, "INFO", null, "zig.demo");
+        }
+
         if (@rem(tick, 5) == 0)
             c.superlog_metric(&lg, "clock.uptime_s", @floatFromInt(tick));
 
