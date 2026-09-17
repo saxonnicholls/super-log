@@ -108,6 +108,13 @@ while Interrupt.requested == 0 && (limit == 0 || n < limit) {
         if n % 5 == 0 {
             log.metric("clock.uptime_s", Double(n))
         }
+        // A demo ALARM so the viewers' Alarms panel has something from Swift:
+        // raise on the 5-tick mark, recover ten ticks later.
+        if n % 20 == 5 {
+            log.alarm("swift demo: main-actor hop stalled", key: "swift.demo")
+        } else if n % 20 == 15 {
+            log.alarmClear("swift.demo")
+        }
         if n % 7 == 0 {
             do {
                 _ = try priceFor("DOGE", qty: n)

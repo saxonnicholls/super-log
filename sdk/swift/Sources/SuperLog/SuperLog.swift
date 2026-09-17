@@ -336,6 +336,43 @@ public final class SuperLog: @unchecked Sendable {
                     tag: "", src: "", metric: (name, value)))
     }
 
+    // ----------------------------------------------------------- alarms
+
+    /// A key becomes a topic segment: lowercased, only [a-z0-9._-].
+    private static func alarmKey(_ k: String) -> String {
+        let out = String(k.lowercased().map { c -> Character in
+            (c.isASCII && (c.isLetter || c.isNumber)) || c == "." || c == "_" || c == "-" ? c : "-"
+        })
+        return out.isEmpty ? "alarm" : out
+    }
+
+    /// Raise a first-class ALARM straight into the viewers' Alarms panel - the
+    /// deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+    /// `alert.native.<key>` (deduped by fields.key), posted immediately, OUTSIDE
+    /// the batch AND the mode policy: an alarm you asked for must not go quiet
+    /// in production (`SUPER_LOG_ALARMS=0` mutes it). CRITICAL (P0) by default.
+    /// See PROTOCOL.md.
+    public func alarm(_ msg: String, key: String = "", level: Level = .critical) {
+        if ProcessInfo.processInfo.environment["SUPER_LOG_ALARMS"] == "0" { return }
+        let k = SuperLog.alarmKey(key.isEmpty ? msg : key)
+        let line = encode(level: level, msg: msg, fields: ["key": k],
+                          tag: "alarm", src: "", metric: nil)
+        guard let u = URL(string: url + "/ingest/alert.native." + k) else { return }
+        var req = URLRequest(url: u)
+        req.httpMethod = "POST"
+        req.setValue("application/x-ndjson", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data(line.utf8)
+        let done = DispatchSemaphore(value: 0)
+        let task = http.dataTask(with: req) { _, _, _ in done.signal() }
+        task.resume()
+        _ = done.wait(timeout: .now() + 10)   // an alarm is deliberate; let it land
+    }
+
+    /// Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the same key.
+    public func alarmClear(_ key: String) {
+        alarm("RECOVERED: " + SuperLog.alarmKey(key), key: key, level: .info)
+    }
+
     // ----------------------------------------------------------- errors
 
     /// Log a caught error. Swift errors carry no stack of their own, so the

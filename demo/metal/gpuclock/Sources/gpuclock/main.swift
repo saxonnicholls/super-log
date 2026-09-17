@@ -68,6 +68,9 @@ let sizesMiB = [4, 16, 64, 128, 256]
 let rounds = Int(ProcessInfo.processInfo.environment["SUPER_LOG_ROUNDS"] ?? "") ?? 4
 var buffers = 0
 
+// A demo ALARM so the viewers' Alarms panel has something from the Metal
+// client even when the GPU behaves: raise on the first round, recover after.
+log.alarm("metal demo: GPU frame over budget", key: "metal.demo")
 for round in 1...max(1, rounds) {
     for mib in sizesMiB {
         let bytes = mib * 1024 * 1024
@@ -91,6 +94,9 @@ for round in 1...max(1, rounds) {
                 // arrive - the three GPU failures worth waking up for.
                 log.error("GPU command buffer failed: \(e.localizedDescription)",
                           fields: ["label": done.label ?? "?"])
+                // A GPU device-removal / timeout / OOM is exactly the "wake
+                // someone" case - raise it as a first-class alarm too.
+                log.alarm("GPU command buffer failed: \(e.localizedDescription)", key: "gpu.metal")
                 return
             }
             let ms = (done.gpuEndTime - done.gpuStartTime) * 1000.0
@@ -112,6 +118,7 @@ for round in 1...max(1, rounds) {
     log.metric("gpu.allocated_mb", Double(device.currentAllocatedSize) / 1048576.0)
 }
 
+log.alarmClear("metal.demo")
 log.info("metal clock down after \(buffers) command buffers", fields: ["buffers": "\(buffers)"])
 log.flush(timeout: 3.0)
 log.close()
