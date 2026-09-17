@@ -94,6 +94,13 @@ def main() -> int:
                 if n % 5 == 0:
                     log.metric("clock.uptime_s", float(n))
 
+                # A demo ALARM so the viewers' Alarms panel has something from
+                # Python: raise on the 5-tick mark, recover ten ticks later.
+                if n % 20 == 5:
+                    log.alarm("python demo: pricer feed stale", key="python.demo")
+                elif n % 20 == 15:
+                    log.alarm_clear("python.demo")
+
                 if n % 7 == 0:
                     # A caught exception, logged with the frame locals. The
                     # bench shows symbol='DOGE' and qty=n, which is the

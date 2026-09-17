@@ -77,6 +77,13 @@ func main() {
 			superlog.F{"tick": ticks})
 		slog.DebugContext(ctx, "pricing pass", "tick", ticks)
 
+		// A demo ALARM so the viewers' Alarms panel has something from Go:
+		// raise on the 5-tick mark, recover ten ticks later.
+		if ticks%20 == 5 {
+			log.Alarm("go demo: order gateway timeout", "go.demo")
+		} else if ticks%20 == 15 {
+			log.AlarmClear("go.demo")
+		}
 		if ticks%5 == 0 {
 			log.Metric("clock.uptime_s", float64(ticks))
 		}

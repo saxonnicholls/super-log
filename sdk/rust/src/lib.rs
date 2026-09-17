@@ -235,6 +235,58 @@ impl SuperLog {
         self.s.dropped.load(Ordering::Relaxed)
     }
 
+    /// Raise a first-class ALARM straight into the viewers' Alarms panel - the
+    /// deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+    /// `alert.native.<key>` (deduped by `fields.key`), posted immediately from
+    /// this thread and OUTSIDE the mode policy: an alarm you asked for must not
+    /// go quiet in production (`SUPER_LOG_ALARMS=0` mutes it). CRITICAL (P0).
+    /// See PROTOCOL.md.
+    pub fn alarm(&self, msg: &str, key: &str) {
+        self.alarm_at(Level::Critical, msg, key)
+    }
+
+    /// Clear a raised alarm: an INFO the blotter reads as `RECOVERED`, on the
+    /// same key.
+    pub fn alarm_clear(&self, key: &str) {
+        let k = alarm_key(key);
+        self.alarm_at(Level::Info, &format!("RECOVERED: {k}"), key)
+    }
+
+    fn alarm_at(&self, level: Level, msg: &str, key: &str) {
+        if std::env::var("SUPER_LOG_ALARMS").as_deref() == Ok("0") {
+            return;
+        }
+        let s = &self.s;
+        let k = alarm_key(key);
+        let seq = s.seq.fetch_add(1, Ordering::Relaxed);
+        let mut j = String::with_capacity(200 + msg.len());
+        j.push_str("{\"v\":1,\"ts\":\"");
+        j.push_str(&iso8601_now());
+        j.push_str("\",\"seq\":");
+        j.push_str(&seq.to_string());
+        j.push_str(",\"session\":\"");
+        j.push_str(&s.session);
+        j.push_str("\",\"level\":\"");
+        j.push_str(level.as_str());
+        j.push_str("\",\"origin\":{\"runtime\":\"rust\",\"app\":\"");
+        escape(&s.cfg.app, &mut j);
+        j.push_str("\",\"platform\":\"");
+        j.push_str(platform());
+        j.push('"');
+        if !s.cfg.device.is_empty() {
+            j.push_str(",\"device\":\"");
+            escape(&s.cfg.device, &mut j);
+            j.push('"');
+        }
+        j.push_str("},\"tag\":\"alarm\",\"msg\":\"");
+        escape(msg, &mut j);
+        j.push_str("\",\"fields\":{\"key\":\"");
+        escape(&k, &mut j);
+        j.push_str("\"}}\n");
+        let path = format!("/ingest/alert.native.{k}");
+        let _ = http_post(&s.cfg.host, s.cfg.port, &path, &j);
+    }
+
     /// Log every panic, with its location, then let the previous hook run -
     /// so the usual message still reaches stderr and any handler already
     /// installed still fires. Call once at startup:
@@ -354,6 +406,22 @@ impl SuperLog {
         j.push('}');
         j
     }
+}
+
+/// A key becomes a topic segment: lowercased, only `[a-z0-9._-]`, the rest to
+/// '-'. Matches the other SDKs so a key means one `alert.native.*` topic from
+/// every language.
+fn alarm_key(k: &str) -> String {
+    let mut out = String::with_capacity(k.len());
+    for c in k.chars() {
+        let c = c.to_ascii_lowercase();
+        if c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_' || c == '-' {
+            out.push(c);
+        } else {
+            out.push('-');
+        }
+    }
+    if out.is_empty() { "alarm".to_string() } else { out }
 }
 
 /// The `tracing` bridge - the reason most Rust code needs no changes at all.

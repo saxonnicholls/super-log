@@ -308,6 +308,64 @@ func (s *SuperLog) Warn(msg string, f F)     { s.Log(LevelWarn, msg, f) }
 func (s *SuperLog) Error(msg string, f F)    { s.Log(LevelError, msg, f) }
 func (s *SuperLog) Critical(msg string, f F) { s.Log(LevelCritical, msg, f) }
 
+// alarmKey turns a key into a topic segment: lowercased, only [a-z0-9._-], the
+// rest to '-'. Matches the other SDKs so a key means one alert.native.* topic
+// from every language.
+func alarmKey(k string) string {
+	var b strings.Builder
+	for _, c := range strings.ToLower(k) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			b.WriteRune(c)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "alarm"
+	}
+	return b.String()
+}
+
+// Alarm raises a first-class ALARM straight into the viewers' Alarms panel -
+// the deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+// alert.native.<key> (deduped by fields.key), posted immediately and OUTSIDE
+// the batch AND the mode policy: an alarm you asked for must not go quiet in
+// production (SUPER_LOG_ALARMS=0 mutes it). CRITICAL (P0). See PROTOCOL.md.
+func (s *SuperLog) Alarm(msg, key string) { s.alarmAt(LevelCritical, msg, key) }
+
+// AlarmClear closes a raised alarm with an INFO recovery on the same key.
+func (s *SuperLog) AlarmClear(key string) {
+	s.alarmAt(LevelInfo, "RECOVERED: "+alarmKey(key), key)
+}
+
+func (s *SuperLog) alarmAt(level, msg, key string) {
+	if os.Getenv("SUPER_LOG_ALARMS") == "0" {
+		return
+	}
+	k := alarmKey(key)
+	ev := map[string]any{
+		"v": 1, "ts": time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z"),
+		"seq": s.seq.Add(1) - 1, "session": s.session,
+		"level": level, "origin": s.origin, "tag": "alarm", "msg": msg,
+		"fields": map[string]string{"key": k},
+	}
+	line, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest(http.MethodPost, s.url+"/ingest/alert.native."+k, strings.NewReader(string(line)))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-ndjson")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		s.dropped.Add(1)
+		return
+	}
+	resp.Body.Close()
+}
+
 // Metric is telemetry riding the same pipeline (PROTOCOL.md `metric`).
 func (s *SuperLog) Metric(name string, value float64) {
 	if rank[LevelInfo] < s.minRank {

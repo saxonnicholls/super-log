@@ -122,6 +122,17 @@ def _safe(v: Any) -> str:
         return str(v)
 
 
+_ALARM_OK = set("abcdefghijklmnopqrstuvwxyz0123456789._-")
+
+
+def _alarm_key(k: str) -> str:
+    """A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to
+    '-'. Matches the C++ and JS SDKs so a key means one alert.native.* topic
+    from every language."""
+    out = "".join(c if c in _ALARM_OK else "-" for c in k.lower())
+    return out or "alarm"
+
+
 # ----------------------------------------------------------------- client
 
 class SuperLog:
@@ -270,6 +281,33 @@ class SuperLog:
         if trace:
             ev["trace"] = trace
         self._push(json.dumps(ev, default=str, separators=(",", ":")))
+
+    # -------------------------------------------------------------- alarms
+
+    def alarm(self, msg: str, key: str = "", level: str = Level.CRITICAL) -> None:
+        """Raise a first-class ALARM straight into the viewers' Alarms panel -
+        the deliberate "this is an alarm", not a WARN a rule must catch. It
+        lands on alert.native.<key> (deduped by fields.key), posted immediately
+        and OUTSIDE the queue AND the mode policy: an alarm you asked for must
+        not go quiet in production (SUPER_LOG_ALARMS=0 mutes it). CRITICAL (P0)
+        by default. See PROTOCOL.md."""
+        if os.environ.get("SUPER_LOG_ALARMS") == "0":
+            return
+        k = _alarm_key(key or msg)
+        with self._seq_lock:
+            seq = self._seq
+            self._seq += 1
+        ev = {"v": 1, "ts": _iso_now(), "seq": seq, "session": self._session,
+              "level": level, "origin": self._origin, "tag": "alarm",
+              "msg": msg, "fields": {"key": k}}
+        self._post_path("/ingest/alert.native." + k,
+                        json.dumps(ev, default=str, separators=(",", ":")))
+
+    def alarm_clear(self, key: str, msg: str = "") -> None:
+        """Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the
+        same key."""
+        self.alarm(msg or ("RECOVERED: " + _alarm_key(key)), key=key,
+                   level=Level.INFO)
 
     # ---------------------------------------------------------- exceptions
 
@@ -490,6 +528,9 @@ class SuperLog:
                 return
 
     def _post(self, body: str) -> None:
+        self._post_path(self._path, body)
+
+    def _post_path(self, path: str, body: str) -> None:
         conn = None
         try:
             host = self._parsed.hostname or "127.0.0.1"
@@ -497,7 +538,7 @@ class SuperLog:
             cls = (http.client.HTTPSConnection if self._parsed.scheme == "https"
                    else http.client.HTTPConnection)
             conn = cls(host, port, timeout=5)
-            conn.request("POST", self._path, body=body.encode("utf-8"),
+            conn.request("POST", path, body=body.encode("utf-8"),
                          headers={"Content-Type": "application/x-ndjson"})
             conn.getresponse().read()
         except (OSError, socket.error, http.client.HTTPException):

@@ -71,6 +71,13 @@ fn main() {
         if n % 5 == 0 {
             log.metric("clock.uptime_s", n as f64);
         }
+        // A demo ALARM so the viewers' Alarms panel has something from Rust:
+        // raise on the 5-tick mark, recover ten ticks later.
+        if n % 20 == 5 {
+            log.alarm("rust demo: worker pool exhausted", "rust.demo");
+        } else if n % 20 == 15 {
+            log.alarm_clear("rust.demo");
+        }
         std::thread::sleep(Duration::from_secs(1));
     }
 }
