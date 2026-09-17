@@ -38,6 +38,8 @@ struct ai_state {
     bool signed_in = false;
     bool loaded    = false;
     bool refreshing = false;
+    double last_cfg_check = 0;              // ImGui time of the last cloud.json re-read
+    bool   was_focused    = false;
     std::string error;
 
     // Entitlement (server-enforced; we only display it).
@@ -229,9 +231,27 @@ inline void ai_start_interpret_locked(ai_state& s)
 inline void render_ai_panel(ai_state& s)
 {
     ImGui::Begin("AI interpretation");
+    const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    const double now = ImGui::GetTime();
     {
         std::lock_guard<std::mutex> g(s.m);
-        if (!s.loaded) { s.loaded = true; ai_load_config_locked(s); }
+        if (!s.loaded) {
+            s.loaded = true;
+            ai_load_config_locked(s);
+            s.last_cfg_check = now;
+        } else if (s.entitled != 1 &&
+                   (now - s.last_cfg_check > 4.0 || (focused && !s.was_focused))) {
+            // The token arrives out of band - `superlog-cloud login --viewer`
+            // writes it into ~/.superlog/cloud.json while this window is open.
+            // Re-read it on focus and every few seconds until we are entitled,
+            // so the panel flips the moment sign-in lands, with no restart.
+            s.last_cfg_check = now;
+            const bool was_signed = s.signed_in;
+            ai_load_config_locked(s);
+            if (s.signed_in && !was_signed)
+                s.entitled = -1;               // a new token: check entitlement afresh
+        }
+        s.was_focused = focused;
         if (!s.refreshing) {
             if (s.signed_in && s.entitled < 0) ai_start_entitlement_locked(s);
             else if ((!s.signed_in || s.entitled == 0) && !s.have_offer)
@@ -359,7 +379,7 @@ inline void render_ai_panel(ai_state& s)
         if (ImGui::Button(cta.c_str())) ai_open_url(url);
 
         ImGui::Spacing();
-        const std::string hint = "or run  superlog login  in your terminal";
+        const std::string hint = "or run  superlog-cloud login --viewer  in your terminal";
         centered(hint);
         ImGui::TextDisabled("%s", hint.c_str());
     }
