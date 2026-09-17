@@ -144,6 +144,14 @@ public final class Clock {
                         log.metric("clock.uptime_s", tick);
                     }
 
+                    // A demo ALARM so the viewers' Alarms panel has something
+                    // from Java: raise on the 5-tick mark, recover ten later.
+                    if (tick % 20 == 5) {
+                        log.alarm("java demo: GC pause over budget", "java.demo");
+                    } else if (tick % 20 == 15) {
+                        log.alarmClear("java.demo");
+                    }
+
                     if (tick % 7 == 0) {
                         try {
                             priceFor("DOGE", tick);

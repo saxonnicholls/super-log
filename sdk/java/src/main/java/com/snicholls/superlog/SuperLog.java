@@ -278,6 +278,87 @@ public final class SuperLog implements AutoCloseable {
     public void critical(String msg)                    { log(Level.CRITICAL, msg); }
     public void critical(String msg, Map<String, ?> f)  { log(Level.CRITICAL, msg, f); }
 
+    // ---------------------------------------------------------------- alarms
+
+    private static String alarmKey(String k) {
+        String s = k == null ? "" : k.toLowerCase(java.util.Locale.ROOT);
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            b.append((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                     || c == '.' || c == '_' || c == '-' ? c : '-');
+        }
+        return b.length() == 0 ? "alarm" : b.toString();
+    }
+
+    /** Raise a first-class ALARM straight into the viewers' Alarms panel - the
+     *  deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+     *  alert.native.&lt;key&gt; (deduped by fields.key), posted immediately,
+     *  OUTSIDE the batch AND the mode policy: an alarm you asked for must not go
+     *  quiet in production (SUPER_LOG_ALARMS=0 mutes it). CRITICAL (P0) by
+     *  default. See PROTOCOL.md. */
+    public void alarm(String msg, String key) { alarm(msg, key, Level.CRITICAL); }
+
+    public void alarm(String msg, String key, Level level) {
+        if ("0".equals(System.getenv("SUPER_LOG_ALARMS"))) {
+            return;
+        }
+        String k = alarmKey(key != null && !key.isEmpty() ? key : msg);
+        StringBuilder b = new StringBuilder(224);
+        b.append("{\"v\":1,\"ts\":\"").append(TS.format(Instant.now()))
+         .append("\",\"seq\":").append(seq.getAndIncrement())
+         .append(",\"session\":\"").append(session)
+         .append("\",\"level\":\"").append(level.wire())
+         .append("\",\"origin\":").append(originJson)
+         .append(",\"tag\":\"alarm\",\"msg\":");
+        Json.quoted(msg == null ? "" : msg, b);
+        b.append(",\"fields\":{\"key\":");
+        Json.quoted(k, b);
+        b.append("}}");
+        postTo("/ingest/alert.native." + k, b.toString());
+    }
+
+    /** Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the
+     *  same key. */
+    public void alarmClear(String key) {
+        alarm("RECOVERED: " + alarmKey(key), key, Level.INFO);
+    }
+
+    private void postTo(String path, String line) {
+        HttpURLConnection conn = null;
+        try {
+            byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
+            URL u = new URL(this.url + path);
+            conn = (HttpURLConnection) u.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setUseCaches(false);
+            conn.setConnectTimeout(connectTimeoutMs);
+            conn.setReadTimeout(readTimeoutMs);
+            conn.setFixedLengthStreamingMode(bytes.length);
+            conn.setRequestProperty("Content-Type", "application/x-ndjson");
+            try (OutputStream out = conn.getOutputStream()) {
+                out.write(bytes);
+            }
+            int code = conn.getResponseCode();
+            try (InputStream in = (code >= 400 ? conn.getErrorStream() : conn.getInputStream())) {
+                if (in != null) {
+                    byte[] sink = new byte[512];
+                    while (in.read(sink) > 0) {
+                        // discard
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // The hub is down; an alarm that could not be delivered is not
+            // retried here - the same trade the batch post makes.
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
     /** Telemetry riding the same pipeline (PROTOCOL.md `metric`). It rides at
      *  INFO, so a policy above INFO drops metrics with everything else. */
     public void metric(String name, double value) {

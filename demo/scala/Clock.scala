@@ -73,6 +73,13 @@ object Clock {
       if (tick % 5 == 0)
         log.debug("clock.uptime_s", SuperLog.fields("value", Int.box(tick)))
 
+      // A demo ALARM so the viewers' Alarms panel has something from Scala:
+      // raise on the 5-tick mark, recover ten ticks later.
+      if (tick % 20 == 5)
+        log.alarm("scala demo: actor mailbox flooded", "scala.demo")
+      else if (tick % 20 == 15)
+        log.alarmClear("scala.demo")
+
       Thread.sleep(1000)
     }
     log.info("scala clock stopping")
