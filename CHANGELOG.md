@@ -16,12 +16,20 @@ viewers' blotter reads and dedups by `fields.key`. CRITICAL fires it, an INFO
 a hot loop is one alarm, not a flood. It posts straight to the hub (immediate,
 local — cross-process dedup/repeat/recovery is still the gateway's job) and is
 deliberately not silenced by PRODUCTION mode, because an alarm you asked for must
-not go quiet in production. This ships the **C++ reference** (`sn_alarm` +
-`SN_ALARM`/`SN_ALARM_KEY`/`SN_ALARM_CLEAR`, header-only) wired into the C++ demo
-clock; the same primitive lands in every SDK next, and every demo fires one.
-VERIFIED: tests/sn-alarm.test.mjs runs the real C++ demo against a real hub and
-asserts a CRITICAL lands on `alert.native.cpp.demo` with `tag:"alarm"` and the
-dedup key, and an INFO `RECOVERED` closes it — where the blotter reads.
+not go quiet in production. The primitive is in **every SDK**, and every demo client fires one on a cadence
+so the Alarms panel has something to show: C++, JS/TS (Node, Expo/React-Native,
+browser, web), Python, Go, Rust, Ruby, Perl, Lua, C (and Zig and COBOL riding
+it), Java and Scala, Swift (and Metal), C#, Haskell, Lean, OCaml, Fortran, CUDA,
+and POSIX `sh`. Two SDK-specific carve-outs, documented in the code: the
+minimalist **C** SDK keeps its zero-wire PRODUCTION promise (CI greps the prod
+binary for `ingest`), so its native alarm is development-mode; and in every
+language the alarm otherwise fires in production too. VERIFIED: tests/sn-alarm
+.test.mjs runs the real C++ demo against a real hub and asserts a CRITICAL lands
+on `alert.native.cpp.demo` with `tag:"alarm"` and the dedup key, and an INFO
+`RECOVERED` closes it — where the blotter reads; and each demo was driven against
+a real hub and its `alert.native.<lang>.demo` fire+recover observed (C++, JS,
+Python, Go, Rust, Ruby, Perl, Lua, C, Zig, COBOL, Java, Swift, C#, Haskell,
+Fortran, sh; Scala/Metal/Lean/OCaml/CUDA mirror a verified sibling's path).
 
 **A busy bench no longer leaves the viewers' state windows blank — a firehose
 can't crush the quiet streams out of view.** The hub's ring is per-topic, so a
