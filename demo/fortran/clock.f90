@@ -49,6 +49,11 @@ program clock
     end if
     if (modulo(tick, 5) == 0) call sl_metric('clock.uptime_s', real(tick, real64))
 
+    ! A demo ALARM so the viewers' Alarms panel has something from Fortran:
+    ! raise on the 5-tick mark, recover ten ticks later.
+    if (modulo(tick, 20) == 5)  call sl_alarm('fortran demo: solver residual over budget', 'fortran.demo')
+    if (modulo(tick, 20) == 15) call sl_alarm_clear('fortran.demo')
+
     call sl_flush()
     call sleep(1)
   end do

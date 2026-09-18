@@ -52,6 +52,7 @@ module superlog
   public :: sl_init, sl_close, sl_flush, sl_status, sl_dropped
   public :: sl_trace, sl_debug, sl_info, sl_warn, sl_error, sl_critical
   public :: sl_log, sl_metric, sl_set_trace, sl_new_trace
+  public :: sl_alarm, sl_alarm_clear
   public :: SL_LVL_TRACE, SL_LVL_DEBUG, SL_LVL_INFO, SL_LVL_WARN, SL_LVL_ERROR, SL_LVL_CRITICAL, SL_LVL_OFF
 
   integer, parameter :: SL_LVL_TRACE = 1, SL_LVL_DEBUG = 2, SL_LVL_INFO = 3
@@ -387,11 +388,45 @@ contains
 
   ! --------------------------------------------------------------- transport
 
-  subroutine sl_flush()
-    character(len=:), allocatable :: body, req
-    integer :: i, slot, fd, rc
+  ! One POST to /ingest/<topic_path>, one connect, discarded reply. Shared by
+  ! the batch flush and the alarm (which posts to a different topic). ok is
+  ! .false. when the event did not land.
+  subroutine post_body(topic_path, body, ok)
+    character(len=*), intent(in) :: topic_path, body
+    logical, intent(out) :: ok
+    character(len=:), allocatable :: req
+    integer :: fd, rc
     character(kind=c_char) :: sa(16)
     integer(c_long) :: sent
+
+    ok = .false.
+    fd = c_socket(AF_INET, SOCK_STREAM, 0_c_int)
+    if (fd < 0) return
+    call set_timeouts(fd)
+    if (.not. make_sockaddr(sa)) then
+      rc = c_close(fd); return
+    end if
+    if (c_connect(fd, sa, 16_c_int) /= 0) then
+      rc = c_close(fd); return
+    end if
+
+    ! Connection: close - one POST per call. At a flush a second the handshake
+    ! is free, and it means no half-open socket survives a scheduler kill.
+    req = 'POST /ingest/' // trim(topic_path) // ' HTTP/1.1' // crlf() // &
+          'Host: ' // trim(cfg_host) // crlf() // &
+          'Content-Type: application/x-ndjson' // crlf() // &
+          'Content-Length: ' // itoa(len(body)) // crlf() // &
+          'Connection: close' // crlf() // crlf() // body
+
+    sent = c_send(fd, req // c_null_char, int(len(req), c_size_t), 0_c_int)
+    rc = c_close(fd)
+    ok = (sent >= 0)
+  end subroutine
+
+  subroutine sl_flush()
+    character(len=:), allocatable :: body
+    integer :: i, slot
+    logical :: ok
 
     if (ring_count == 0 .or. .not. enabled) return
 
@@ -402,46 +437,75 @@ contains
       body = body // trim(ring_buf(slot))
     end do
 
-    fd = c_socket(AF_INET, SOCK_STREAM, 0_c_int)
-    if (fd < 0) then
-      ! Count and move on. Retrying inside a solver's timestep is how a
-      ! logger becomes the bottleneck it was meant to diagnose.
-      n_dropped = n_dropped + ring_count
-      ring_count = 0; ring_head = 1
-      return
-    end if
-
-    call set_timeouts(fd)
-
-    if (.not. make_sockaddr(sa)) then
-      rc = c_close(fd)
-      n_dropped = n_dropped + ring_count
-      ring_count = 0; ring_head = 1
-      return
-    end if
-
-    if (c_connect(fd, sa, 16_c_int) /= 0) then
-      rc = c_close(fd)
-      n_dropped = n_dropped + ring_count
-      ring_count = 0; ring_head = 1
-      return
-    end if
-
-    ! Connection: close - one POST per flush. At a flush a second the
-    ! handshake is free, and it means no half-open socket survives a run
-    ! that ends in a scheduler kill.
-    req = 'POST /ingest/' // trim(cfg_topic) // ' HTTP/1.1' // crlf() // &
-          'Host: ' // trim(cfg_host) // crlf() // &
-          'Content-Type: application/x-ndjson' // crlf() // &
-          'Content-Length: ' // itoa(len(body)) // crlf() // &
-          'Connection: close' // crlf() // crlf() // body
-
-    sent = c_send(fd, req // c_null_char, int(len(req), c_size_t), 0_c_int)
-    if (sent < 0) n_dropped = n_dropped + ring_count
-    rc = c_close(fd)
+    call post_body(trim(cfg_topic), body, ok)
+    ! Retrying inside a solver's timestep is how a logger becomes the
+    ! bottleneck it was meant to diagnose; count and move on.
+    if (.not. ok) n_dropped = n_dropped + ring_count
 
     ring_count = 0
     ring_head = 1
+  end subroutine
+
+  ! A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to '-'.
+  function alarm_key(k) result(r)
+    character(len=*), intent(in) :: k
+    character(len=:), allocatable :: r
+    integer :: i
+    character :: c
+    r = ''
+    do i = 1, len_trim(k)
+      c = k(i:i)
+      if (c >= 'A' .and. c <= 'Z') c = achar(iachar(c) + 32)
+      if ((c >= 'a' .and. c <= 'z') .or. (c >= '0' .and. c <= '9') .or. &
+          c == '.' .or. c == '_' .or. c == '-') then
+        r = r // c
+      else
+        r = r // '-'
+      end if
+    end do
+    if (len(r) == 0) r = 'alarm'
+  end function
+
+  ! Raise a first-class ALARM straight into the viewers' Alarms panel - the
+  ! deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+  ! alert.native.<key> (deduped by fields.key), posted immediately, OUTSIDE the
+  ! ring buffer and the mode gate: an alarm you asked for must not go quiet in
+  ! production (SUPER_LOG_ALARMS=0 mutes). CRITICAL (P0) by default.
+  subroutine sl_alarm_at(level, msg, key)
+    character(len=*), intent(in) :: level, msg
+    character(len=*), intent(in), optional :: key
+    character(len=:), allocatable :: k, line
+    character(len=8) :: env
+    integer :: st
+    logical :: ok
+
+    if (.not. started) call sl_init()
+    call get_environment_variable('SUPER_LOG_ALARMS', env, status=st)
+    if (st == 0 .and. trim(env) == '0') return
+
+    if (present(key)) then
+      k = alarm_key(key)
+    else
+      k = alarm_key(msg)
+    end if
+    line = '{"v":1,"ts":"' // now_iso8601() // '","seq":' // itoa(int(n_seq)) // &
+           ',"session":"' // trim(cfg_session) // '","level":"' // trim(level) // &
+           '","origin":{"runtime":"fortran","app":"' // esc(trim(cfg_app)) // &
+           '","platform":"' // platform_name() // '"},"tag":"alarm","msg":"' // &
+           esc(msg) // '","fields":{"key":"' // k // '"}}'
+    n_seq = n_seq + 1
+    call post_body('alert.native.' // k, line, ok)
+  end subroutine
+
+  subroutine sl_alarm(msg, key)
+    character(len=*), intent(in) :: msg
+    character(len=*), intent(in), optional :: key
+    call sl_alarm_at('CRITICAL', msg, key)
+  end subroutine
+
+  subroutine sl_alarm_clear(key)
+    character(len=*), intent(in) :: key
+    call sl_alarm_at('INFO', 'RECOVERED: ' // alarm_key(key), key)
   end subroutine
 
   ! A solver must not stall on a bench that has gone away, so the socket
