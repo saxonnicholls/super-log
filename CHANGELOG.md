@@ -5,6 +5,22 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**OpenTelemetry, now both directions.** `superlog-otlp` already accepted OTLP
+*in*; `superlog-otlp-export` sends it *out* — it reads the hub over `/ws` and
+POSTs OTLP/JSON to any collector or vendor, so the bench feeds the rest of your
+observability stack instead of walling it off. Every event becomes an OTLP
+`LogRecord` (severity band inverted, `service.name` from `origin.app`, fields as
+attributes, a 32-hex `trace` as `traceId`); a bench `metric` event becomes an
+OTLP gauge point. JSON only, on purpose — it is what every collector accepts;
+gRPC/protobuf backends are one OTel Collector hop away (both bridge directions
+are in the new [docs/OTLP.md](docs/OTLP.md)). The bench has no spans of its own,
+so traces are not exported, and histograms stay summarized to count+sum in both
+directions — a deliberate limit, not a gap. Bounded queue, drop-oldest,
+never blocks the bench on a slow backend. VERIFIED: tests/otlp-export.test.mjs
+drives the real exporter against a real hub and a stand-in OTLP server — a bench
+event arrives as a well-formed `LogRecord` (severity/body/service.name/traceId/
+attributes, auth header intact) and a metric as a gauge point.
+
 **`SN_ALARM` — raise a first-class alarm straight from code, in any language.**
 Until now the Alarms panel filled only from `superlog-alert`'s rules or a
 production webhook through the `superlog-alarm` gateway; from code the best you
