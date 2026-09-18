@@ -43,6 +43,11 @@ while (running && (maxTicks == 0 || tick < maxTicks))
         log.Error($"pricing failed on tick {tick}: no rate for {symbol}",
                   new() { ["symbol"] = symbol, ["tick"] = tick.ToString() });
 
+    // A demo ALARM so the viewers' Alarms panel has something from C#: raise
+    // on the 5-tick mark, recover ten ticks later.
+    if (tick % 20 == 5) log.Alarm("csharp demo: thread pool starved", "csharp.demo");
+    else if (tick % 20 == 15) log.AlarmClear("csharp.demo");
+
     if (tick % 5 == 0) log.Metric("clock.uptime_s", tick);
     log.Flush();
     Thread.Sleep(1000);

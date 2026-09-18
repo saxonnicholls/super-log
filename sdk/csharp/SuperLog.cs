@@ -65,6 +65,65 @@ public sealed class SuperLog
     public void Error(string msg, Dictionary<string, string>? fields = null) => Log("ERROR", msg, fields);
     public void Critical(string msg, Dictionary<string, string>? fields = null) => Log("CRITICAL", msg, fields);
 
+    private static string AlarmKey(string k)
+    {
+        var sb = new StringBuilder();
+        foreach (var ch in (k ?? "").ToLowerInvariant())
+            sb.Append((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
+                      || ch == '.' || ch == '_' || ch == '-' ? ch : '-');
+        return sb.Length == 0 ? "alarm" : sb.ToString();
+    }
+
+    /// <summary>Raise a first-class ALARM straight into the viewers' Alarms
+    /// panel - the deliberate "this is an alarm", not a WARN a rule must catch.
+    /// It lands on alert.native.&lt;key&gt; (deduped by fields.key), posted
+    /// immediately, OUTSIDE the batch AND the mode gate: an alarm you asked for
+    /// must not go quiet in production (SUPER_LOG_ALARMS=0 mutes). CRITICAL (P0)
+    /// by default. See PROTOCOL.md.</summary>
+    public void Alarm(string msg, string? key = null, string level = "CRITICAL")
+    {
+        if (Environment.GetEnvironmentVariable("SUPER_LOG_ALARMS") == "0") return;
+        var k = AlarmKey(!string.IsNullOrEmpty(key) ? key! : msg);
+        string line;
+        using (var ms = new System.IO.MemoryStream())
+        {
+            using (var w = new Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteNumber("v", 1);
+                w.WriteString("ts", DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"));
+                w.WriteNumber("seq", _seq++);
+                w.WriteString("session", _session);
+                w.WriteString("level", level);
+                w.WriteStartObject("origin");
+                w.WriteString("runtime", "csharp");
+                w.WriteString("app", _app);
+                w.WriteString("platform", "host");
+                w.WriteString("device", _device);
+                w.WriteEndObject();
+                w.WriteString("tag", "alarm");
+                w.WriteString("msg", msg);
+                w.WriteStartObject("fields");
+                w.WriteString("key", k);
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }
+            line = Encoding.UTF8.GetString(ms.ToArray());
+        }
+        try
+        {
+            using var content = new StringContent(line, Encoding.UTF8, "application/x-ndjson");
+            Http.PostAsync($"{_url}/ingest/alert.native.{k}", content).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // hub down; an alarm that could not be delivered is not retried here
+        }
+    }
+
+    /// <summary>Clear a raised alarm: an INFO the blotter reads as RECOVERED.</summary>
+    public void AlarmClear(string key) => Alarm($"RECOVERED: {AlarmKey(key)}", key, "INFO");
+
     public void Log(string level, string msg, Dictionary<string, string>? fields = null)
     {
         if (!_active) return;
