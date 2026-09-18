@@ -63,6 +63,13 @@ let () =
     if !tick mod 5 = 0 then
       Superlog.metric log "clock.uptime_s" (float_of_int !tick);
 
+    (* A demo ALARM so the viewers' Alarms panel has something from OCaml:
+       raise on the 5-tick mark, recover ten ticks later. *)
+    if !tick mod 20 = 5 then
+      Superlog.alarm log "ocaml demo: GC major slice overran" "ocaml.demo"
+    else if !tick mod 20 = 15 then
+      Superlog.alarm_clear log "ocaml.demo";
+
     Superlog.flush log;
     Unix.sleepf 1.0
   done;

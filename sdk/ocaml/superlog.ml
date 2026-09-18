@@ -152,3 +152,55 @@ let warn ?fields t msg = log ?fields t "WARN" msg
 let error ?fields t msg = log ?fields t "ERROR" msg
 let metric t name value =
   log t "DEBUG" (Printf.sprintf "%s =%g" name value) ~metric:(name, value)
+
+(* A key becomes a topic segment: lowercased, only [a-z0-9._-], the rest to '-'. *)
+let alarm_key k =
+  let b = Bytes.of_string (String.lowercase_ascii k) in
+  for i = 0 to Bytes.length b - 1 do
+    let c = Bytes.get b i in
+    if not ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            || c = '.' || c = '_' || c = '-')
+    then Bytes.set b i '-'
+  done;
+  let s = Bytes.to_string b in
+  if s = "" then "alarm" else s
+
+let alarm_post t path body =
+  try
+    let addr = Unix.ADDR_INET ((Unix.gethostbyname t.host).Unix.h_addr_list.(0), t.port) in
+    let sock = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
+    (try
+      Unix.connect sock addr;
+      let req = Printf.sprintf
+        "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-ndjson\r\n\
+         Content-Length: %d\r\nConnection: close\r\n\r\n%s"
+        path t.host (String.length body) body in
+      ignore (Unix.write_substring sock req 0 (String.length req));
+      let buf = Bytes.create 256 in
+      ignore (try Unix.read sock buf 0 256 with _ -> 0)
+    with _ -> ());
+    Unix.close sock
+  with _ -> ()
+
+(* Raise a first-class ALARM straight into the viewers' Alarms panel - the
+   deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+   alert.native.<key> (deduped by fields.key), posted immediately, OUTSIDE the
+   batch and the active flag: an alarm you asked for must not go quiet in
+   production (SUPER_LOG_ALARMS=0 mutes). CRITICAL (P0) by default. *)
+let alarm ?(level = "CRITICAL") t msg key =
+  if Sys.getenv_opt "SUPER_LOG_ALARMS" = Some "0" then ()
+  else begin
+    let k = alarm_key key in
+    let line = Printf.sprintf
+      "{\"v\":1,\"ts\":\"%s\",\"seq\":%d,\"session\":\"%s\",\"level\":\"%s\",\
+       \"origin\":{\"runtime\":\"ocaml\",\"app\":\"%s\",\"platform\":\"host\",\"device\":\"%s\"},\
+       \"tag\":\"alarm\",\"msg\":\"%s\",\"fields\":{\"key\":\"%s\"}}"
+      (iso_now ()) t.seq t.session level (json_escape t.app)
+      (json_escape t.device) (json_escape msg) k in
+    t.seq <- t.seq + 1;
+    alarm_post t ("/ingest/alert.native." ^ k) line
+  end
+
+(* Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the key. *)
+let alarm_clear t key =
+  alarm ~level:"INFO" t ("RECOVERED: " ^ alarm_key key) key

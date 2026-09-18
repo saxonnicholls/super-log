@@ -54,6 +54,13 @@ def main (args : List String) : IO Unit := do
     if tick % 5 == 0 then
       Superlog.metric lg "clock.uptime_s" (Float.ofNat tick)
 
+    -- A demo ALARM so the viewers' Alarms panel has something from Lean: raise
+    -- on the 5-tick mark, recover ten ticks later.
+    if tick % 20 == 5 then
+      Superlog.alarm lg "lean demo: proof search timed out" "lean.demo"
+    else if tick % 20 == 15 then
+      Superlog.alarmClear lg "lean.demo"
+
     Superlog.flush lg
     IO.sleep 1000
 

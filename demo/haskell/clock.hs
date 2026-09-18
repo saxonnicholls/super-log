@@ -54,6 +54,12 @@ main = do
                         [("symbol", symbol), ("tick", show tick)]
 
     when (tick `mod` 5 == 0) $ metric lg "clock.uptime_s" (fromIntegral tick)
+
+    -- A demo ALARM so the viewers' Alarms panel has something from Haskell:
+    -- raise on the 5-tick mark, recover ten ticks later.
+    when (tick `mod` 20 == 5)  $ alarm lg "haskell demo: STM retry storm" "haskell.demo"
+    when (tick `mod` 20 == 15) $ alarmClear lg "haskell.demo"
+
     flushLog lg
     threadDelay 1000000
 

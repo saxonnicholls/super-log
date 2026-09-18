@@ -132,6 +132,46 @@ def warn (lg : Log) (msg : String) (fields : List (String × String) := []) : IO
 def error (lg : Log) (msg : String) (fields : List (String × String) := []) : IO Unit :=
   log lg "ERROR" msg fields
 
+/-- A key becomes a topic segment: lowercased, only [a-z0-9._-]. -/
+def alarmKey (k : String) : String :=
+  let s := String.map (fun c =>
+    let c := c.toLower
+    let n := c.toNat
+    if (n ≥ 97 ∧ n ≤ 122) ∨ (n ≥ 48 ∧ n ≤ 57) ∨ c = '.' ∨ c = '_' ∨ c = '-'
+    then c else '-') k
+  if s.isEmpty then "alarm" else s
+
+/-- Raise a first-class ALARM straight into the viewers' Alarms panel - the
+    deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+    alert.native.<key> (deduped by fields.key), posted immediately by curl,
+    OUTSIDE the batch and (unlike the log path) firing in both modes: an alarm
+    you asked for must not go quiet in production (SUPER_LOG_ALARMS=0 mutes). -/
+def alarmAt (lg : Log) (level msg key : String) : IO Unit := do
+  if (← IO.getEnv "SUPER_LOG_ALARMS") == some "0" then return
+  let ts ← isoNow
+  let n ← lg.seqRef.modifyGet fun s => (s, s + 1)
+  let k := alarmKey key
+  let line :=
+    "{\"v\":1,\"ts\":\"" ++ ts ++ "\",\"seq\":" ++ toString n ++
+    ",\"session\":\"" ++ lg.session ++ "\",\"level\":\"" ++ level ++
+    "\",\"origin\":{\"runtime\":\"lean\",\"app\":\"" ++ jsonEscape lg.app ++
+    "\",\"platform\":\"host\",\"device\":\"" ++ jsonEscape lg.device ++
+    "\"},\"tag\":\"alarm\",\"msg\":\"" ++ jsonEscape msg ++
+    "\",\"fields\":{\"key\":\"" ++ jsonEscape k ++ "\"}}"
+  try
+    let _ ← IO.Process.output {
+      cmd := "curl",
+      args := #["-s", "-m", "5", "-o", "/dev/null", "-X", "POST",
+                s!"{lg.url}/ingest/alert.native.{k}",
+                "-H", "content-type: application/x-ndjson",
+                "--data-binary", line] }
+  catch _ => pure ()
+
+def alarm (lg : Log) (msg key : String) : IO Unit := alarmAt lg "CRITICAL" msg key
+
+def alarmClear (lg : Log) (key : String) : IO Unit :=
+  alarmAt lg "INFO" ("RECOVERED: " ++ alarmKey key) key
+
 /-- A reading for the chart: DEBUG, with the metric riding the event. -/
 def metric (lg : Log) (name : String) (value : Float) : IO Unit := do
   unless lg.active do return

@@ -22,6 +22,7 @@
 module SuperLog
   ( Log, newLog, flushLog
   , logMsg, debug, info, warn, err, metric
+  , alarm, alarmClear
   ) where
 
 #if defined(DEVELOPMENT) && defined(PRODUCTION)
@@ -31,7 +32,7 @@ module SuperLog
 #error "declare -DDEVELOPMENT or -DPRODUCTION - there is no default"
 #endif
 
-import Data.Char (isControl, ord)
+import Data.Char (isControl, ord, toLower)
 import Data.IORef
 import Data.List (intercalate)
 import Data.Time.Clock (getCurrentTime)
@@ -148,3 +149,44 @@ metric lg name value = do
   pending <- atomicModifyIORef' (lgBuf lg) (\b -> (line : b, length b + 1))
   if pending >= 16 then flushLog lg else pure ()
 #endif
+
+-- | A key becomes a topic segment: lowercased, only [a-z0-9._-].
+alarmKey :: String -> String
+alarmKey k =
+  let s = [ if c `elem` (['a'..'z'] ++ ['0'..'9'] ++ ".-_") then c else '-'
+          | c <- map toLower k ]
+  in if null s then "alarm" else s
+
+-- | Raise a first-class ALARM straight into the viewers' Alarms panel - the
+-- deliberate "this is an alarm", not a WARN a rule must catch. It lands on
+-- alert.native.<key> (deduped by fields.key), posted immediately by curl,
+-- OUTSIDE the batch. Unlike the log path this fires in BOTH modes: an alarm you
+-- asked for must not go quiet in production (SUPER_LOG_ALARMS=0 mutes it).
+alarm :: Log -> String -> String -> IO ()
+alarm lg msg key = alarmAt lg "CRITICAL" msg key
+
+-- | Clear a raised alarm: an INFO the blotter reads as RECOVERED, on the key.
+alarmClear :: Log -> String -> IO ()
+alarmClear lg key = alarmAt lg "INFO" ("RECOVERED: " ++ alarmKey key) key
+
+alarmAt :: Log -> String -> String -> String -> IO ()
+alarmAt lg level msg key = do
+  mute <- lookupEnv "SUPER_LOG_ALARMS"
+  if mute == Just "0" then pure () else do
+    ts <- isoNow
+    n <- atomicModifyIORef' (lgSeq lg) (\s -> (s + 1, s))
+    let k = alarmKey key
+        line = concat
+          [ "{\"v\":1,\"ts\":\"", ts, "\",\"seq\":", show n
+          , ",\"session\":\"", lgSession lg
+          , "\",\"level\":\"", level
+          , "\",\"origin\":{\"runtime\":\"haskell\",\"app\":\"", jsonEscape (lgApp lg)
+          , "\",\"platform\":\"host\",\"device\":\"", jsonEscape (lgDevice lg)
+          , "\"},\"tag\":\"alarm\",\"msg\":\"", jsonEscape msg
+          , "\",\"fields\":{\"key\":\"", jsonEscape k, "\"}}" ]
+    _ <- readProcessWithExitCode "curl"
+           [ "-s", "-m", "5", "-o", "/dev/null"
+           , "-X", "POST", lgUrl lg ++ "/ingest/alert.native." ++ k
+           , "-H", "content-type: application/x-ndjson"
+           , "--data-binary", line ] ""
+    pure ()
