@@ -38,6 +38,7 @@
 //
 
 #include "event/time_master.hpp"   // ts-moveables: the Legendary TimeMaster
+#include <super_log/alarm.hpp>
 #include <super_log/forward_sink.hpp>
 
 #include <cuda_runtime.h>
@@ -163,6 +164,9 @@ int main()
     if (cudaMalloc(&dx, N * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dy, N * sizeof(float)) != cudaSuccess) {
         say("CRITICAL", "cudaMalloc failed for the working set");
+        // A GPU allocation failure is exactly the "wake someone" case - raise
+        // it as a first-class alarm too.
+        SN_ALARM_KEY("cuda.oom", "cuda: cudaMalloc failed for the working set");
         return 1;
     }
     cudaMemset(dx, 0, N * sizeof(float));
@@ -238,6 +242,11 @@ int main()
         char msg[128];
         std::snprintf(msg, sizeof msg, "tick %d: saxpy took %.3fms on the GPU", tick, ms);
         say("INFO", msg, {{"tick", std::to_string(tick)}, {"blocks", std::to_string(blocks)}});
+
+        // A demo ALARM so the viewers' Alarms panel has something from CUDA:
+        // raise on the 5-tick mark, recover ten ticks later.
+        if (tick % 20 == 5)  SN_ALARM_KEY("cuda.demo", "cuda demo: kernel time over budget");
+        if (tick % 20 == 15) SN_ALARM_CLEAR("cuda.demo");
 
         // Once, near the start: prove that an out-of-bounds write surfaces at
         // the SYNCHRONISE and not at the launch. After this the context is

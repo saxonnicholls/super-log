@@ -93,6 +93,18 @@ while :; do
             --tag pricing --field tick="$ticks" "pricing pass $ticks"
     fi
 
+    # A demo ALARM so the viewers' Alarms panel has something from the shell:
+    # raise on the 5-tick mark (alert.native.shell.demo, CRITICAL), recover ten
+    # ticks later. --topic aims the same POST at the alert.native.* stream the
+    # blotter reads, --field key= gives it its dedup key.
+    if [ $((ticks % 20)) -eq 5 ]; then
+        "$LOG" --topic alert.native.shell.demo --app "$APP" --level CRITICAL \
+            --tag alarm --field key=shell.demo "shell demo: cron job overran its window"
+    elif [ $((ticks % 20)) -eq 15 ]; then
+        "$LOG" --topic alert.native.shell.demo --app "$APP" --level INFO \
+            --tag alarm --field key=shell.demo "RECOVERED: shell.demo"
+    fi
+
     if [ $((ticks % 7)) -eq 0 ]; then
         # A deliberate failure, quoted the way a real error message is -
         # with the shell metacharacters and the quotes a naive logger
