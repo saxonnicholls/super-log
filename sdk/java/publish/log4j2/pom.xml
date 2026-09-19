@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.super-log</groupId>
+    <artifactId>superlog-parent</artifactId>
+    <version>0.4.1</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>superlog-log4j2</artifactId>
+  <name>super-log Log4j 2 appender</name>
+  <description>A Log4j 2 plugin appender that forwards to the super-log bench, beside your existing Log4j 2 setup.</description>
+
+  <build>
+    <sourceDirectory>${project.basedir}/../../integrations/log4j2</sourceDirectory>
+    <plugins>
+      <!-- JDK 23+ disables implicit annotation processing (JEP 705); turn it
+           back on and put Log4j's PluginProcessor on the path, so the built jar
+           carries Log4j2Plugins.dat and <SuperLog> is discoverable from
+           log4j2.xml without a runtime `packages=` scan. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <proc>full</proc>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.apache.logging.log4j</groupId>
+              <artifactId>log4j-core</artifactId>
+              <version>${log4j.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.super-log</groupId>
+      <artifactId>superlog</artifactId>
+      <version>0.4.1</version>
+    </dependency>
+    <!-- log4j-core is the consumer's; provided, never shipped by us. Compiling
+         against it also runs Log4j's annotation processor, which generates the
+         Log4j2Plugins.dat that makes <SuperLog> discoverable from log4j2.xml. -->
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>${log4j.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Maven release build for the super-log Java artifacts.
+
+  Copyright 2026 Saxon Herschel Nicholls
+  SPDX-License-Identifier: MIT
+
+  This exists ONLY to publish to Maven Central "like log4j" - so a consumer can
+  write `implementation 'com.super-log:superlog-slf4j:<v>'` and be done. It does
+  NOT change how the SDK is used or built from source: `javac` still compiles
+  sdk/java/src against nothing (see ../README.md). Each module points its
+  sourceDirectory at the real, non-standard layout rather than moving files.
+
+  Build the jars (no credentials needed):   mvn -f sdk/java/publish/pom.xml package
+  Publish (needs a Central token + GPG key): mvn -f sdk/java/publish/pom.xml -Prelease deploy
+  See ../../../docs/JAVA_DISTRIBUTION.md.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.super-log</groupId>
+  <artifactId>superlog-parent</artifactId>
+  <version>0.4.1</version>
+  <packaging>pom</packaging>
+
+  <name>super-log (parent)</name>
+  <description>One hub for every log stream on a development bench.</description>
+  <url>https://super-log.com</url>
+
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Saxon Herschel Nicholls</name>
+      <organization>Basseterre LLC</organization>
+      <organizationUrl>https://super-log.com</organizationUrl>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/saxonnicholls/super-log.git</connection>
+    <developerConnection>scm:git:https://github.com/saxonnicholls/super-log.git</developerConnection>
+    <url>https://github.com/saxonnicholls/super-log</url>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <slf4j.version>2.0.16</slf4j.version>
+    <logback.version>1.5.12</logback.version>
+    <log4j.version>2.24.1</log4j.version>
+  </properties>
+
+  <modules>
+    <module>core</module>
+    <module>slf4j</module>
+    <module>logback</module>
+    <module>log4j2</module>
+  </modules>
+
+  <build>
+    <plugins>
+      <!-- Central requires a sources jar and a javadoc jar per artifact. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-source-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>attach-sources</id>
+            <goals><goal>jar-no-fork</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-javadoc-plugin</artifactId>
+        <version>3.11.1</version>
+        <configuration>
+          <!-- Bridges reference logback/log4j2 types; keep javadoc lenient. -->
+          <doclint>none</doclint>
+          <failOnError>false</failOnError>
+          <quiet>true</quiet>
+        </configuration>
+        <executions>
+          <execution>
+            <id>attach-javadoc</id>
+            <goals><goal>jar</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Signing + Central upload live here so `package` works with no secrets;
+         only `deploy -Prelease` needs the GPG key and the Central token. -->
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals><goal>sign</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.6.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

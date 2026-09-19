@@ -127,54 +127,27 @@ handler would feed the queue that feeds it.
 closes handlers at exit, and that would silence a client the program is still
 using.
 
-### SLF4J / Logback, without the dependency
+### SLF4J, Logback, Log4j 2 — shipped
 
-The SDK compiles against nothing, so an SLF4J appender cannot ship here: it
-would not compile without a jar on the classpath. It is twenty lines in *your*
-project, which already has that jar. Logback:
+The core here compiles against nothing, but the bridges to the frameworks most
+Java shops actually use are shipped in [`integrations/`](integrations/), each
+compiled only against the library it bridges (which your app already has), so
+the core's zero-dependency promise is intact:
 
-```java
-// src/main/java/…/SuperLogAppender.java  — in the app, not in the SDK
-public final class SuperLogAppender extends AppenderBase<ILoggingEvent> {
-    private final SuperLog log;
-    public SuperLogAppender(SuperLog log) { this.log = log; }
+- **[`integrations/slf4j`](integrations/) — an SLF4J 2.0 *drop-in backend*.**
+  Remove `logback-classic` (or `log4j-slf4j2-impl`) and put `superlog-slf4j` in
+  its place; every `org.slf4j.Logger` call — and every Log4j-2-API / JUL call
+  bridged onto SLF4J — reaches the bench with **no code change**. This is the
+  drop-in replacement for your logging *backend*.
+- **`integrations/logback` — a Logback `Appender`** (programmatic or
+  `logback.xml`), to keep Logback and add the bench beside it.
+- **`integrations/log4j2` — a Log4j 2 `@Plugin` appender** (programmatic or
+  `log4j2.xml`), likewise.
 
-    @Override protected void append(ILoggingEvent e) {
-        Map<String, Object> fields = new LinkedHashMap<>(e.getMDCPropertyMap());
-        IThrowableProxy t = e.getThrowableProxy();
-        if (t != null) {
-            fields.put("type", t.getClassName());
-            fields.put("stack", ThrowableProxyUtil.asString(t));
-        }
-        log.log(map(e.getLevel()), e.getFormattedMessage(), fields,
-                e.getLoggerName(), null);
-    }
-
-    private static Level map(ch.qos.logback.classic.Level l) {
-        switch (l.toInt()) {
-            case ch.qos.logback.classic.Level.ERROR_INT: return Level.ERROR;
-            case ch.qos.logback.classic.Level.WARN_INT:  return Level.WARN;
-            case ch.qos.logback.classic.Level.DEBUG_INT: return Level.DEBUG;
-            case ch.qos.logback.classic.Level.TRACE_INT: return Level.TRACE;
-            default:                                     return Level.INFO;
-        }
-    }
-}
-```
-
-Wire it once at startup:
-
-```java
-ch.qos.logback.classic.Logger root =
-        (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-SuperLogAppender a = new SuperLogAppender(log);
-a.setContext(root.getLoggerContext());
-a.start();
-root.addAppender(a);
-```
-
-If your app routes SLF4J to `java.util.logging` (`slf4j-jdk14`), skip all of
-that: `log.handler()` already sees those lines.
+See [integrations/README.md](integrations/README.md) for wiring, the drop-in
+vs. bolt-on distinction, and the build steps. If your app already routes SLF4J
+to `java.util.logging` (`slf4j-jdk14`), `log.handler()` sees those lines with no
+bridge at all.
 
 ## Correlation
 

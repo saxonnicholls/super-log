@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.super-log</groupId>
+    <artifactId>superlog-parent</artifactId>
+    <version>0.4.1</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>superlog-logback</artifactId>
+  <name>super-log Logback appender</name>
+  <description>A Logback appender that forwards to the super-log bench, beside your existing Logback setup.</description>
+
+  <build>
+    <sourceDirectory>${project.basedir}/../../integrations/logback</sourceDirectory>
+  </build>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.super-log</groupId>
+      <artifactId>superlog</artifactId>
+      <version>0.4.1</version>
+    </dependency>
+    <!-- logback is the consumer's; provided, never shipped by us. -->
+    <dependency>
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <version>${logback.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>

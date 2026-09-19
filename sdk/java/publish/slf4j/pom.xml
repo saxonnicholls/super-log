@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.super-log</groupId>
+    <artifactId>superlog-parent</artifactId>
+    <version>0.4.1</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>superlog-slf4j</artifactId>
+  <name>super-log SLF4J provider</name>
+  <description>A drop-in SLF4J 2.0 backend: route every SLF4J call to the super-log bench with no code change.</description>
+
+  <build>
+    <sourceDirectory>${project.basedir}/../../integrations/slf4j</sourceDirectory>
+    <!-- The META-INF/services registration ships in the jar as a resource. -->
+    <resources>
+      <resource>
+        <directory>${project.basedir}/../../integrations/slf4j</directory>
+        <includes><include>META-INF/**</include></includes>
+      </resource>
+    </resources>
+  </build>
+
+  <dependencies>
+    <!-- The core is pulled in transitively: adding superlog-slf4j is all a
+         consumer needs. -->
+    <dependency>
+      <groupId>com.super-log</groupId>
+      <artifactId>superlog</artifactId>
+      <version>0.4.1</version>
+    </dependency>
+    <!-- slf4j-api is the consumer's - they already have it. provided, so it is
+         on the compile classpath but never shipped by us. -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+</project>
