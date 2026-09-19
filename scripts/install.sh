@@ -33,6 +33,9 @@
 #                                        #    the login service so it sticks.
 #   ./scripts/install.sh --uninstall     # remove the login services
 #   ./scripts/install.sh --no-viewer     # headless: hub + tailers only
+#   ./scripts/install.sh --vscode        # ...and install the VS Code extension
+#                                        #    (the rail icon + build/debug capture)
+#                                        #    into `code`, if it's on your PATH
 #
 set -eu
 
@@ -42,6 +45,7 @@ OS="$(uname -s)"
 PERSIST=0
 UNINSTALL=0
 WANT_VIEWER=1
+WANT_VSCODE=0
 # The persisted hub binds loopback unless asked otherwise. Devices on the LAN
 # (a phone, a container, another host) cannot reach a loopback hub, and the
 # drop is silent at both ends - so a persisted loopback hub is the reason
@@ -55,6 +59,7 @@ for a in "$@"; do
         --persist) PERSIST=1 ;;
         --uninstall) UNINSTALL=1 ;;
         --no-viewer) WANT_VIEWER=0 ;;
+        --vscode) WANT_VSCODE=1 ;;
         --lan) LAN=1 ;;
         -h|--help)
             sed -n '3,33p' "$0" | sed 's/^# \{0,1\}//'
@@ -74,6 +79,34 @@ default_tailers_macos() {
 }
 default_tailers_linux() {
     echo "netstate otlp"
+}
+
+# ---- the VS Code extension (opt-in, --vscode) -------------------------
+#
+# Build editors/vscode and install it into `code`, so the super-log rail icon
+# and the cmake/debug capture are one click away rather than a .vsix hand-off.
+# Opt-in because it needs the `code` CLI on PATH and pulls the extension's dev
+# dependencies (esbuild, typescript) - which a headless bench neither has nor
+# wants. Non-fatal: a failure here never fails the bench install.
+install_vscode_extension() {
+    have code || {
+        say "VS Code extension skipped: the 'code' CLI isn't on PATH."
+        say "  In VS Code run 'Shell Command: Install code command in PATH', then re-run with --vscode."
+        return 0
+    }
+    have npx || { say "VS Code extension skipped: npx (Node) not found."; return 0; }
+    say "VS Code extension: building and installing editors/vscode"
+    (
+        cd "$REPO/editors/vscode" || exit 1
+        npm install --no-audit --no-fund --silent || exit 1
+        npx --yes @vscode/vsce package --no-dependencies || exit 1
+        VSIX="$(ls -t ./*.vsix 2>/dev/null | head -1)"
+        [ -n "$VSIX" ] || exit 1
+        code --install-extension "$VSIX" --force
+    ) || { say "VS Code extension install failed (non-fatal) - the bench is still installed."; return 0; }
+    say "VS Code extension installed - reload VS Code (fully quit, then reopen), then click the"
+    say "  super-log pulse icon in the left Activity Bar. The repo also ships .vscode/mcp.json,"
+    say "  so VS Code agent mode sees super-log's MCP server when you open the folder."
 }
 
 # ---- the login services -----------------------------------------------
@@ -234,6 +267,11 @@ if ./scripts/verify-sdks.sh; then
     say "verified: the bench delivers."
 else
     die "verify-sdks failed - the build is not trustworthy, not installing services"
+fi
+
+if [ "$WANT_VSCODE" = 1 ]; then
+    say "editor  VS Code extension"
+    install_vscode_extension
 fi
 
 if [ "$PERSIST" = 1 ]; then

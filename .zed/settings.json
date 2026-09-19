@@ -1,0 +1,11 @@
+{
+  "context_servers": {
+    "super-log": {
+      "source": "custom",
+      "enabled": true,
+      "command": "npx",
+      "args": ["-y", "@super-log/mcp"],
+      "env": {}
+    }
+  }
+}

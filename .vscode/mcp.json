@@ -1,0 +1,13 @@
+{
+  // super-log's MCP server, for VS Code's agent mode / MCP support.
+  // Cloning this repo is the install: VS Code runs the published server on
+  // demand via npx. It defaults to the local hub at http://127.0.0.1:7333;
+  // set SUPER_LOG_URL in "env" below to point it elsewhere.
+  "servers": {
+    "super-log": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@super-log/mcp"]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# super-log's MCP server for the Codex CLI.
+#
+# Codex reads ~/.codex/config.toml, so this project file is a copy-paste
+# source: paste this block into your ~/.codex/config.toml (or merge it) to
+# give the agent the bench. The server defaults to the local hub at
+# http://127.0.0.1:7333; add `env = { SUPER_LOG_URL = "..." }` to repoint it.
+[mcp_servers.super-log]
+command = "npx"
+args = ["-y", "@super-log/mcp"]

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "super-log": {
+      "command": "npx",
+      "args": ["-y", "@super-log/mcp"]
+    }
+  }
+}

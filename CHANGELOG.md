@@ -5,6 +5,44 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**Git, correlated with what the bench saw.** `superlog git install-hooks` writes
+a `post-commit` hook that stamps a `git.commit` frame on the bench the instant a
+commit lands — the same `change:commit` shape as the `superlog-git` watcher, so a
+hook-stamped commit and a watcher-noticed one are interchangeable on the
+timeline. `superlog git recall <commit>` then replays every log the bench
+collected **between that commit and the next** on the line of descent — the
+build, the tests, the services that flapped — which answers "what was happening
+when I made this change?" It reads the LOCAL journal; durable recall across
+sealed segments and other hosts is the Cloud console. A companion fix to the
+journal reader makes it usable at scale: `readFrames` now skips whole journal
+files whose mtime predates `--since`, so a `--since <recent>` scan (and so
+`recall`) reads only the recent files — on the 68 GB journal on this bench,
+recall dropped from over two minutes to under a second, and every
+`superlog-search --since` benefits. VERIFIED: `tests/git-hooks.test.mjs` drives
+install-hooks → a real commit → the frame landing on a live hub (subject, sha,
+author, branch, clean-tree flag), hook idempotence, a foreign hook preserved,
+uninstall, and recall retrieving an in-window log; the journal, history, cli and
+git-watcher suites stay green. MIT throughout — the local half only.
+
+**A drop-in SLF4J backend for the JVM — plus Log4j 2 and Logback appenders.**
+The core Java SDK reached only `java.util.logging`; most Java shops route
+through SLF4J/Logback/Log4j 2, so the SDK's own "anti-log4j" pitch under-reached
+its audience. Now shipped in `sdk/java/integrations`, each compiled only against
+the library it bridges (which the app already has, so the core stays
+zero-dependency): **`superlog-slf4j`, an SLF4J 2.0 service provider** — remove
+`logback-classic` (or `log4j-slf4j2-impl`), drop this in, and every
+`org.slf4j.Logger` call, and every Log4j-2-API/JUL call bridged onto SLF4J,
+reaches the bench with **no code change** (the honest form of "drop-in
+replacement for your logging backend"); and **Logback and Log4j 2 appenders**
+(programmatic or via `logback.xml`/`log4j2.xml`) for keeping your framework and
+adding the bench beside it. It is not a reimplementation of those frameworks —
+no config parsing, no file rolling, no layouts; super-log is a bench, so the
+drop-in gets your lines *to the bench*, and you keep any file appenders you
+still want. VERIFIED: tests/java-integrations.test.mjs compiles all three
+against their libraries and drives the SLF4J drop-in end to end — a plain SLF4J
+program with **no logback on the classpath** lands INFO/WARN/ERROR on the bench
+with MDC and the throwable stack as fields.
+
 **OpenTelemetry, now both directions.** `superlog-otlp` already accepted OTLP
 *in*; `superlog-otlp-export` sends it *out* — it reads the hub over `/ws` and
 POSTs OTLP/JSON to any collector or vendor, so the bench feeds the rest of your
