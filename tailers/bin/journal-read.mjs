@@ -114,7 +114,21 @@ export async function* readFrames(files, opts = {}) {
   const { topic, contains, since, until, onBadLine, onFileError, onFile } = opts;
   const needle = fastNeedle(contains);
 
-  for (const path of files) {
+  // With a lower time bound, skip whole files that end before it. A file's
+  // mtime is the arrival time of its last appended frame - the journal is
+  // written in arrival order and never rewritten - so mtime < since proves
+  // every frame in it predates the window. This is the file-level counterpart
+  // to the early-stop on `until`, and it is what lets `--since <recent>` on a
+  // multi-gigabyte journal read only the recent files instead of all of them.
+  // A file we cannot stat is kept, never skipped: pruning must never drop data.
+  let scan = files;
+  if (since !== undefined) {
+    scan = files.filter((p) => {
+      try { return statSync(p).mtimeMs >= since; } catch { return true; }
+    });
+  }
+
+  for (const path of scan) {
     let handles;
     try {
       handles = openLines(path);

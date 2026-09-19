@@ -19,6 +19,8 @@
 //    superlog list                    every tailer, with a one-line description
 //    superlog viewer [opts]           open the native viewer (builds it once)
 //    <command> | superlog tee [opts]  tee(1): pass a stream through, onto the hub
+//    superlog git install-hooks       stamp each commit onto the bench
+//    superlog git recall <commit>     replay the logs behind a commit
 //    superlog login                   open super-log Cloud in your browser
 //    superlog help | --help | -h      this
 //    superlog --version               the version
@@ -380,6 +382,10 @@ TAILERS (managed in the background; logs under ~/.superlog/log)
 THE BENCH
   viewer [opts]             open the native viewer (builds it once if needed)
 
+GIT  (correlate every commit with what the bench saw)
+  git install-hooks         stamp a git.commit frame on the bench at each commit
+  git recall <commit>       replay the logs from that commit to the next one
+
 STREAMS & CLOUD
   tee [opts] [FILE...]      tee(1) onto the hub    e.g. make 2>&1 | superlog tee --topic build
   login                     open super-log Cloud in your browser
@@ -453,6 +459,7 @@ async function main() {
     case 'list': return list();
     case 'viewer': return viewer(rest);
     case 'tee': return void spawnInherit('superlog-tee.mjs', rest);
+    case 'git': return void spawnInherit('git-hooks.mjs', rest);
     case 'login': return runLogin(rest);
     case 'billing': return billing();
     case 'help': case '--help': case '-h': case undefined: return help();
