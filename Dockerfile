@@ -27,7 +27,13 @@ COPY sdk/js/packages/mcp/guide.json ./
 # The hub is somewhere else by definition. In a container with no hub the
 # tools answer honestly that the bench is unreachable; `initialize` and
 # `tools/list` still work, which is what a directory check asks for.
-ENV SUPER_LOG_HUB=http://127.0.0.1:7333
+#
+# SUPER_LOG_URL, not SUPER_LOG_HUB — bin/superlog-mcp.mjs reads the former.
+# The wrong name shipped here first and did nothing, which is the failure
+# mode that hides: the default happens to be this same address, so the
+# container behaved correctly while anyone overriding SUPER_LOG_HUB to reach
+# a real hub was silently ignored.
+ENV SUPER_LOG_URL=http://127.0.0.1:7333
 ENV SUPER_LOG_JOURNAL=/srv/journal
 
 # A verifier runs untrusted images. This one needs a stdin and a stdout.

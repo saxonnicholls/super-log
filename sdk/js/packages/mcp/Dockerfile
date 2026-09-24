@@ -28,7 +28,13 @@ COPY guide.json ./
 
 # The hub is somewhere else by definition. Both are overridable at run time;
 # the defaults are what the server would use on a developer's own machine.
-ENV SUPER_LOG_HUB=http://127.0.0.1:7333
+#
+# SUPER_LOG_URL, not SUPER_LOG_HUB — bin/superlog-mcp.mjs reads the former.
+# The wrong name shipped here first and did nothing, which is the failure
+# mode that hides: the default happens to be this same address, so the
+# container behaved correctly while anyone overriding SUPER_LOG_HUB to reach
+# a real hub was silently ignored.
+ENV SUPER_LOG_URL=http://127.0.0.1:7333
 ENV SUPER_LOG_JOURNAL=/srv/journal
 
 USER node
