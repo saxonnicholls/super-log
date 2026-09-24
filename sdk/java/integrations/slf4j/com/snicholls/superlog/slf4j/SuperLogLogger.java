@@ -29,6 +29,13 @@ import com.snicholls.superlog.SuperLog;
 
 final class SuperLogLogger extends LegacyAbstractLogger {
 
+    // LegacyAbstractLogger is Serializable, so this class is too whether or
+    // not anyone intends to serialize a logger. Declaring the id is what
+    // -Xlint:serial asks for, and it costs nothing: without it the compiler
+    // computes one from the class's shape, so adding a field later would
+    // silently break any stream that did contain one.
+    private static final long serialVersionUID = 1L;
+
     private final transient SuperLog log;
 
     SuperLogLogger(String name, SuperLog log) {

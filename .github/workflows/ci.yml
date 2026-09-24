@@ -228,7 +228,35 @@ jobs:
           java-version: '17'
       # No pom and no gradle on purpose: the SDK is plain javac, and a build
       # tool in CI would prove something the consuming project never runs.
-      - run: javac -Xlint:all -Werror -d /tmp/sl $(find sdk/java -name '*.java') demo/java/Clock.java
+      #
+      # TWO COMPILES, because there are two kinds of code here. The SDK proper
+      # has no dependencies and that is a claim worth testing — it is compiled
+      # with nothing on the classpath, so an accidental import of anything
+      # fails the build. The integrations under sdk/java/integrations/ bind to
+      # SLF4J, Logback and Log4j by definition and cannot compile without
+      # them.
+      #
+      # This job globbed ALL of sdk/java with no classpath, so the day the
+      # integrations landed it produced 113 "cannot find symbol" errors for
+      # SLF4J classes that were never going to be there (2026-09-24).
+      - name: the SDK, with nothing on the classpath — the no-dependency claim
+        run: javac -Xlint:all -Werror -d /tmp/sl $(find sdk/java/src -name '*.java') demo/java/Clock.java
+      - name: the integrations, against the real logging APIs
+        run: |
+          mkdir -p /tmp/jars
+          B=https://repo1.maven.org/maven2
+          curl -fsSL -o /tmp/jars/slf4j-api.jar        $B/org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar
+          curl -fsSL -o /tmp/jars/logback-core.jar     $B/ch/qos/logback/logback-core/1.5.12/logback-core-1.5.12.jar
+          curl -fsSL -o /tmp/jars/logback-classic.jar  $B/ch/qos/logback/logback-classic/1.5.12/logback-classic-1.5.12.jar
+          curl -fsSL -o /tmp/jars/log4j-api.jar        $B/org/apache/logging/log4j/log4j-api/2.24.1/log4j-api-2.24.1.jar
+          curl -fsSL -o /tmp/jars/log4j-core.jar       $B/org/apache/logging/log4j/log4j-core/2.24.1/log4j-core-2.24.1.jar
+          # -classfile is excluded and nothing else is: log4j's own jar carries
+          # an annotation whose class it does not ship, and a warning from
+          # somebody else's bytecode must not fail our build. Warnings in OUR
+          # source still do — that is what caught the missing serialVersionUID
+          # on SuperLogLogger.
+          javac -Xlint:all,-classfile -Werror -cp "/tmp/sl:/tmp/jars/*" \
+                -d /tmp/sl-integrations $(find sdk/java/integrations -name '*.java')
 
   c:
     runs-on: ubuntu-latest
