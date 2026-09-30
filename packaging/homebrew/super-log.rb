@@ -17,7 +17,7 @@
 class SuperLog < Formula
   desc "One hub for every log stream on a development bench"
   homepage "https://github.com/saxonnicholls/super-log"
-  url "https://github.com/saxonnicholls/super-log/archive/refs/tags/v0.4.0.tar.gz"
+  url "https://github.com/saxonnicholls/super-log/archive/refs/tags/v0.5.0.tar.gz"
   sha256 "67c8bc0132468502cae0a8ea882e62bda1f1b1d520d012f34a478c3066526787"
   license "MIT"
 
