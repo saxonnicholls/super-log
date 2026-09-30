@@ -122,6 +122,9 @@ jobs:
             -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/pkgbuild
           security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # shellcheck disable=SC2046  # word splitting is the point: each
+          # existing keychain must arrive as its own argument, and quoting
+          # would hand list-keychains one long string and drop the rest.
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/cert.p12"
 
@@ -152,6 +155,8 @@ jobs:
       - name: INSTALL the .pkg and run what it installed
         run: |
           set -eu
+          # shellcheck disable=SC2012  # these filenames are ours, set by
+          # packaging/README.md's contract: no spaces, no leading dashes.
           PKG="$(ls -t packaging/macos/*.pkg | head -1)"
           echo "installing $PKG"
 
@@ -162,8 +167,12 @@ jobs:
           # 2. Did the files land where the package claims? Checked by asking
           #    the receipt, not by guessing the prefix.
           pkgutil --pkg-info-plist "$(pkgutil --pkgs | grep -i super-log | head -1)" || true
-          test -x /usr/local/bin/superlogd || { echo "FAIL: superlogd is not executable on PATH after install"; exit 1; }
-          echo "ok: /usr/local/bin/superlogd exists and is executable"
+          for cmd in superlogd superlog superlog-log; do
+            test -x "/usr/local/bin/$cmd" || { echo "FAIL: $cmd is not executable on PATH after install"; exit 1; }
+            echo "ok: /usr/local/bin/$cmd"
+          done
+          # superlog-log is the one that shipped under lib and never reached
+          # bin, in deb, rpm AND Homebrew at once, because nothing asserted PATH.
 
           # 3. Does the INSTALLED binary run on THIS architecture? The runner
           #    is Apple Silicon, so this is the arm64 slice's first execution
@@ -175,18 +184,25 @@ jobs:
           #    exits before V8 tiers up, so it passed while the real thing
           #    crashed with "V8 Check failed: 12 == (*__error())" on a user's
           #    Mac. Force enough iterations to leave the interpreter.
-          NODE="$(ls -d /usr/local/lib/super-log/node/bin/node /usr/local/libexec/super-log/node/bin/node 2>/dev/null | head -1 || true)"
-          if [ -n "$NODE" ]; then
-            echo "exercising the JIT in $NODE"
-            "$NODE" -e 'let s=0; for(let i=0;i<3e7;i++) s=(s+Math.sqrt(i))|0; if(!Number.isFinite(s)) process.exit(1); console.log("jit ok", s);'
-          else
-            echo "no bundled node found - skipping the JIT probe (and saying so, rather than passing quietly)"
-          fi
+          # The path is make_macos_pkg.sh's, not a guess: it stages
+          # usr/local/superlog/node/<arch>/bin/node and installs with
+          # --install-location /usr/local. An earlier draft of this step
+          # guessed /usr/local/lib/super-log/... and would have printed
+          # "skipping" forever - a check that silently does nothing is the
+          # same false success it was written to catch.
+          ARCH="$(uname -m)"; case "$ARCH" in arm64) NARCH=arm64 ;; *) NARCH=x64 ;; esac
+          NODE="/usr/local/superlog/node/$NARCH/bin/node"
+          test -x "$NODE" || { echo "FAIL: no bundled node at $NODE - the package is incomplete"; exit 1; }
+          echo "exercising the JIT in $NODE"
+          # Thirty million iterations, because `node --version` exits before V8
+          # tiers up - which is why it passed while a user's Mac died with
+          # "V8 Check failed: 12 == (*__error())" on the very first real run.
+          "$NODE" -e 'let s=0; for(let i=0;i<3e7;i++) s=(s+Math.sqrt(i))|0; if(!Number.isFinite(s)) process.exit(1); console.log("jit ok", s);'
 
           # 5. Does the daemon actually serve? The whole product is a hub.
           /usr/local/bin/superlogd --port 7399 &
           DPID=$!
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS "http://127.0.0.1:7399/healthz" >/dev/null 2>&1; then
               echo "ok: the installed superlogd answered /healthz"
               kill "$DPID" 2>/dev/null || true
@@ -236,7 +252,7 @@ jobs:
               command -v superlog
               superlogd --version
               superlogd --port 7399 &
-              for i in $(seq 1 30); do
+              for _ in $(seq 1 30); do
                 curl -fsS http://127.0.0.1:7399/healthz && echo "ok: arm64 superlogd answered /healthz" && exit 0
                 sleep 1
               done
@@ -252,7 +268,7 @@ jobs:
           command -v superlogd
           superlogd --version
           superlogd --port 7398 &
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:7398/healthz && echo "ok: amd64 superlogd answered /healthz" && exit 0
             sleep 1
           done
@@ -290,7 +306,8 @@ jobs:
           cat SHA256SUMS
           # Five artefacts plus the sums. Fewer means a build leg produced
           # nothing and the upload would have quietly shipped a partial set.
-          n=$(ls -1 | grep -cv '^SHA256SUMS$')
+          n=0
+          for f in *; do [ "$f" = SHA256SUMS ] || n=$((n+1)); done
           [ "$n" -eq 5 ] || { echo "FAIL: expected 5 artefacts, found $n"; exit 1; }
 
       - name: create or update the release
@@ -302,9 +319,9 @@ jobs:
           set -eu
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG exists - replacing this workflow's own asset names only"
-            gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" ./release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+            gh release create "$TAG" ./release-assets/* --repo "$GITHUB_REPOSITORY" \
               --title "super-log $VERSION" \
               --notes "Install: \`curl -fsSL https://super-log.com/install.sh | sh\` - it detects your platform, verifies the download against SHA256SUMS, and installs. Or take the artefact for your platform below. See CHANGELOG.md."
           fi
@@ -398,9 +415,9 @@ jobs:
           NAME=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
           # npm's own success line has been wrong before. Ask the registry.
-          for i in $(seq 1 12); do
+          for _ in $(seq 1 12); do
             got="$(npm view "$NAME@$VER" version 2>/dev/null || true)"
             [ "$got" = "$VER" ] && { echo "ok: the registry serves $NAME@$VER"; exit 0; }
-            echo "not indexed yet ($i/12)"; sleep 10
+            echo "not indexed yet"; sleep 10
           done
           echo "FAIL: the registry does not serve $NAME@$VER"; exit 1
