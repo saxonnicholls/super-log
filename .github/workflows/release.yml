@@ -1,0 +1,406 @@
+# release.yml - everything a tag has to produce, and the checks that decide
+# whether the release is allowed to exist.
+#
+# Copyright 2026 Saxon Herschel Nicholls
+# SPDX-License-Identifier: MIT
+#
+# THE SHAPE: gate -> build -> INSTALL AND RUN -> publish. Nothing is published
+# until a real machine has installed the artefact and executed it, because
+# every macOS packaging failure this project has shipped was invisible to the
+# build host and obvious to the first machine that tried to install it:
+#
+#   install-location /            only macOS refusing the install reveals it
+#   hardened runtime, no JIT      `node --version` exits before V8 tiers up
+#   stale artefact after failure  the existence check found the previous run's
+#
+# Three broken .pkg builds reached the public in one afternoon on 2026-09-27.
+# The last line of defence was Saxon double-clicking on a Sunday morning. The
+# macos-install-test job below is that Sunday morning, before publication.
+#
+# WHAT IT REFUSES, AND WHY EACH REFUSAL WAS EARNED
+#
+#   - A tag whose number disagrees with the tree (scripts/check_versions.sh).
+#     Fifteen seconds, before twenty minutes of building artefacts nobody can
+#     use, and long before anything irreversible is published.
+#   - A .pkg that installs but whose installed binary will not run, or whose
+#     bundled node has no working JIT.
+#   - An arm64 .deb that has never executed. That is the Raspberry Pi leg, and
+#     it was verified only under QEMU on an Intel host until this job existed.
+#   - A release whose assets did not actually arrive. `gh release upload
+#     --clobber` returned HTTP 200 on a REFUSED upload against an immutable
+#     release on 2026-09-27, and a broken package was nearly re-sent on the
+#     strength of it. The last step re-reads the release from the API and
+#     requires every expected name at non-zero size.
+#
+# ASSET NAMES ARE A PUBLIC CONTRACT - super-log.com/download/<platform>
+# matches on these filenames. Changing one is a dead download button on a live
+# page.
+#   super-log-<version>-universal.pkg   (macOS, arm64 + x86_64 in one file)
+#   super-log_<version>_amd64.deb
+#   super-log_<version>_arm64.deb
+#   super-log-<version>-1.<dist>.x86_64.rpm
+#   super-log-<version>-1.<dist>.aarch64.rpm
+#   SHA256SUMS                          (covers all five; install.sh REQUIRES it)
+#
+# macOS signing runs only if the APPLE_* secrets are set; otherwise the .pkg is
+# built unsigned and the log says so, exactly as a local run does. See the
+# secret names at the signing step.
+#
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'existing tag to backfill assets onto'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── The gate. Cheap, first, and fatal. ──────────────────────────────────────
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - id: v
+        name: the tag and the tree must agree
+        run: |
+          set -eu
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"       >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "::notice::releasing $TAG (version $VERSION)"
+          # Exits non-zero and names the offending file. The whole point is
+          # that this happens before anything is built, let alone published.
+          ./scripts/check_versions.sh "$VERSION"
+
+  # ── Build ───────────────────────────────────────────────────────────────────
+  macos-pkg:
+    needs: gate
+    # Pinned, not "latest". The .pkg claims "one binary, both architectures",
+    # and which slice this runner can EXECUTE - as opposed to merely
+    # cross-compile - depends on knowing its arch. macos-14+ is Apple Silicon,
+    # which is also the slice that had never been run anywhere before this
+    # workflow existed.
+    runs-on: macos-14
+    # The `secrets` context is NOT available to `if:` - GitHub rejects a
+    # workflow that uses it there, and no local YAML check can see that. Mapped
+    # into env at job level so the signing steps can be conditional on whether
+    # a certificate actually exists, which is the state this repo has been in
+    # since the workflow was written.
+    env:
+      HAVE_CERT:   ${{ secrets.APPLE_CERT_P12 != '' }}
+      HAVE_NOTARY: ${{ secrets.APPLE_NOTARY_API_KEY_P8 != '' }}
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: true }
+
+      - name: import Developer ID certificate (only if configured)
+        if: env.HAVE_CERT == 'true'
+        env:
+          P12_BASE64: ${{ secrets.APPLE_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -eu
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/pkgbuild
+          security set-key-partition-list -S apple-tool:,apple:,codesign:,productsign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: store notarytool credentials (only if configured)
+        if: env.HAVE_NOTARY == 'true'
+        env:
+          API_KEY_P8: ${{ secrets.APPLE_NOTARY_API_KEY_P8 }}
+          API_KEY_ID: ${{ secrets.APPLE_NOTARY_API_KEY_ID }}
+          API_ISSUER: ${{ secrets.APPLE_NOTARY_API_ISSUER }}
+        run: |
+          set -eu
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          echo "$API_KEY_P8" > "$HOME/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8"
+          xcrun notarytool store-credentials super-log-notary \
+            --key "$HOME/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8" \
+            --key-id "$API_KEY_ID" --issuer "$API_ISSUER"
+
+      - name: build the universal .pkg
+        env:
+          APPLE_SIGN_APP: ${{ secrets.APPLE_SIGN_APP }}
+          APPLE_SIGN_PKG: ${{ secrets.APPLE_SIGN_PKG }}
+          APPLE_NOTARY_PROFILE: ${{ secrets.APPLE_NOTARY_API_KEY_P8 != '' && 'super-log-notary' || '' }}
+          SUPER_LOG_APPLE_ENV: /dev/null   # no credentials file on a runner
+        run: scripts/make_macos_pkg.sh
+
+      # ── The Sunday morning, before publication. ─────────────────────────────
+      # This is the job that did not exist when three broken packages went out.
+      - name: INSTALL the .pkg and run what it installed
+        run: |
+          set -eu
+          PKG="$(ls -t packaging/macos/*.pkg | head -1)"
+          echo "installing $PKG"
+
+          # 1. Does macOS accept it at all? `install-location /` and
+          #    rootVolumeOnly each made this step fail and nothing earlier.
+          sudo installer -pkg "$PKG" -target / -verbose
+
+          # 2. Did the files land where the package claims? Checked by asking
+          #    the receipt, not by guessing the prefix.
+          pkgutil --pkg-info-plist "$(pkgutil --pkgs | grep -i super-log | head -1)" || true
+          test -x /usr/local/bin/superlogd || { echo "FAIL: superlogd is not executable on PATH after install"; exit 1; }
+          echo "ok: /usr/local/bin/superlogd exists and is executable"
+
+          # 3. Does the INSTALLED binary run on THIS architecture? The runner
+          #    is Apple Silicon, so this is the arm64 slice's first execution
+          #    anywhere - it was only ever verified structurally by `lipo`.
+          lipo -archs /usr/local/bin/superlogd
+          /usr/local/bin/superlogd --version || { echo "FAIL: the installed superlogd will not run"; exit 1; }
+
+          # 4. Does the bundled node have a WORKING JIT? `node --version`
+          #    exits before V8 tiers up, so it passed while the real thing
+          #    crashed with "V8 Check failed: 12 == (*__error())" on a user's
+          #    Mac. Force enough iterations to leave the interpreter.
+          NODE="$(ls -d /usr/local/lib/super-log/node/bin/node /usr/local/libexec/super-log/node/bin/node 2>/dev/null | head -1 || true)"
+          if [ -n "$NODE" ]; then
+            echo "exercising the JIT in $NODE"
+            "$NODE" -e 'let s=0; for(let i=0;i<3e7;i++) s=(s+Math.sqrt(i))|0; if(!Number.isFinite(s)) process.exit(1); console.log("jit ok", s);'
+          else
+            echo "no bundled node found - skipping the JIT probe (and saying so, rather than passing quietly)"
+          fi
+
+          # 5. Does the daemon actually serve? The whole product is a hub.
+          /usr/local/bin/superlogd --port 7399 &
+          DPID=$!
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:7399/healthz" >/dev/null 2>&1; then
+              echo "ok: the installed superlogd answered /healthz"
+              kill "$DPID" 2>/dev/null || true
+              exit 0
+            fi
+            sleep 1
+          done
+          kill "$DPID" 2>/dev/null || true
+          echo "FAIL: the installed superlogd never answered /healthz"
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: packaging/macos/*.pkg
+          if-no-files-found: error
+
+  linux-packages:
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: true }
+      # arm64 legs run under QEMU - standard runners are amd64.
+      - uses: docker/setup-qemu-action@v3
+        with: { platforms: arm64 }
+      - name: build all four deb/rpm artefacts
+        run: scripts/make_linux_packages.sh
+
+      # The Raspberry Pi leg. Until this existed the arm64 .deb had only ever
+      # been built under QEMU, never installed and never run - so "it works on
+      # a Pi" was an inference from a successful build.
+      - name: INSTALL the arm64 .deb under arm64 and run it
+        run: |
+          set -eu
+          DEB="$(ls packaging/deb/*_arm64.deb | head -1)"
+          echo "installing $DEB inside an arm64 container"
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD/packaging/deb:/pkgs:ro" debian:bookworm-slim bash -euxc '
+              apt-get update -qq
+              apt-get install -y -qq curl >/dev/null
+              dpkg -i /pkgs/'"$(basename "$DEB")"' || apt-get -f install -y -qq
+              # The binary must be ON PATH, not merely on disk: superlog-log
+              # shipped under lib but never reached bin in deb, rpm AND
+              # Homebrew, and nothing noticed because nobody asserted PATH.
+              command -v superlogd
+              command -v superlog
+              superlogd --version
+              superlogd --port 7399 &
+              for i in $(seq 1 30); do
+                curl -fsS http://127.0.0.1:7399/healthz && echo "ok: arm64 superlogd answered /healthz" && exit 0
+                sleep 1
+              done
+              echo "FAIL: arm64 superlogd never answered /healthz"
+              exit 1
+            '
+
+      - name: INSTALL the amd64 .deb and run it
+        run: |
+          set -eu
+          DEB="$(ls packaging/deb/*_amd64.deb | head -1)"
+          sudo dpkg -i "$DEB" || sudo apt-get -f install -y
+          command -v superlogd
+          superlogd --version
+          superlogd --port 7398 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:7398/healthz && echo "ok: amd64 superlogd answered /healthz" && exit 0
+            sleep 1
+          done
+          echo "FAIL: amd64 superlogd never answered /healthz"; exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            packaging/deb/*.deb
+            packaging/rpm/*.rpm
+          if-no-files-found: error
+
+  # ── Publish the release, then prove the assets are really there. ────────────
+  publish:
+    needs: [gate, macos-pkg, linux-packages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+
+      - name: flatten artefacts and compute SHA256SUMS
+        run: |
+          set -eu
+          mkdir -p release-assets
+          find dist -type f \( -name '*.pkg' -o -name '*.deb' -o -name '*.rpm' \) -exec cp {} release-assets/ \;
+          cd release-assets
+          ls -la
+          # install.sh REFUSES to install anything when this file is missing,
+          # so it is not an extra - it is what makes the one-liner usable.
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          # Five artefacts plus the sums. Fewer means a build leg produced
+          # nothing and the upload would have quietly shipped a partial set.
+          n=$(ls -1 | grep -cv '^SHA256SUMS$')
+          [ "$n" -eq 5 ] || { echo "FAIL: expected 5 artefacts, found $n"; exit 1; }
+
+      - name: create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -eu
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG exists - replacing this workflow's own asset names only"
+            gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" \
+              --title "super-log $VERSION" \
+              --notes "Install: \`curl -fsSL https://super-log.com/install.sh | sh\` - it detects your platform, verifies the download against SHA256SUMS, and installs. Or take the artefact for your platform below. See CHANGELOG.md."
+          fi
+
+      - name: VERIFY the assets arrived
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          set -eu
+          # `gh release upload --clobber` answered HTTP 200 for a REFUSED
+          # upload against an immutable release on 2026-09-27, and a broken
+          # package was nearly re-sent on the strength of that 200. So the
+          # release is read BACK and every name must be present at non-zero
+          # size. An exit code is not evidence that a file exists.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+             --json assets --jq '.assets[] | "\(.name) \(.size)"' | tee /tmp/live.txt
+          fail=0
+          for f in release-assets/*; do
+            name="$(basename "$f")"
+            line="$(grep -F -- "$name " /tmp/live.txt || true)"
+            size="${line##* }"
+            if [ -z "$line" ]; then
+              echo "FAIL: $name is not on the release at all"; fail=1
+            elif [ "${size:-0}" -le 0 ]; then
+              echo "FAIL: $name is on the release at zero bytes"; fail=1
+            else
+              echo "ok: $name ($size bytes)"
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "every expected asset is present on $TAG at non-zero size"
+
+  # ── npm, with no token anywhere. ────────────────────────────────────────────
+  npm:
+    needs: [gate, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Trusted Publishing: npm gets an OIDC identity, not a secret
+    strategy:
+      # Sequential, so a failure on the second package cannot be mistaken for
+      # a failure of the first - and npm publishes are irreversible after 72h.
+      max-parallel: 1
+      matrix:
+        package: ['.', 'tailers', 'sdk/js/packages/mcp']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: npm must be new enough for Trusted Publishing
+        # OIDC publishing needs npm >= 11.5.1. An older npm does not fail - it
+        # asks for a token it does not have, which reads as a credential
+        # problem rather than a version one.
+        run: |
+          set -eu
+          npm install -g npm@latest
+          NPM_V="$(npm --version)"
+          echo "npm $NPM_V"
+          # Compared numerically with sort -V. A string compare would put
+          # 11.10.0 before 11.5.1 and reject a version that is newer.
+          MIN=11.5.1
+          if [ "$NPM_V" != "$MIN" ] && \
+             [ "$(printf '%s\n%s\n' "$NPM_V" "$MIN" | sort -V | head -1)" != "$MIN" ]; then
+            echo "FAIL: npm $NPM_V is older than $MIN, the first version that can"
+            echo "      publish over OIDC. An older npm does not say so - it asks"
+            echo "      for a token it has not got, which reads as a credential"
+            echo "      problem rather than a version one."
+            exit 1
+          fi
+      - name: publish ${{ matrix.package }}
+        working-directory: ${{ matrix.package }}
+        run: |
+          set -eu
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          echo "publishing $NAME@$VER"
+          # Already published is a SUCCESS, not a failure: this workflow may be
+          # re-run to backfill, and npm refuses a duplicate version outright.
+          if npm view "$NAME@$VER" version >/dev/null 2>&1; then
+            echo "$NAME@$VER is already on the registry - nothing to do"
+            exit 0
+          fi
+          npm publish --provenance --access public
+      - name: VERIFY the registry serves it
+        working-directory: ${{ matrix.package }}
+        run: |
+          set -eu
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          # npm's own success line has been wrong before. Ask the registry.
+          for i in $(seq 1 12); do
+            got="$(npm view "$NAME@$VER" version 2>/dev/null || true)"
+            [ "$got" = "$VER" ] && { echo "ok: the registry serves $NAME@$VER"; exit 0; }
+            echo "not indexed yet ($i/12)"; sleep 10
+          done
+          echo "FAIL: the registry does not serve $NAME@$VER"; exit 1
