@@ -178,7 +178,13 @@ jobs:
           #    is Apple Silicon, so this is the arm64 slice's first execution
           #    anywhere - it was only ever verified structurally by `lipo`.
           lipo -archs /usr/local/bin/superlogd
-          /usr/local/bin/superlogd --version || { echo "FAIL: the installed superlogd will not run"; exit 1; }
+          # superlogd is `int main()` - it parses NO arguments. An earlier
+          # draft ran `superlogd --version`, which does not print a version and
+          # does not exit: it starts the daemon and blocks, so the step would
+          # have HUNG rather than failed, which is the worst failure a CI job
+          # can have. The port comes from SUPER_LOG_PORT, default 7333.
+          # Running it at all is proved by /healthz below, which is the only
+          # honest liveness check this binary offers.
 
           # 4. Does the bundled node have a WORKING JIT? `node --version`
           #    exits before V8 tiers up, so it passed while the real thing
@@ -200,11 +206,24 @@ jobs:
           "$NODE" -e 'let s=0; for(let i=0;i<3e7;i++) s=(s+Math.sqrt(i))|0; if(!Number.isFinite(s)) process.exit(1); console.log("jit ok", s);'
 
           # 5. Does the daemon actually serve? The whole product is a hub.
-          /usr/local/bin/superlogd --port 7399 &
+          SUPER_LOG_PORT=7399 /usr/local/bin/superlogd &
           DPID=$!
           for _ in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:7399/healthz" >/dev/null 2>&1; then
+            if BODY="$(curl -fsS "http://127.0.0.1:7399/healthz" 2>/dev/null)"; then
               echo "ok: the installed superlogd answered /healthz"
+              echo "$BODY"
+              # The gate proved the SOURCE agrees with the tag. This proves the
+              # INSTALLED ARTEFACT reports the same number - without it a stale
+              # build could be packaged and published under a tag it does not
+              # contain, which is precisely what happened when a .pkg survived
+              # a failed productbuild and shipped the previous run's file.
+              WANT="${{ needs.gate.outputs.version }}"
+              echo "$BODY" | grep -q "\"version\":\"$WANT\"" || {
+                echo "FAIL: the installed binary reports a version that is not $WANT"
+                kill "$DPID" 2>/dev/null || true
+                exit 1
+              }
+              echo "ok: the installed binary reports version $WANT"
               kill "$DPID" 2>/dev/null || true
               exit 0
             fi
@@ -241,6 +260,7 @@ jobs:
           DEB="$(ls packaging/deb/*_arm64.deb | head -1)"
           echo "installing $DEB inside an arm64 container"
           docker run --rm --platform linux/arm64 \
+            -e WANT="${{ needs.gate.outputs.version }}" \
             -v "$PWD/packaging/deb:/pkgs:ro" debian:bookworm-slim bash -euxc '
               apt-get update -qq
               apt-get install -y -qq curl >/dev/null
@@ -250,8 +270,10 @@ jobs:
               # Homebrew, and nothing noticed because nobody asserted PATH.
               command -v superlogd
               command -v superlog
-              superlogd --version
-              superlogd --port 7399 &
+              command -v superlog-log
+              # No argument parsing in this binary; the port is an env var and
+              # /healthz is the only real liveness signal.
+              SUPER_LOG_PORT=7399 superlogd &
               for _ in $(seq 1 30); do
                 curl -fsS http://127.0.0.1:7399/healthz && echo "ok: arm64 superlogd answered /healthz" && exit 0
                 sleep 1
@@ -266,8 +288,8 @@ jobs:
           DEB="$(ls packaging/deb/*_amd64.deb | head -1)"
           sudo dpkg -i "$DEB" || sudo apt-get -f install -y
           command -v superlogd
-          superlogd --version
-          superlogd --port 7398 &
+          command -v superlog
+          SUPER_LOG_PORT=7398 superlogd &
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:7398/healthz && echo "ok: amd64 superlogd answered /healthz" && exit 0
             sleep 1
