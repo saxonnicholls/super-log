@@ -70,12 +70,21 @@ done
 # A derived version cannot drift, so these are checked for still being derived
 # rather than for their value. If somebody hardcodes one, the guarantee is gone
 # and this is where it gets noticed.
-if ! grep -q 'require(./package.json).version\|package.json...version' scripts/make_macos_pkg.sh 2>/dev/null; then
+# A missing file and a changed file are different faults and must say so.
+# On the first real run of this gate the message read "no longer derives its
+# version from package.json" when the truth was that make_macos_pkg.sh had
+# never been committed at all - grep on an absent file just exits non-zero,
+# so the check reported the wrong cause and cost a tag.
+if [ ! -f scripts/make_macos_pkg.sh ]; then
+    bad "scripts/make_macos_pkg.sh is MISSING from this checkout - the macOS job cannot run"
+elif ! grep -q 'require(./package.json).version\|package.json...version' scripts/make_macos_pkg.sh 2>/dev/null; then
     bad "scripts/make_macos_pkg.sh no longer derives its version from package.json"
 else
     say "ok   scripts/make_macos_pkg.sh derives its version (cannot drift)"
 fi
-if ! grep -q '%{version}' packaging/rpm/super-log.spec 2>/dev/null; then
+if [ ! -f packaging/rpm/super-log.spec ]; then
+    bad "packaging/rpm/super-log.spec is MISSING from this checkout"
+elif ! grep -q '%{version}' packaging/rpm/super-log.spec 2>/dev/null; then
     bad "packaging/rpm/super-log.spec no longer takes %{version} from the build"
 else
     say "ok   packaging/rpm/super-log.spec takes %{version} from the build (cannot drift)"
