@@ -18,7 +18,7 @@ on:
   pull_request:
 
 env:
-  TS_MOVEABLES_TAG: 3f8e412dfd3644e91017fbf6dc943e665a0b754d  # v1.1.2 (Origin check)
+  TS_MOVEABLES_TAG: c15ac0fe0f1d07e3217bac8284d40af39735b36d  # v1.2.1 (parallel_for/constexpr_for; keeps Origin check)
 
 jobs:
   cpp-linux:
