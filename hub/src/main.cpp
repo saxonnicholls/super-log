@@ -493,6 +493,15 @@ int main()
     const std::uint16_t want_port = port_from_env();
 
     http::ws_broadcast_hub::config hcfg;
+    // VS Code and its forks (Cursor, Windsurf) serve the bench viewer from a
+    // webview whose Origin is vscode-webview://<guid>. That scheme is minted by
+    // the user's own editor and cannot be forged by a remote page - a website's
+    // Origin is always http(s) - so it is trustworthy-local exactly like
+    // loopback, and the in-editor viewer is dead without it. allow_if only ever
+    // widens the policy (it cannot veto a decline), so this stays secure.
+    hcfg.origin.allow_if = [](std::string_view o) {
+        return o.rfind("vscode-webview://", 0) == 0;
+    };
     // Each ring entry is one POSTed chunk, so this is a count of CHUNKS and
     // not of events or of bytes - which is the whole reason it is not 1024
     // any more. A chunk is whatever a producer chose to batch: the SDKs send

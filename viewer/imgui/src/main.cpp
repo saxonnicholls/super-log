@@ -1626,9 +1626,41 @@ int main()
         };
         if (ImGui::BeginMainMenuBar()) {
             render_menu_array(menu.spec, menu, menu_actions);
+
+            // super-log Cloud login light, right-aligned just left of the
+            // clocks. Kept fresh even when the AI panel is closed - a cheap
+            // ~3s re-read of ~/.superlog/cloud.json - and clickable at any time
+            // to sign in (opens the browser). Green = signed in, red = not.
+            bool signed_in;
+            std::string connect_url;
+            {
+                // ai_state is shared with the panel's fetch workers, so the read
+                // and the file re-read both hold its mutex.
+                std::lock_guard<std::mutex> lk(ai.m);
+                if (ai.last_cfg_check == 0.0 || ImGui::GetTime() - ai.last_cfg_check > 3.0) {
+                    ai_load_config_locked(ai);
+                    ai.last_cfg_check = ImGui::GetTime();
+                }
+                signed_in = ai.signed_in;
+                connect_url = ai.connect_url;
+            }
+            const char* cloud_lbl = signed_in ? "Cloud: signed in" : "Cloud: sign in";
+
             // Where you are, and when - right-aligned, from viewer/config.json.
             const std::string ec = env_clock_text(vcfg);
             const float w = ImGui::CalcTextSize(ec.c_str()).x;
+            const float cw = ImGui::CalcTextSize(cloud_lbl).x
+                           + ImGui::GetStyle().FramePadding.x * 2.0f;
+            ImGui::SameLine(ImGui::GetWindowWidth() - w - cw - 32.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, signed_in ? ImVec4(0.41f, 0.79f, 0.39f, 1.0f)
+                                                           : ImVec4(0.88f, 0.36f, 0.31f, 1.0f));
+            if (ImGui::SmallButton(cloud_lbl)) ai_open_url(connect_url);
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(signed_in
+                    ? "super-log Cloud - signed in\nclick to manage in your browser"
+                    : "super-log Cloud - not signed in\nclick to sign in (opens your browser)");
+
             ImGui::SameLine(ImGui::GetWindowWidth() - w - 16.0f);
             ImGui::TextDisabled("%s", ec.c_str());
             ImGui::EndMainMenuBar();

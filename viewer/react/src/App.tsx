@@ -30,7 +30,7 @@
 //  ---------------------------------------------------------------------------
 //
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLogFeed, type LogRow } from './useLogFeed';
 import { AlarmBlotter } from './AlarmBlotter';
 import { WebhookPanel } from './WebhookPanel';
@@ -42,6 +42,7 @@ import { AgentPanel } from './AgentPanel';
 import { PRPanel } from './PRPanel';
 import { RpcPanel } from './RpcPanel';
 import { AiPanel } from './AiPanel';
+import { CLOUD_TOKEN, CONNECT_URL } from './cloud';
 import { MenuBar, menuDefaults } from './MenuBar';
 import { gatewayUrl, type Selftest, type SelftestStep } from './useGateway';
 import { COPY_LINE_CHOICES, capForCopy, copyText, download, rowText, stamp, timeOf, toCsv, toJson, toTxt } from './exporting';
@@ -107,7 +108,28 @@ export default function App() {
   // stack, and several open at once is the wall of text again.
   const [expanded, setExpanded] = useState<number | null>(null);
   const [paused, setPaused] = useState(false);
-  const bottom = useRef<HTMLDivElement>(null);
+  const mainCol = useRef<HTMLElement>(null);
+
+  // In-app zoom, this window only: Cmd +/- zooms the whole editor/browser, so
+  // the viewer carries its own. `zoom` scales fonts AND layout together, which
+  // is what "make it bigger" means in a view this dense with hard-coded px -
+  // and the root's height/width are pre-divided by it so the scaled app still
+  // fills the viewport exactly, with no stray scrollbars. Remembered per viewer.
+  const [zoom, setZoom] = useState<number>(() => {
+    try {
+      const v = parseFloat(localStorage.getItem('superlog.viewer.zoom') ?? '');
+      return Number.isFinite(v) && v >= 0.6 && v <= 2 ? v : 1;
+    } catch { return 1; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('superlog.viewer.zoom', String(zoom)); } catch { /* private window */ }
+  }, [zoom]);
+  const bumpZoom = (d: number) =>
+    setZoom((z) => Math.min(2, Math.max(0.6, Math.round((z + d) * 100) / 100)));
+
+  // Signed in to super-log Cloud? True when a Cloud token reached the page
+  // (the launcher's #cloud=, or the VS Code host from ~/.superlog/cloud.json).
+  const cloudSignedIn = CLOUD_TOKEN.length > 0;
   // Pause freezes the DISPLAY, not the collection: the feed keeps filling
   // `rows` (capped ring) while the frozen snapshot is what renders, and
   // play snaps back to the live tail. setRows always replaces the array,
@@ -133,11 +155,18 @@ export default function App() {
   }, [source, minLevel, needle, topicFilter, traceFilter]);
 
   useEffect(() => {
-    if (follow) bottom.current?.scrollIntoView();
+    // Follow = stay pinned to the newest row: a VERTICAL move of the log column
+    // only. scrollIntoView() scrolls every scrollable ancestor in BOTH axes, so
+    // it also yanked the horizontal panel strip back to the left on every
+    // update - making the other windows unreachable the moment a row arrived.
+    // Setting scrollTop on the column itself touches nothing else.
+    if (follow && mainCol.current) mainCol.current.scrollTop = mainCol.current.scrollHeight;
   }, [visible, follow]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column',
+                  height: `calc(100vh / ${zoom})`, width: `calc(100vw / ${zoom})`,
+                  zoom } as CSSProperties}>
       <MenuBar toggles={toggles} hub={HUB}
                onToggle={(a) => setToggles((t) => ({ ...t, [a]: !t[a] }))}
                onAction={(a) => { if (a === 'selftest') void runTest(); }} />
@@ -156,6 +185,20 @@ export default function App() {
         <span style={{ color: connected ? '#68c964' : '#e05b4f' }}>
           {connected ? '● live' : '○ reconnecting…'}
         </span>
+        {/* super-log Cloud login light - clickable at any time. Green cloud =
+            signed in, red = not. A real <a> so a VS Code webview opens it (it
+            blocks window.open); target _blank opens a browser tab elsewhere. */}
+        <a href={CONNECT_URL} target="_blank" rel="noopener noreferrer"
+           title={cloudSignedIn
+             ? 'super-log Cloud — signed in (click to manage)'
+             : 'super-log Cloud — sign in (opens your browser)'}
+           style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+                    textDecoration: 'none', color: cloudSignedIn ? '#68c964' : '#e05b4f' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M6.5 19a4.5 4.5 0 0 1-.55-8.98 6 6 0 0 1 11.65-1.05A4.5 4.5 0 0 1 17.5 19h-11z" />
+          </svg>
+          <span style={{ fontSize: 12 }}>{cloudSignedIn ? 'signed in' : 'sign in'}</span>
+        </a>
         <button
           style={selStyle}
           title={paused ? 'resume the live tail' : 'freeze the display (collection continues)'}
@@ -180,6 +223,14 @@ export default function App() {
         <label style={{ userSelect: 'none' }}>
           <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> follow
         </label>
+        {/* Text size for THIS window (Cmd +/- would zoom the whole editor). */}
+        <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+              title="text size — this viewer only">
+          <button style={selStyle} onClick={() => bumpZoom(-0.1)} aria-label="smaller text">A−</button>
+          <button style={{ ...selStyle, minWidth: 42 }} onClick={() => setZoom(1)}
+                  title="reset to 100%">{Math.round(zoom * 100)}%</button>
+          <button style={selStyle} onClick={() => bumpZoom(0.1)} aria-label="larger text">A+</button>
+        </span>
         {traceFilter && (
           <button onClick={() => setTraceFilter(null)}
                   style={{ ...selStyle, borderColor: '#bb9af7', color: '#bb9af7' }}
@@ -231,7 +282,7 @@ export default function App() {
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflowX: 'auto' }}>
       {toggles['toggle.log'] !== false &&
-      <main style={{ flex: '1 0 520px', minWidth: 520, overflowY: 'auto', padding: '4px 12px' }}>
+      <main ref={mainCol} style={{ flex: '1 0 520px', minWidth: 520, overflowY: 'auto', padding: '4px 12px' }}>
         {/* A firehose: keep the ring for copy/export, but only render the tail -
             the DOM, not the data, is what makes the browser stall. */}
         {visible.length > 500 && (
@@ -286,7 +337,6 @@ export default function App() {
             </span>
           </div>
         ))}
-        <div ref={bottom} />
       </main>}
       {/* Production and development, separated: the alarm blotter (sparse,
           one row per key) and the webhook workbench (endpoints, deliveries,

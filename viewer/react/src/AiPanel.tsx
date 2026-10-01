@@ -11,9 +11,7 @@
 // TEXT, never markup (log content is data, all the way: the log4j rule).
 
 import { useEffect, useState, type CSSProperties } from 'react';
-
-const API_BASE = 'https://api.super-log.com';
-const CONNECT_URL = 'https://super-log.com/connect';
+import { CLOUD_TOKEN, CONNECT_URL, cloudFetch } from './cloud';
 
 // The built-in pitch. Shown only when the Cloud can't be reached to send its own
 // (fresher) copy - a customer must never meet a dead end here. Kept honest and
@@ -30,18 +28,6 @@ const FALLBACK_OFFER: Offer = {
   cta: { label: 'Start free — 2 seats', url: CONNECT_URL },
 };
 
-// The launcher hands the page a one-time #cloud=<token> fragment; read it once
-// and drop it from the URL so it never lingers in history or a screenshot.
-function readCloudToken(): string {
-  try {
-    const m = window.location.hash.match(/[#&]cloud=([^&]+)/);
-    if (m && m[1]) {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-      return decodeURIComponent(m[1]);
-    }
-  } catch { /* no hash available */ }
-  return '';
-}
 
 interface Tier { name: string; blurb?: string; seats?: number; price_usd_month?: number }
 interface Offer { headline?: string; body?: string; tiers?: Tier[]; cta?: { label?: string; url?: string } }
@@ -69,7 +55,7 @@ const ART_BAR = '-'.repeat(ART_ROW.length);
 const ASCII_LOGO = `+${ART_BAR}+\n|${ART_ROW}|\n+${ART_BAR}+`;
 
 export function AiPanel() {
-  const [token] = useState(readCloudToken);
+  const token = CLOUD_TOKEN;
   const [entitled, setEntitled] = useState<boolean | null>(null);
   const [plan, setPlan] = useState('');
   const [remaining, setRemaining] = useState<number | null>(null);
@@ -85,9 +71,9 @@ export function AiPanel() {
     (async () => {
       if (!token) { setEntitled(false); return; }
       try {
-        const r = await fetch(`${API_BASE}/ai/entitlement`, { headers: { Authorization: `Bearer ${token}` } });
+        const r = await cloudFetch('/ai/entitlement', { token });
         if (r.status === 401) { if (live) setEntitled(false); return; }
-        const j = await r.json();
+        const j = r.json ?? {};
         if (!live) return;
         setEntitled(!!j.entitled);
         setPlan(j.plan || '');
@@ -102,7 +88,7 @@ export function AiPanel() {
   useEffect(() => {
     if (entitled !== false || offer) return;
     let live = true;
-    fetch(`${API_BASE}/ai/offer`).then((r) => r.json()).then((j) => { if (live && j) setOffer(j); })
+    cloudFetch('/ai/offer').then((r) => { if (live && r.json) setOffer(r.json as Offer); })
       .catch(() => { /* keep the built-in pitch */ });
     return () => { live = false; };
   }, [entitled, offer]);
@@ -110,12 +96,11 @@ export function AiPanel() {
   async function interpret() {
     setBusy(true); setReading('');
     try {
-      const r = await fetch(`${API_BASE}/ai/interpret`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      const r = await cloudFetch('/ai/interpret', {
+        method: 'POST', token,
         body: JSON.stringify({ audience, kind: 'bench', wait_ms: 20000 }),
       });
-      const j = await r.json();
+      const j = r.json ?? {};
       const rd = j.reading || {};
       setReading(rd.text || '(no reading returned)');
       setTopics((rd.context?.topTopics || []).slice(0, 6));
@@ -172,9 +157,14 @@ export function AiPanel() {
           </ul>
         )}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: 8 }}>
-          <button style={primaryBtn} onClick={() => window.open(o.cta?.url || CONNECT_URL, '_blank')}>
+          {/* A real anchor, not a button+window.open: a VS Code webview blocks
+              window.open (the click did nothing there), but it intercepts a
+              genuine <a href> click and opens it in the OS browser - and a
+              standalone browser opens a new tab. One element, both homes. */}
+          <a style={{ ...primaryBtn, textDecoration: 'none', display: 'inline-block' }}
+             href={o.cta?.url || CONNECT_URL} target="_blank" rel="noopener noreferrer">
             {o.cta?.label || 'Start free — 2 seats'}
-          </button>
+          </a>
         </div>
         <div style={{ ...dim, marginTop: 10 }}>or run <code style={codeChip}>superlog login</code> in your terminal</div>
       </div>
