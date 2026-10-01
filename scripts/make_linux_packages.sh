@@ -99,8 +99,9 @@ build_and_verify_deb() {
     if docker run --rm --platform "$PLATFORM" -v "$REPO:/src" -w /tmp "$IMG_DEB" sh -c "
         set -e
         export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq >/dev/null 2>&1
-        apt-get install -y -qq /src/packaging/deb/super-log_${VERSION}_${ARCH_LABEL}.deb curl >/dev/null 2>&1
+        apt-get update -qq || { echo 'VERIFY-FAIL: apt-get update failed'; exit 1; }
+        apt-get install -y -qq /src/packaging/deb/super-log_${VERSION}_${ARCH_LABEL}.deb curl \
+          || { echo 'VERIFY-FAIL: apt-get could not install the .deb (dependency or download)'; exit 1; }
         MISSING=''
         for c in $CMDS; do command -v \"\$c\" >/dev/null 2>&1 || MISSING=\"\$MISSING \$c\"; done
         [ -z \"\$MISSING\" ] || { echo \"MISSING ON PATH:\$MISSING\"; exit 1; }
@@ -152,7 +153,8 @@ build_and_verify_rpm() {
     CMDS="$(expected_commands | tr '\n' ' ')"
     if docker run --rm --platform "$PLATFORM" -v "$REPO:/src" -w /tmp "$IMG_RPM" sh -c "
         set -e
-        dnf install -y -q /src/packaging/rpm/$BASENAME curl >/dev/null 2>&1
+        dnf install -y -q /src/packaging/rpm/$BASENAME curl \
+          || { echo 'VERIFY-FAIL: dnf could not install the .rpm (dependency or download)'; exit 1; }
         MISSING=''
         for c in $CMDS; do command -v \"\$c\" >/dev/null 2>&1 || MISSING=\"\$MISSING \$c\"; done
         [ -z \"\$MISSING\" ] || { echo \"MISSING ON PATH:\$MISSING\"; exit 1; }

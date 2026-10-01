@@ -254,6 +254,20 @@ jobs:
       # The Raspberry Pi leg. Until this existed the arm64 .deb had only ever
       # been built under QEMU, never installed and never run - so "it works on
       # a Pi" was an inference from a successful build.
+      # The verify logs live inside the runner and are the only account of why
+      # a leg failed. On the first real run all four legs failed and the reason
+      # was unreachable from outside, which made a diagnosable failure an
+      # undiagnosable one. if: always() because the interesting case is failure.
+      - name: keep the verify logs whatever happens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-verify-logs
+          path: |
+            packaging/deb/.verify-*.log
+            packaging/rpm/.verify-*.log
+          if-no-files-found: warn
+
       - name: INSTALL the arm64 .deb under arm64 and run it
         run: |
           set -eu
@@ -394,7 +408,12 @@ jobs:
       # a failure of the first - and npm publishes are irreversible after 72h.
       max-parallel: 1
       matrix:
-        package: ['.', 'tailers', 'sdk/js/packages/mcp']
+        # ONLY the two that are actually publishable. The repo root is
+        # package `super-log`, which on npm belongs to leizongmin (a 2016
+        # logging library) - ours is private:true so npm would refuse rather
+        # than publish to a stranger's name, but the leg would still fail the
+        # job. viewer/react is private as well.
+        package: ['tailers', 'sdk/js/packages/mcp']
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
