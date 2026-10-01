@@ -74,13 +74,24 @@ rpc.json
 
 # built packages
 packaging/deb/*.deb
+packaging/deb/.build-*.log
+packaging/deb/.verify-*.log
 build-deb/
 build-inst/
 
 # the Homebrew tap is its own repo, cloned here for convenience
 homebrew-tap/
 packaging/rpm/*.rpm
+packaging/rpm/.build-*.log
+packaging/rpm/.verify-*.log
 build-rpm/
+
+# built macOS .pkg + the downloaded/verified Node runtimes it bundles -
+# both regenerable by scripts/make_macos_pkg.sh, neither belongs in git
+packaging/macos/*.pkg
+packaging/macos/.node-cache/
+build-pkg-arm64/
+build-pkg-x86_64/
 
 # release signing identity (personal)
 scripts/release.env

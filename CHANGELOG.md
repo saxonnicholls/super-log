@@ -5,6 +5,38 @@ not, because that distinction matters more than the feature list.
 
 ## Unreleased
 
+**A backing store for the feed: `superlog-store` (SQLite + Postgres).** An
+optional outlet that tails the journal and writes every event into an external
+database, so the bench's history is queryable in SQL beside the NDJSON journal -
+and it stays dependency-free by writing through the database's OWN CLI
+(`sqlite3`, `psql`), which you install, invoked as a subprocess like the tailers
+already shell out to git and docker. It tails the JOURNAL (the complete on-disk
+record, not lossy `/ws`), resumes from a persisted cursor, and a primary key
+`(epoch,hub_seq,idx)` makes replay idempotent. Auto-starts from `.env`
+(`SUPER_LOG_STORE=sqlite|postgres`). It reports its own ceiling honestly on
+`store.<host>.<backend>` - rows written, queue depth, lag, and a WARN when it
+drops because the DB could not keep up - which is the honest upsell to super-log
+Cloud (managed ingest, no ceiling). MIT: BYO-database self-hosting, the same
+category as the OTLP export. Design in docs/proposals/backing-store.md. VERIFIED:
+tests/store.test.mjs drives the SQLite path end to end (journal follower -> row
+expansion -> escaping -> sqlite3 -> rows, plus idempotent replay); the Postgres
+path is **verified live** against a real Postgres over mTLS - rows land with
+`::jsonb` intact and `ON CONFLICT` deduping a replay. MySQL, ClickHouse and a
+COPY fast-path are next; RocksDB is out (no zero-dependency streaming CLI).
+
+**Runtime crashes on the bench: `superlog-crash`.** A process that segfaults says
+nothing to your logs - it is gone before it can - so the evidence lands in the
+OS's crash reporter instead (a macOS `.ips`, a Linux core via `coredumpctl`, a
+Windows WER `.dmp`). This watches those and, the instant a new one appears,
+publishes ONE ERROR on `crash.<host>.<process>` carrying the signal, the
+exception and the faulting thread's top frames - so a crash shows up beside the
+build that produced it and the service that just went quiet, instead of being
+read by hand out of a report nobody opened. First poll is a silent baseline;
+`--backfill N` replays the newest few; `--include NAME` filters by process. Zero
+dependency - the OS's own reporter, and `coredumpctl` on Linux. VERIFIED:
+tests/crash.test.mjs drives it against a live hub off a synthetic report, and on
+this bench it captured a real SIGSEGV with the ImageIO frames intact, end to end.
+
 **Git, correlated with what the bench saw.** `superlog git install-hooks` writes
 a `post-commit` hook that stamps a `git.commit` frame on the bench the instant a
 commit lands — the same `change:commit` shape as the `superlog-git` watcher, so a

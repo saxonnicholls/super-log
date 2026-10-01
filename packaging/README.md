@@ -5,8 +5,41 @@ authored and verified locally; the final publish step for three of them
 needs an account or repo that only the maintainer can create — those are
 called out as **PUBLISH (maintainer)**.
 
-The local installer (`scripts/install.sh`) and the npm packages need none
-of this — see the repo README.
+For the full install matrix from a user's point of view (which button, which
+command, per platform) see **[docs/INSTALL.md](../docs/INSTALL.md)** — this
+file is about how each artefact is built and verified, not how to install
+one. The `scripts/install.sh` build-from-clone path and the npm packages
+need none of this — see the repo README.
+
+## macos/ — the universal `.pkg` (Intel + Apple Silicon, one file)
+
+`scripts/make_macos_pkg.sh` builds `superlogd` for both `arm64` and
+`x86_64` separately, `lipo`s them into one binary, bundles a checksum-
+verified Node runtime per architecture (used only when no system `node` is
+found), stages every tailer as a PATH wrapper, and runs `pkgbuild` +
+`productbuild`. Written specifically because [Homebrew 7.0.0][hb7]
+(2026-09-13) moved macOS Intel to Tier 3 — no routine bottle builds — so
+`brew install` there now compiles from source or fails; the `.pkg` does not
+depend on Homebrew's tier ladder at all.
+
+- Verify: `scripts/make_macos_pkg.sh` — it verifies its own output (expands
+  the built `.pkg`, asserts `lipo -archs` reports both architectures,
+  asserts every one of the 49 tailer commands is present and executable,
+  and actually runs the binary for whichever architecture the build host
+  itself is). **VERIFIED** on an x86_64 build host: both architectures
+  built and structurally checked, the x86_64 slice actually executed
+  (this host cannot execute the arm64 slice — no reverse-Rosetta on
+  macOS — so that side is checked with `lipo -archs`/`file`, not run).
+- **Signing/notarising:** reads Developer ID identities from
+  `super-log-commercial/.credentials/apple.env` if present (or from
+  already-exported `APPLE_SIGN_APP`/`APPLE_SIGN_PKG`/`APPLE_NOTARY_PROFILE`
+  env vars, which is how CI supplies them). **No Developer ID certificate
+  exists yet** (only Xcode-local "Apple Development" ones) — until one
+  does, this builds UNSIGNED and says so loudly, because Gatekeeper
+  refuses an unsigned `.pkg` on any machine that downloaded it.
+- **PUBLISH (maintainer):** attach the `.pkg` to the GitHub release (done
+  automatically by `.github/workflows/release.yml` on a tag push) — do not
+  link it from the website until it is signed and notarised.
 
 ## homebrew/ — `brew install saxonnicholls/tap/super-log`
 
@@ -24,15 +57,19 @@ installs the SDK headers, exposes every tailer as a command, and registers
 produces `super-log_<version>_<arch>.deb`: the hub binary, SDK headers,
 tailers as commands, and a systemd unit enabled by `postinst`.
 
-- Verify (from the repo root):
-  ```sh
-  docker run --rm -v "$PWD:/src" -w /src ubuntu:24.04 sh -c \
-    'apt-get update && apt-get install -y nodejs cmake build-essential dpkg-dev && sh packaging/deb/build-deb.sh'
-  ```
-  (Confirmed building a valid .deb this way.)
-- **PUBLISH (maintainer):** attach the `.deb` to the GitHub release for
-  direct download, or host an apt repo (reprepro/aptly on a static host or
-  R2) for `apt install super-log`.
+- Verify: `scripts/make_linux_packages.sh deb` — builds `amd64` and
+  `arm64` (arm64 under QEMU emulation on a non-arm64 host), each verified
+  by installing into a **fresh container** with the real `apt-get install`
+  (so declared `Depends` actually resolve) and then running it: every
+  tailer command checked present on PATH (all 49, not a sample), the hub
+  answers `/healthz`, and a tailer actually runs. **VERIFIED** this way for
+  both architectures. (This also runs `build-deb.sh` directly, unchanged,
+  if you only want the raw build — see the docker one-liner in that
+  script's own header.)
+- **PUBLISH (maintainer):** attach the `.deb` to the GitHub release (done
+  automatically by `.github/workflows/release.yml` on a tag push), or host
+  an apt repo (reprepro/aptly on a static host or R2) for `apt install
+  super-log`.
 
 ## rpm/ — `dnf`/`rpm` for Fedora, RHEL, Rocky, Alma & openSUSE
 
@@ -41,21 +78,19 @@ tool) produces `super-log-<version>-1.<dist>.<arch>.rpm`: the same payload
 as the .deb — hub binary, SDK headers, tailers as commands, and a systemd
 unit with the standard `%post`/`%preun`/`%postun` scriptlets.
 
-- Verify (from the repo root):
-  ```sh
-  docker run --rm -v "$PWD:/src" -w /src fedora:41 sh -c \
-    'dnf install -y rpm-build cmake gcc-c++ make git nodejs libatomic systemd-rpm-macros && sh packaging/rpm/build-rpm.sh'
-  ```
-  **VERIFIED** end to end: builds the package, then a fresh
-  `fedora:41` container `dnf install`s the resulting `.rpm`, the binaries
-  land on PATH, and `superlogd` answers `/healthz`. Two real bugs were
-  found by building it for real — the hub links `libatomic` (now a
-  Build/Requires here and a `libatomic1` Depends on the .deb), and
-  `CMAKE_INSTALL_LIBDIR` is pinned to `lib` so the header-only
-  `find_package` config lands where `%files` names it on Fedora's `lib64`
-  default.
-- **PUBLISH (maintainer):** attach the `.rpm` to the GitHub release,
-  host a dnf repo, or build it on COPR (see the tier ladder below).
+- Verify: `scripts/make_linux_packages.sh rpm` — builds `x86_64` **and
+  `aarch64`** (the arm64 leg did not exist before; a Fedora user on
+  aarch64 had nothing), each verified the same way as the .deb above: a
+  fresh container, a real `dnf install`, every tailer command checked
+  present on PATH, `/healthz`, a tailer actually running.
+  Earlier bugs found by building it for real (still true, still fixed
+  here): the hub links `libatomic` (a Build/Requires here and a
+  `libatomic1` Depends on the .deb), and `CMAKE_INSTALL_LIBDIR` is pinned
+  to `lib` so the header-only `find_package` config lands where `%files`
+  names it on Fedora's `lib64` default.
+- **PUBLISH (maintainer):** attach the `.rpm` to the GitHub release (done
+  automatically by `.github/workflows/release.yml` on a tag push), host a
+  dnf repo, or build it on COPR (see the tier ladder below).
 
 ## vcpkg/ — `vcpkg install super-log[cpp]` (the C and C++ SDK, incl. Windows)
 
@@ -84,9 +119,9 @@ not vcpkg artifacts — they ship via apt/brew/source.
 
 The artifacts above are the foundation; this is how they reach `apt
 install super-log` and `dnf install super-log` on a stranger's machine.
-Three tiers, cheapest first. **The .deb and .rpm are built and verified —
-everything below is distribution, and most of it needs a maintainer
-account, not more code.**
+Three tiers, cheapest first. **The .deb, .rpm and macOS .pkg are all built
+and verified — everything below is distribution, and most of it needs a
+maintainer account, not more code.**
 
 ### Tier 1 — build services (free, no gatekeeper, all architectures)
 
@@ -110,14 +145,22 @@ Raspberry Pi needs without owning a Pi.
 
 No third party, but you sign and host.
 
-- **Attach the `.deb` and `.rpm` to each GitHub release** (`gh release
-  upload vX.Y.Z super-log_*.deb super-log-*.rpm`). Immediate `curl`-and-
-  install for anyone, and the source of truth a repo or installer pulls
+- **Attach the `.deb`, `.rpm` and `.pkg` to each GitHub release**, plus a
+  `SHA256SUMS` covering all of them — done automatically by
+  `.github/workflows/release.yml` on a tag push (`scripts/release.sh`
+  attaches the `.deb`/`.rpm`/`.mcpb` by hand for the other four homes it
+  publishes to; the two are additive, not competing — see that workflow's
+  own header). Immediate `curl`-and-install for anyone, and the source of
+  truth `scripts/install.sh`'s fetch mode and any future apt/dnf repo pull
   from.
-- **A one-line installer** that detects the distro, downloads the right
-  artifact from the latest release and installs it — the htop/ripgrep
-  on-ramp (`curl -fsSL https://super-log.com/install.sh | sh`). Distinct
-  from `scripts/install.sh`, which builds from source.
+- **A one-line installer** that detects the OS/architecture, downloads the
+  right artifact from the latest release, **verifies it against
+  `SHA256SUMS` before running anything**, and installs it — the
+  htop/ripgrep on-ramp (`curl -fsSL https://super-log.com/install.sh | sh`).
+  This is `scripts/install.sh` itself, not a second file: it tells "piped
+  from curl, no clone" apart from "run from inside a clone" by whether it
+  is actually sitting in a real super-log checkout, and only builds from
+  source in the second case.
 - **A signed apt/dnf repo** on any static host (GitHub Pages, Cloudflare
   R2, S3): `reprepro` for apt, `createrepo_c` for dnf, one GPG signing
   key. Then the add-repo one-liner and `apt/dnf install super-log` with
@@ -143,8 +186,24 @@ for being *in* the archives, which is what "standard" ultimately means.
 
 ## The shared keystone
 
-All three native lanes rely on the CMake `-DSUPER_LOG_INSTALL=ON` rules
-(hub binary, SDK headers, `find_package(superlog)` config). Any release
-tag bump flows to: the three `package.json` versions, the CMake
+All native lanes rely on the CMake `-DSUPER_LOG_INSTALL=ON` rules (hub
+binary, SDK headers, `find_package(superlog)` config). Any release tag
+bump flows to: the three `package.json` versions, the CMake
 `project(... VERSION ...)`, the formula `url`/`sha256`, `SUPER_LOG_VERSION`
-for the deb, and the `vcpkg.json` version. Keep them in step.
+for the deb/rpm, and the `vcpkg.json` version — `scripts/bump-version.sh`
+does this in one command. `scripts/make_macos_pkg.sh` and
+`scripts/make_linux_packages.sh` read the version straight from
+`package.json` at build time (or `SUPER_LOG_VERSION` if set, matching the
+deb/rpm scripts), so neither one needed adding to that bump list.
+
+Also fixed this session, in `build-deb.sh`, `super-log.spec` and
+`homebrew/super-log.rb` alike: `superlog-log` (the one tailer that is a
+plain POSIX shell script, not a `.mjs` — it has to run where there is no
+Node at all) was being copied into every package but never getting a PATH
+wrapper, because each wrapper-generation loop only globbed `superlog-*.mjs`.
+It shipped inert in all three channels until the fix. Found by actually
+asserting every tailer lands on PATH in `scripts/make_macos_pkg.sh` and
+`scripts/make_linux_packages.sh`'s verify steps, not by spot-checking a
+couple of them.
+
+[hb7]: https://brew.sh/2026/09/13/homebrew-7.0.0/

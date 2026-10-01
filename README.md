@@ -72,6 +72,14 @@ device clocks, which drift.
 
 ## Quick start
 
+Full install matrix (macOS `.pkg`, `.deb`, `.rpm`, the universal
+`curl | sh`, Homebrew, building from source) with the exact commands for
+each: **[docs/INSTALL.md](docs/INSTALL.md)**. The short version:
+
+```sh
+curl -fsSL https://super-log.com/install.sh | sh
+```
+
 **macOS** — Homebrew:
 
 ```sh
@@ -1226,11 +1234,22 @@ appear; `--to <target>` adds a watched route with per-hop RTT and AS/owner.*
 | `sql`         | `sql.<name>` — SQL on the bench, two engines. **Postgres**: the tailer holds `LISTEN` open, so any trigger, stored procedure or batch job logs with **one built-in statement** — `NOTIFY superlog, '{"level":"ERROR","msg":"reconciliation drift"}'` — no extensions, no privileges beyond NOTIFY; JSON payloads carry level/msg/fields, plain text arrives INFO verbatim. **SQLite**: the database *file* watched from outside the process — the header's own change counter, page count and `-wal` growth, read without taking a lock — because in-process code already has a language SDK, and the outside observer is what was missing. Both poll `--query "name=SELECT …"` into `metric` readings; a failing query is ONE WARN until it recovers. Batch jobs and triggers are exactly the code that fails silently at 3am; the NOTIFY bridge gives them a voice for the cost of one statement. Delivery latency is bounded by the heartbeat interval (default 1s), and notifications are not queued for absent listeners — the tailer brackets any gap with WARN/RECOVERED so absence is never mistaken for health. | Built for the multi-hundred-gigabyte**Hugging Face** era: tqdm bars are `\r`-rewritten, mute themselves in pipes, and reset per shard, so beside reading the bar it can `--watch` the destination itself, which no tool can mute. A **stall** — no movement for 30s — is an edge-triggered WARN hours before the fetch's own patience runs out, and recovery says so too. A wrapper as transparent as `build`: same output, same stdin, same exit status.                                                                                                                                                                                                                                                                                                                               |
 
 | `git`         | `git.<host>.<repo>` — a checkout on the timeline: commits (subject + shortstat), branch switches, rewritten history, tags and merge conflicts. `superlog-git` **watches** repos (silent baseline, then only changes); `superlog git install-hooks` adds a **post-commit hook** that stamps each commit the instant it lands; `superlog git recall <commit>` replays every log the bench collected **between that commit and the next** — the build that ran, the tests, the services that flapped, correlated to the change that caused them. | A **commit is INFO** (its subject is the message); **rewritten history is WARN** — a rebase/amend/force-push, unremarkable on your own branch and the worst news of the day on a shared one, and the watcher cannot tell which; **merge conflicts are WARN** and resolution recovers; a **checkout that vanished is ERROR**, said once. `recall` reads the LOCAL journal (durable recall across sealed segments and other hosts is the Cloud console). |
+| `crash`       | `crash.<host>.<process>` — a process that **crashed**, the moment its report lands: `superlog-crash` reads the OS's own crash reporter (macOS `.ips`/`.crash`, Linux cores via `coredumpctl`, Windows WER) and publishes **one event per new crash**, carrying the signal, the exception and the faulting thread's top frames — so a segfault anywhere on the bench shows up beside the build that produced it and the service that just went quiet, instead of being read by hand out of a report nobody opened. `--backfill N` replays recent crashes, `--include NAME` filters by process. | A crash is **ERROR** — the worst a process can do, but already done, not CRITICAL-in-progress. First poll is a silent baseline; only reports written after it are events. It captures nothing and needs no privileges — a process the OS wrote no report for (SIGKILL/OOM) won't appear here, so watch that service's own stream for those. |
+| `store`       | `store.<host>.<backend>` — an optional **backing store**: `superlog-store` tails the journal and writes every event into **SQLite or Postgres** (MySQL, ClickHouse next) through the database's **own CLI** (`sqlite3`/`psql`), so nothing of ours is linked — the empty-SBOM promise holds. Auto-starts from `.env` (`SUPER_LOG_STORE=…`); idempotent (a primary key dedupes replays); Postgres credentials go through `psql`'s own env, never our code. | It publishes its **own** health — rows written, queue depth, **lag** — and an edge-triggered **WARN when it drops** (the journal rotated past it before the DB drained). The free store's ceiling is honest and stated by the bench; retaining everything at fleet scale is **super-log Cloud**. |
 
 `dns` queries one chosen resolver (1.1.1.1 by default) so a change means the
 record changed, not that a laptop moved networks and hit a different cache.
 `build` is transparent: it prints the output and exits with the build's own
 status, so it can sit inside a Makefile or a CI step unchanged.
+
+`crash` needs no arguments — `superlog start crash` and every future crash on
+the machine lands on the bench; add `--backfill 10` to also replay the ten most
+recent, or `--include myapp` to watch one process.
+
+`store` is off until configured: set `SUPER_LOG_STORE=sqlite` (+
+`SUPER_LOG_STORE_SQLITE=bench.db`) or `SUPER_LOG_STORE=postgres` in `.env`, then
+`superlog start store` tails the journal into your database; `--from-start`
+ingests all existing history.
 
 `dl` wraps a fetch the way `build` wraps a compiler — output, stdin and
 exit status untouched — and it exists for the downloads everyone now does:

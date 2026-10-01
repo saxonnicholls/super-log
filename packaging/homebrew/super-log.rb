@@ -49,6 +49,12 @@ class SuperLog < Formula
       SH
       chmod 0755, bin/name
     end
+    # superlog-log is a plain POSIX shell script, not a .mjs (it has to run
+    # where there is no Node at all), so the glob above skips it - symlink
+    # it onto PATH directly instead of node-wrapping it. Previously missed
+    # entirely: it shipped under libexec but never reached bin, so
+    # `superlog-log` was not actually a command after `brew install`.
+    bin.install_symlink libexec/"superlog-log"
     (bin/"superlog").write <<~SH
       #!/bin/sh
       exec "#{formula_opt_bin("node")}/node" "#{libexec}/superlog.mjs" "$@"

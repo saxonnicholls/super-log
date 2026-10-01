@@ -53,7 +53,11 @@ cmake --build build-rpm --target superlogd -j
 cd /src
 DESTDIR=%{buildroot} cmake --install build-rpm
 
-# Tailers under /usr/lib/super-log, each a wrapper on PATH.
+# Tailers under /usr/lib/super-log, each a wrapper on PATH. superlog-log is
+# a plain POSIX shell script, not a .mjs (it has to run with no Node at
+# all), so it is glob-matched separately and symlinked as itself rather
+# than node-wrapped - the .mjs-only glob previously dropped it from PATH
+# in every one of deb/rpm/Homebrew silently.
 mkdir -p %{buildroot}/usr/lib/super-log %{buildroot}/usr/bin \
          %{buildroot}/usr/lib/systemd/system
 cp tailers/bin/* %{buildroot}/usr/lib/super-log/
@@ -62,6 +66,11 @@ for f in %{buildroot}/usr/lib/super-log/superlog-*.mjs; do
     printf '#!/bin/sh\nexec node /usr/lib/super-log/%s "$@"\n' "$(basename "$f")" \
         > %{buildroot}/usr/bin/$name
     chmod 0755 %{buildroot}/usr/bin/$name
+done
+for f in %{buildroot}/usr/lib/super-log/superlog-*; do
+    case "$f" in *.mjs) continue ;; esac
+    name=$(basename "$f")
+    ln -sf "/usr/lib/super-log/$name" "%{buildroot}/usr/bin/$name"
 done
 printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog.mjs "$@"\n' \
     > %{buildroot}/usr/bin/superlog
