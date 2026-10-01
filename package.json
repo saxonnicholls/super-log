@@ -98,6 +98,8 @@
     "superlog-watch": "tailers/bin/superlog-watch.mjs",
     "superlog-log": "tailers/bin/superlog-log",
     "superlog-build": "tailers/bin/superlog-build.mjs",
+    "superlog-crash": "tailers/bin/superlog-crash.mjs",
+    "superlog-store": "tailers/bin/superlog-store.mjs",
     "superlog-tail": "tailers/bin/superlog-tail.mjs",
     "superlog-ws": "tailers/bin/superlog-ws.mjs",
     "superlog-serial": "tailers/bin/superlog-serial.mjs",
