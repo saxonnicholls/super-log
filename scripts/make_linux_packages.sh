@@ -123,7 +123,10 @@ build_and_verify_deb() {
             return 1
         fi
     else
-        warn "deb/$ARCH_LABEL: VERIFY FAILED - see packaging/deb/.verify-$ARCH_LABEL.log"
+        warn "deb/$ARCH_LABEL: VERIFY FAILED - the log follows"
+        echo "----- packaging/deb/.verify-$ARCH_LABEL.log -----" >&2
+        sed "s/^/    /" "$REPO/packaging/deb/.verify-$ARCH_LABEL.log" >&2 || echo "    (the log file is empty or absent)" >&2
+        echo "----- end -----" >&2
         record "deb $ARCH_LABEL" VERIFY "FAIL (see .verify-$ARCH_LABEL.log)"
         return 1
     fi
@@ -175,7 +178,10 @@ build_and_verify_rpm() {
             return 1
         fi
     else
-        warn "rpm/$ARCH_LABEL: VERIFY FAILED - see packaging/rpm/.verify-$ARCH_LABEL.log"
+        warn "rpm/$ARCH_LABEL: VERIFY FAILED - the log follows"
+        echo "----- packaging/rpm/.verify-$ARCH_LABEL.log -----" >&2
+        sed "s/^/    /" "$REPO/packaging/rpm/.verify-$ARCH_LABEL.log" >&2 || echo "    (the log file is empty or absent)" >&2
+        echo "----- end -----" >&2
         record "rpm $ARCH_LABEL" VERIFY "FAIL (see .verify-$ARCH_LABEL.log)"
         return 1
     fi

@@ -266,6 +266,10 @@ jobs:
           path: |
             packaging/deb/.verify-*.log
             packaging/rpm/.verify-*.log
+          # The logs are DOTFILES and upload-artifact excludes hidden files by
+          # default, so the first attempt uploaded nothing and the step still
+          # reported success - "No files were found with the provided path".
+          include-hidden-files: true
           if-no-files-found: warn
 
       - name: INSTALL the arm64 .deb under arm64 and run it
