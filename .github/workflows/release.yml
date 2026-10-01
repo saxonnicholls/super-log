@@ -258,10 +258,15 @@ jobs:
         run: |
           set -eu
           DEB="$(ls packaging/deb/*_arm64.deb | head -1)"
-          echo "installing $DEB inside an arm64 container"
+          # trixie (Debian 13), not bookworm. The hub is built on Ubuntu 24.04
+          # and needs GLIBC_2.38; bookworm has 2.36. Raspberry Pi OS 12 is
+          # bookworm and Pi OS 13 is trixie, so trixie is the baseline we
+          # actually support - and the step below PROVES bookworm is refused
+          # rather than leaving it to be discovered by a user.
+          echo "installing $DEB inside an arm64 trixie container"
           docker run --rm --platform linux/arm64 \
             -e WANT="${{ needs.gate.outputs.version }}" \
-            -v "$PWD/packaging/deb:/pkgs:ro" debian:bookworm-slim bash -euxc '
+            -v "$PWD/packaging/deb:/pkgs:ro" debian:trixie-slim bash -euxc '
               apt-get update -qq
               apt-get install -y -qq curl >/dev/null
               dpkg -i /pkgs/'"$(basename "$DEB")"' || apt-get -f install -y -qq
