@@ -3,7 +3,7 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
-## Unreleased
+## 0.5.1 — 2026-11-11
 
 **A backing store for the feed: `superlog-store` (SQLite + Postgres).** An
 optional outlet that tails the journal and writes every event into an external
@@ -36,6 +36,23 @@ read by hand out of a report nobody opened. First poll is a silent baseline;
 dependency - the OS's own reporter, and `coredumpctl` on Linux. VERIFIED:
 tests/crash.test.mjs drives it against a live hub off a synthetic report, and on
 this bench it captured a real SIGSEGV with the ImageIO frames intact, end to end.
+
+**The in-editor viewers reach the hub again, and a busy bench scrolls.** The
+React viewer embedded in the editor extensions loads from a `vscode-webview://`
+origin the hub's Origin check did not trust, so it rendered but never connected;
+the hub now trusts that origin. And the firehose followed new lines by moving the
+wrong element, so under load the view pinned itself and would not move - follow
+now drives the scroll container's own offset. VERIFIED by hand: the embedded
+viewer connecting to a live hub, and the bench tracking a firehose.
+
+**The hub and viewer build on ts-moveables v1.5.1.** The pinned C++ dependency
+moved from v1.2.1 to v1.5.1 - seqlock, task_graph and a vendored snicholls-core -
+in both the CMake FetchContent fallback and CI. No super-log source or wire
+change rode with it: a clean rebuild of the hub and viewer passes every hub and
+wire test, so no behaviour moved. VERIFIED: clean build + the hub/wire suites of
+`npm test` green.
+
+## 0.5.0 — 2026-10-01
 
 **Git, correlated with what the bench saw.** `superlog git install-hooks` writes
 a `post-commit` hook that stamps a `git.commit` frame on the bench the instant a
