@@ -3,6 +3,20 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
+## 0.5.2 — 2026-11-12
+
+**`superlog-log` now lands on PATH in the Debian packages.** The `.deb` install
+loop wrapped only `superlog-*.mjs`, but `superlog-log` is a plain POSIX shell
+tailer - it has to run where there is no Node - so it was silently dropped from
+`/usr/bin`. The release pipeline's install-and-run check caught it
+(`MISSING ON PATH: superlog-log`) and refused every `.deb`, which is why the
+0.5.1 pipeline could not publish. `build-deb.sh` now symlinks every non-`.mjs`
+tailer onto PATH, matching what the rpm spec and the Homebrew formula already do
+(their legs passed the same assertion). VERIFIED: the 0.5.2 `.deb` built and
+installed into a fresh ubuntu:24.04 container, all 51 tailer commands on PATH
+including `superlog-log`, and the hub answered `/healthz` - the exact check CI
+runs, run here in Docker before the tag.
+
 ## 0.5.1 — 2026-11-11
 
 **A backing store for the feed: `superlog-store` (SQLite + Postgres).** An

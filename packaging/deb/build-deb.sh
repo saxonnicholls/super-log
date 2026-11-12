@@ -20,7 +20,7 @@
 set -eu
 cd "$(dirname "$0")/../.."
 REPO="$(pwd)"
-VERSION="${SUPER_LOG_VERSION:-0.5.1}"
+VERSION="${SUPER_LOG_VERSION:-0.5.2}"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -38,13 +38,23 @@ cmake --build build-deb --target superlogd -j >/dev/null
 DESTDIR="$STAGE" cmake --install build-deb >/dev/null
 
 # The tailers: zero-dependency Node scripts under /usr/lib/super-log, each
-# a wrapper on PATH.
+# a wrapper on PATH. Not every tailer is a .mjs - superlog-log is a plain
+# POSIX shell script (it has to run where there is no Node at all), so it
+# is glob-matched separately and installed as itself, not node-wrapped.
+# (Found by actually asserting every tailer lands on PATH, not just a
+# couple of spot-checked ones: the .mjs-only glob here silently dropped it
+# from every one of deb/rpm/Homebrew until this fix.)
 mkdir -p "$STAGE/usr/lib/super-log" "$STAGE/usr/bin"
 cp tailers/bin/* "$STAGE/usr/lib/super-log/"
 for f in "$STAGE"/usr/lib/super-log/superlog-*.mjs; do
     name="$(basename "$f" .mjs)"
     printf '#!/bin/sh\nexec node /usr/lib/super-log/%s "$@"\n' "$(basename "$f")" > "$STAGE/usr/bin/$name"
     chmod 0755 "$STAGE/usr/bin/$name"
+done
+for f in "$STAGE"/usr/lib/super-log/superlog-*; do
+    case "$f" in *.mjs) continue ;; esac
+    name="$(basename "$f")"
+    ln -sf "/usr/lib/super-log/$name" "$STAGE/usr/bin/$name"
 done
 printf '#!/bin/sh\nexec node /usr/lib/super-log/superlog.mjs "$@"\n' > "$STAGE/usr/bin/superlog"
 chmod 0755 "$STAGE/usr/bin/superlog"

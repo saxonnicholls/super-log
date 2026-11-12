@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(super_log
-    VERSION 0.5.1
+    VERSION 0.5.2
     DESCRIPTION "One hub for every log stream on the dev bench"
     LANGUAGES CXX)
 
