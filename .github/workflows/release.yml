@@ -89,10 +89,14 @@ jobs:
     needs: gate
     # Pinned, not "latest". The .pkg claims "one binary, both architectures",
     # and which slice this runner can EXECUTE - as opposed to merely
-    # cross-compile - depends on knowing its arch. macos-14+ is Apple Silicon,
+    # cross-compile - depends on knowing its arch. macos-15 is Apple Silicon,
     # which is also the slice that had never been run anywhere before this
-    # workflow existed.
-    runs-on: macos-14
+    # workflow existed. (Was macos-14 until GitHub retired that image on
+    # 2026-11-02; a retired label reads as "not supported" and the job is
+    # cancelled before it starts - no runner, no steps - which took the whole
+    # release down with it. macos-15 is the supported arm64 successor; stay
+    # pinned rather than take macos-latest, which has moved on to macOS 26.)
+    runs-on: macos-15
     # The `secrets` context is NOT available to `if:` - GitHub rejects a
     # workflow that uses it there, and no local YAML check can see that. Mapped
     # into env at job level so the signing steps can be conditional on whether
