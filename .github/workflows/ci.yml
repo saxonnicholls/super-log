@@ -18,7 +18,7 @@ on:
   pull_request:
 
 env:
-  TS_MOVEABLES_TAG: bdf40ae40842932970f8d19126f00dbe3665c385  # v1.5.1 (seqlock, task_graph, vendored core; keeps Origin check)
+  TS_MOVEABLES_TAG: 437d49ef037357a218be41a9bf8f3a81585ef0ac  # ts-moveables main carrying core v0.8.0 (its third_party/core gitlink = 4c8a4da)
 
 jobs:
   cpp-linux:
