@@ -309,6 +309,32 @@ jobs:
               exit 1
             '
 
+      # The other half of the glibc story, now that dpkg-shlibdeps computes
+      # libc6 (>= 2.38) from the binary's own symbols. Before it did,
+      # control.in declared a bare `libc6`: Debian 12 installed the package
+      # happily and the binary then died with "version `GLIBC_2.38' not
+      # found" - a successful install over a dead command, which the package
+      # manager reports as success and nothing upstream of the user ever sees.
+      # Proved locally first: bookworm refuses with
+      #   "super-log depends on libc6 (>= 2.38); however:
+      #    Version of libc6:amd64 on system is 2.36-9+deb12u14."
+      - name: an older Debian must REFUSE the package, not install a dead one
+        run: |
+          set -eu
+          DEB="$(ls packaging/deb/*_amd64.deb | head -1)"
+          if docker run --rm --platform linux/amd64 \
+               -v "$PWD/packaging/deb:/pkgs:ro" debian:bookworm-slim \
+               dpkg -i "/pkgs/$(basename "$DEB")" >/tmp/old.log 2>&1; then
+            echo "FAIL: Debian 12 ACCEPTED a package whose binary cannot run there."
+            echo "      The libc6 dependency is not versioned - check that"
+            echo "      dpkg-shlibdeps ran in packaging/deb/build-deb.sh."
+            exit 1
+          fi
+          grep -qiE 'libc6' /tmp/old.log || {
+            echo "FAIL: refused, but not for the libc6 reason:"; cat /tmp/old.log; exit 1; }
+          echo "ok: Debian 12 refuses it, naming libc6"
+          grep -iE 'libc6|depends' /tmp/old.log | head -4
+
       - name: INSTALL the amd64 .deb and run it
         run: |
           set -eu

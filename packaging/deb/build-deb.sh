@@ -67,6 +67,37 @@ cp packaging/deb/postinst "$STAGE/DEBIAN/postinst"
 cp packaging/deb/prerm "$STAGE/DEBIAN/prerm"
 chmod 0755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/prerm"
 
+# COMPUTE the library dependencies instead of declaring them loosely.
+# control.in says a bare `libc6`; the binary is built on Ubuntu 24.04 and needs
+# GLIBC_2.38, so Debian 12 (glibc 2.36) installs the package and the binary
+# then dies - the package manager reporting success over a dead command.
+# dpkg-shlibdeps reads the binary's own symbol versions, so this cannot drift
+# when the build image's glibc moves, as a hardcoded ">= 2.38" would.
+if command -v dpkg-shlibdeps >/dev/null 2>&1; then
+    SLD_BIN="$(find "$STAGE" -type f -name superlogd -perm -u+x | head -1)"
+    if [ -n "$SLD_BIN" ]; then
+        ( cd "$STAGE" && mkdir -p debian && : > debian/control \
+          && dpkg-shlibdeps -O --ignore-missing-info "${SLD_BIN#$STAGE/}" ) \
+          > "$STAGE/.shlibdeps" 2>"$STAGE/.shlibdeps.err" || true
+        COMPUTED="$(sed -n 's/^shlibs:Depends=//p' "$STAGE/.shlibdeps" 2>/dev/null | head -1)"
+        if [ -z "$COMPUTED" ]; then
+            echo "build-deb: dpkg-shlibdeps produced nothing; its stderr was:" >&2
+            sed 's/^/    /' "$STAGE/.shlibdeps.err" >&2 2>/dev/null || true
+        fi
+        rm -rf "$STAGE/debian" "$STAGE/.shlibdeps" "$STAGE/.shlibdeps.err"
+        if [ -n "$COMPUTED" ]; then
+            sed "s|^Depends: .*|Depends: nodejs (>= 18), ${COMPUTED}|" \
+                "$STAGE/DEBIAN/control" > "$STAGE/DEBIAN/control.new" \
+                && mv "$STAGE/DEBIAN/control.new" "$STAGE/DEBIAN/control"
+            echo "build-deb: computed Depends -> nodejs (>= 18), ${COMPUTED}"
+        fi
+    else
+        echo "build-deb: WARNING no superlogd under the stage; skipping shlibdeps" >&2
+    fi
+else
+    echo "build-deb: WARNING dpkg-shlibdeps absent; Depends stays as control.in wrote it" >&2
+fi
+
 OUT="packaging/deb/super-log_${VERSION}_${ARCH}.deb"
 dpkg-deb --build --root-owner-group "$STAGE" "$OUT"
 echo "build-deb: wrote $OUT"
