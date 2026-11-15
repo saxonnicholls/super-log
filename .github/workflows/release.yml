@@ -393,8 +393,26 @@ jobs:
         run: |
           set -eu
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release $TAG exists - replacing this workflow's own asset names only"
-            gh release upload "$TAG" ./release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+            # NO --clobber. Releases here are IMMUTABLE, and --clobber DELETES
+            # the existing asset before uploading: GitHub answers
+            #   HTTP 422  Cannot delete asset from an immutable release
+            # and the job dies. (In October the same call returned 200 on a
+            # refused upload, which is why the VERIFY step below exists; the
+            # API is stricter now, which is better.) So upload only what is
+            # absent, and treat an asset that is already there as done - a
+            # re-run to backfill is the whole reason this branch exists.
+            echo "release $TAG exists - uploading only the assets it does not have"
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+               --json assets --jq '.assets[].name' > /tmp/have.txt || : > /tmp/have.txt
+            for f in ./release-assets/*; do
+              name="$(basename "$f")"
+              if grep -qxF "$name" /tmp/have.txt; then
+                echo "  already present, left alone: $name"
+              else
+                echo "  uploading: $name"
+                gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY"
+              fi
+            done
           else
             gh release create "$TAG" ./release-assets/* --repo "$GITHUB_REPOSITORY" \
               --title "super-log $VERSION" \
