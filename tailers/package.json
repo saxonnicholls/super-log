@@ -30,6 +30,7 @@
     "superlog-build": "bin/superlog-build.mjs",
     "superlog-cf": "bin/superlog-cf.mjs",
     "superlog-chain": "bin/superlog-chain.mjs",
+    "superlog-cuda": "bin/superlog-cuda.mjs",
     "superlog-dl": "bin/superlog-dl.mjs",
     "superlog-dns": "bin/superlog-dns.mjs",
     "superlog-fleet": "bin/superlog-fleet.mjs",

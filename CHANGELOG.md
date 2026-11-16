@@ -3,6 +3,35 @@
 Notable changes, newest first. Each entry says what is verified and what is
 not, because that distinction matters more than the feature list.
 
+## Unreleased
+
+**A CUDA tailer: `superlog-cuda`.** A CUDA program's faults, device output and
+kernel timings on `cuda.<app>`, built for debugging `snicholls-gpu` on the GPU
+box over ssh. It links no CUDA and installs nothing — it wraps or tails the
+program and reads what the program, the driver, `compute-sanitizer` and `nsys`
+already print, driving tools found via `--cuda-bin` (default
+`/usr/local/cuda/bin`), not PATH. It catches the fault **at the synchronise** —
+an illegal address or launch/sync failure, a `compute-sanitizer` finding, an
+NVRTC compile error, a driver/toolkit toolchain mismatch — each an
+edge-triggered ERROR that announces recovery on a clean next run; the
+recoverable ones (a first `cudaGetLastError`, an invalid-argument launch, a
+benchmark `fairness check FAILED`/`differs`) are WARN; kernel times and output
+are DEBUG. The signature catch: a **host-side segfault that `compute-sanitizer`
+passes with "0 errors"** is reported as a host crash, not a device fault, and
+`--gdb` grabs the backtrace. `--nsys` turns nsys's `cuda_gpu_kern_sum` table
+into `cuda.kernel_ms`/`_pct`/`_count` `{kernel=…}` metrics to compare run
+against run. Ships with the three README spots, the MCP `stream_guide` entry
+and `cuda-fault` playbook, the `cuda.<app>` row in docs/PROTOCOL.md, and
+`tests/cuda.test.mjs`. VERIFIED: ten real-hub subprocess tests here (driver
+faults and the edge-trigger, sanitizer + recovery, the nsys CSV → metrics with
+a quoted-comma kernel name, host-crash-vs-device-fault via a real SIGSEGV,
+NVRTC, toolchain, the wrapped exceptions at their levels, and gtest leveling),
+AND a first real run on an RTX PRO 4000 (CUDA 13.3) over ssh: a 26-case
+GoogleTest suite reached `cuda.snicholls_gpu_cuda_tests`. WRITTEN, not yet
+hardware-verified: the `--sanitizer`, `--nsys` and `--gdb` spawning on the GPU
+box — their PARSERS are verified against captured real output, the live
+invocation is still to be exercised.
+
 ## 0.5.2 — 2026-11-12
 
 **`superlog-log` now lands on PATH in the Debian packages.** The `.deb` install
