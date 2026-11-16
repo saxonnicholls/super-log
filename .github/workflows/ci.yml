@@ -18,7 +18,7 @@ on:
   pull_request:
 
 env:
-  TS_MOVEABLES_TAG: 437d49ef037357a218be41a9bf8f3a81585ef0ac  # ts-moveables main carrying core v0.8.0 (its third_party/core gitlink = 4c8a4da)
+  TS_MOVEABLES_TAG: 572b050fe865f99e06a7a787bca87ea187e56e75  # ts-moveables main carrying core v0.9.0 (its third_party/core gitlink = 4de5a8c)
 
 jobs:
   cpp-linux:

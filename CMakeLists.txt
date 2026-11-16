@@ -21,14 +21,15 @@ set(TS_MOVEABLES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TSMoveables"
 # happened to be that day - so a break upstream would land on a stranger's
 # first clone and look like a fault in super-log. Keep this in step with
 # TS_MOVEABLES_TAG in .github/workflows/ci.yml; bump both deliberately.
-# 437d49e (ts-moveables main: "third_party: bump core v0.6.0 -> v0.8.0"; its
-# third_party/core gitlink is core 4c8a4da = core v0.8.0). super-log pins
+# 572b050 (ts-moveables main: "third_party: bump core v0.8.0 -> v0.9.0"; its
+# third_party/core gitlink is core 4de5a8c = core v0.9.0). super-log pins
 # ts-moveables, which vendors snicholls-core and re-exports its include
-# directory, so moving this SHA is how core v0.8.0 reaches super-log - no other
+# directory, so moving this SHA is how core v0.9.0 reaches super-log - no other
 # CMake change is needed. Pinned as the commit, not a tag - a tag can be moved
-# or deleted, a commit cannot; 437d49e is untagged main, past v1.6.0.
-set(TS_MOVEABLES_GIT_TAG "437d49ef037357a218be41a9bf8f3a81585ef0ac"
-    CACHE STRING "ts-moveables tag/SHA for the FetchContent fallback (core v0.8.0)")
+# or deleted, a commit cannot; 572b050 is main, one commit above the v1.7.0 tag
+# (which predates the core v0.9.0 bump).
+set(TS_MOVEABLES_GIT_TAG "572b050fe865f99e06a7a787bca87ea187e56e75"
+    CACHE STRING "ts-moveables tag/SHA for the FetchContent fallback (core v0.9.0)")
 
 set(TS_MOVEABLES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 if(EXISTS "${TS_MOVEABLES_DIR}/CMakeLists.txt")
