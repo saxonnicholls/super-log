@@ -80,17 +80,27 @@ command -v npm  >/dev/null || { echo "npm not found" >&2; exit 1; }
 command -v node >/dev/null || { echo "node not found" >&2; exit 1; }
 ok "node $(node --version), npm $(npm --version)"
 
+# WHAT HAS TO BE COMMITTED IS THE PACKAGE, not the repository (narrowed
+# 2026-10-01, porting the change the commercial sibling made on 2026-09-23 —
+# publish_superlog_cloud.sh, and its comment explains the same reasoning).
+#
+# The rule being protected is that a tarball on the registry must correspond to
+# a commit somebody can check out after a bug report. That is a property of the
+# package's own directory, which is all npm packs. Several sessions share this
+# checkout, so the hub source, the CHANGELOG and the packaging scripts are
+# almost never all clean at once — and a repo-wide gate then means either never
+# publishing or always passing --allow-dirty, which is the same as having no
+# gate at all. This is the narrowing that keeps the gate meaningful.
+#
+# Dirt ELSEWHERE is still worth saying, because it is how you notice you are
+# publishing out of a tree somebody else is mid-edit in. So it warns.
 if [[ "$ALLOW_DIRTY" -eq 0 ]]; then
-  if [[ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ]]; then
-    bad "working tree is dirty — a published artefact must correspond to a commit"
-    git -C "$REPO_ROOT" status --short --untracked-files=no | head -10 | sed 's/^/      /'
-    echo
-    echo "  Publishing from a dirty tree means the tarball on the registry matches"
-    echo "  no commit anywhere, so a later bug report cannot be reproduced. Commit,"
-    echo "  or re-run with --allow-dirty if you have decided otherwise."
-    exit 1
+  ELSEWHERE="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no || true)"
+  if [[ -n "${ELSEWHERE}" ]]; then
+    warn "other parts of this checkout are mid-edit — not in any tarball, but worth knowing:"
+    printf '%s\n' "${ELSEWHERE}" | head -8 | sed 's/^/       /'
   fi
-  ok "working tree clean (HEAD $(git -C "$REPO_ROOT" rev-parse --short HEAD))"
+  ok "repository HEAD is $(git -C "$REPO_ROOT" rev-parse --short HEAD); each package is checked on its own below"
 fi
 
 if [[ "$DO_PUBLISH" -eq 1 ]]; then
@@ -132,6 +142,30 @@ check_package() {
   echo "  ${dir#$REPO_ROOT/}"
 
   local pkg_failed_before=$FAILED
+
+  # -- 0. THIS package must be committed -----------------------------------
+  # The repo-wide gate became a warning (see Preflight) because several
+  # sessions share this checkout. The guarantee it protected is per-package
+  # and is enforced here instead: npm packs THIS directory, so THIS directory
+  # is what has to match a commit. Dropping the global check without adding
+  # this one would have been strictly worse than leaving it.
+  if [[ "$ALLOW_DIRTY" -eq 0 ]]; then
+    local pkg_dirt
+    pkg_dirt="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no -- "$dir" || true)"
+    if [[ -n "$pkg_dirt" ]]; then
+      # `bad` and carry on, not `return 1`. Every other check in this function
+      # works that way, and the script is written around it: FAILED is compared
+      # against pkg_failed_before to decide whether THIS package publishes, and
+      # the loop below checks every package before any verdict. Returning
+      # non-zero under `set -e` aborted the whole run instead, so a clean
+      # package was never even examined because a different one was dirty.
+      bad "this package directory is dirty — its tarball would match no commit"
+      printf '%s\n' "$pkg_dirt" | sed 's/^/        /'
+      echo "        Commit these, or --allow-dirty if you have decided otherwise."
+    else
+      ok "the package directory is committed"
+    fi
+  fi
 
   # -- 1. files field ------------------------------------------------------
   # Without `files`, npm ships everything not covered by .npmignore. That is how

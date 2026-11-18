@@ -414,8 +414,21 @@ jobs:
               fi
             done
           else
+            # PRERELEASE, and NOT marked latest, deliberately.
+            #
+            # npm publishes after this job, because an npm version cannot be
+            # unpublished after 72h and must therefore be the last irreversible
+            # step. The cost of that order was discovered on 2026-11-15: the
+            # npm leg failed, and v0.5.2 sat on the releases page as "Latest",
+            # complete-looking, while the registry still served 0.4.x. A
+            # release that is missing a leg must LOOK missing.
+            #
+            # So the release is born incomplete and the `promote` job at the
+            # end is the only thing that makes it latest. A failed npm leg
+            # leaves a visible prerelease instead of a quiet lie.
             gh release create "$TAG" ./release-assets/* --repo "$GITHUB_REPOSITORY" \
               --title "super-log $VERSION" \
+              --prerelease --latest=false \
               --notes "Install: \`curl -fsSL https://super-log.com/install.sh | sh\` - it detects your platform, verifies the download against SHA256SUMS, and installs. Or take the artefact for your platform below. See CHANGELOG.md."
           fi
 
@@ -505,7 +518,40 @@ jobs:
             echo "$NAME@$VER is already on the registry - nothing to do"
             exit 0
           fi
-          npm publish --provenance --access public
+          # npm answers a MISSING TRUSTED PUBLISHER with 404, not 403, so it
+          # does not leak whether a package exists. That makes the error read
+          # as "no such package" when it actually means "this workflow is not
+          # authorised to publish it" - which cost a release on 2026-11-15,
+          # where OIDC worked, provenance was signed and logged to sigstore,
+          # and only the PUT was refused. So say what it means.
+          if ! npm publish --provenance --access public; then
+            echo "::error title=npm refused the publish::$NAME@$VER was not published."
+            # Plain echoes, not a heredoc. A heredoc body inside a YAML block
+            # scalar has to be indented to the block and its terminator has to
+            # land at column 0 only AFTER YAML strips that indent - which is
+            # exactly the kind of invisible indentation bug this file should not
+            # carry, and did for one commit.
+            echo ""                                                            >&2
+            echo "  If the error above is '404 Not Found - PUT' or mentions"    >&2
+            echo "  permission, the package has NO TRUSTED PUBLISHER on"        >&2
+            echo "  npmjs.com. OIDC worked - the provenance statement was"      >&2
+            echo "  signed and logged to sigstore - and npm then refused the"   >&2
+            echo "  upload. npm returns 404 rather than 403 so it does not"     >&2
+            echo "  leak whether a package exists, which is why the error"      >&2
+            echo "  reads like 'no such package'."                              >&2
+            echo ""                                                            >&2
+            echo "  The one-time fix, which cannot be done from CI:"            >&2
+            echo "    npmjs.com -> the package -> Settings -> Trusted Publisher">&2
+            echo "    Publisher:  GitHub Actions"                               >&2
+            echo "    Repository: $GITHUB_REPOSITORY"                           >&2
+            echo "    Workflow:   .github/workflows/release.yml"                >&2
+            echo ""                                                            >&2
+            echo "  Needed for BOTH @super-log/tailers and @super-log/mcp."     >&2
+            echo "  Until it exists this leg fails and the release stays a"     >&2
+            echo "  prerelease instead of claiming to be the latest one."       >&2
+            echo ""                                                            >&2
+            exit 1
+          fi
       - name: VERIFY the registry serves it
         working-directory: ${{ matrix.package }}
         run: |
@@ -519,3 +565,52 @@ jobs:
             echo "not indexed yet"; sleep 10
           done
           echo "FAIL: the registry does not serve $NAME@$VER"; exit 1
+
+  # ── The only step that declares a release finished ──────────────────────────
+  #
+  # Every leg has to have succeeded to get here: the macOS .pkg installed and
+  # ran on Apple Silicon, the arm64 .deb installed and answered /healthz under
+  # arm64, the five artefacts and their SHA256SUMS are on the release, and both
+  # npm packages are served by the registry at this version.
+  #
+  # Only then is the release marked latest. Before this job existed, "Latest"
+  # meant "the publish job got that far", which on 2026-11-15 meant a release
+  # whose npm half had failed.
+  promote:
+    needs: [gate, macos-pkg, linux-packages, publish, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: every leg landed - make it the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.gate.outputs.tag }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -eu
+          # Re-prove the two facts that matter, from OUTSIDE the jobs that
+          # produced them. A job's own "success" is a claim about its exit
+          # code; this is the check that the artefacts and the packages are
+          # actually being served.
+          n="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --json assets --jq '[.assets[].name] | length')"
+          [ "$n" -eq 5 ] || { echo "FAIL: the release carries $n assets, not 5"; exit 1; }
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' | grep -qx 'SHA256SUMS' \
+            || { echo "FAIL: no SHA256SUMS on the release"; exit 1; }
+
+          for pkg in '@super-log/tailers' '@super-log/mcp'; do
+            got="$(npm view "$pkg@$VERSION" version 2>/dev/null || true)"
+            if [ "$got" != "$VERSION" ]; then
+              echo "FAIL: the registry does not serve $pkg@$VERSION (got '${got:-nothing}')"
+              echo "The release stays a prerelease. It is not finished."
+              exit 1
+            fi
+            echo "ok: the registry serves $pkg@$VERSION"
+          done
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --prerelease=false --latest
+          echo "::notice::$TAG is now the latest release - every leg verified"
