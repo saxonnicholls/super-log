@@ -507,11 +507,35 @@ jobs:
           fi
       - name: publish ${{ matrix.package }}
         working-directory: ${{ matrix.package }}
+        env:
+          # The FALLBACK, and it is opt-in by existing. Trusted Publishing is
+          # better and stays the default: it hands npm a short-lived OIDC
+          # identity instead of a secret that lives in the repository.
+          #
+          # But it has been the ONLY route since 2026-11-12, and for seven days
+          # that meant nothing shipped to npm at all while the binaries went
+          # out - because the one setting that unblocks it is on npmjs.com and
+          # cannot be reached from here. A pipeline with a single point of
+          # human failure and no second door is how that happens. An
+          # automation token publishes without a TTY just as well.
+          #
+          # `secrets` is NOT available in `if:` (GitHub rejects the
+          # expression - the macos-pkg job carries the same note), so the
+          # branch has to happen inside the script, on an env var.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -eu
           NAME=$(node -p "require('./package.json').name")
           VER=$(node -p "require('./package.json').version")
           echo "publishing $NAME@$VER"
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            # Said out loud, because which credential published a tarball is
+            # something you want in the log a month later.
+            echo "::notice::NPM_TOKEN is set - publishing with the token rather than OIDC"
+            npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          else
+            echo "no NPM_TOKEN - publishing with Trusted Publishing (OIDC)"
+          fi
           # Already published is a SUCCESS, not a failure: this workflow may be
           # re-run to backfill, and npm refuses a duplicate version outright.
           if npm view "$NAME@$VER" version >/dev/null 2>&1; then
@@ -540,13 +564,21 @@ jobs:
             echo "  leak whether a package exists, which is why the error"      >&2
             echo "  reads like 'no such package'."                              >&2
             echo ""                                                            >&2
-            echo "  The one-time fix, which cannot be done from CI:"            >&2
+            echo "  EITHER of these unblocks it, and both are one-time:"      >&2
+            echo ""                                                            >&2
+            echo "  (a) Trusted Publishing - preferred, no secret stored:"      >&2
             echo "    npmjs.com -> the package -> Settings -> Trusted Publisher">&2
             echo "    Publisher:  GitHub Actions"                               >&2
             echo "    Repository: $GITHUB_REPOSITORY"                           >&2
             echo "    Workflow:   .github/workflows/release.yml"                >&2
             echo ""                                                            >&2
-            echo "  Needed for BOTH @super-log/tailers and @super-log/mcp."     >&2
+            echo "  (b) Automation token - also non-interactive, if (a) is"     >&2
+            echo "      awkward right now:"                                     >&2
+            echo "    npmjs.com -> Access Tokens -> Granular, read+write on"    >&2
+            echo "      @super-log/tailers and @super-log/mcp"                  >&2
+            echo "    then add it to this repo as the secret NPM_TOKEN"         >&2
+            echo ""                                                            >&2
+            echo "  (a) is needed for BOTH packages; (b) can cover both at once.">&2
             echo "  Until it exists this leg fails and the release stays a"     >&2
             echo "  prerelease instead of claiming to be the latest one."       >&2
             echo ""                                                            >&2
