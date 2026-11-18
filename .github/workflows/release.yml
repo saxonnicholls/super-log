@@ -622,16 +622,39 @@ jobs:
           VERSION: ${{ needs.gate.outputs.version }}
         run: |
           set -eu
-          # Re-prove the two facts that matter, from OUTSIDE the jobs that
-          # produced them. A job's own "success" is a claim about its exit
-          # code; this is the check that the artefacts and the packages are
-          # actually being served.
-          n="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-                 --json assets --jq '[.assets[].name] | length')"
-          [ "$n" -eq 5 ] || { echo "FAIL: the release carries $n assets, not 5"; exit 1; }
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --json assets --jq '.assets[].name' | grep -qx 'SHA256SUMS' \
-            || { echo "FAIL: no SHA256SUMS on the release"; exit 1; }
+          # Re-prove the facts that matter, from OUTSIDE the jobs that produced
+          # them. A job's own "success" is a claim about its exit code; this is
+          # the check that the artefacts and the packages are actually served.
+          #
+          # BY NAME, NOT BY COUNT. The first version of this asserted "5
+          # assets" - copied from the publish job, where 5 counts the artefacts
+          # BEFORE SHA256SUMS joins them. A release carries six, so promote
+          # would have failed on every release and nothing would ever have been
+          # marked latest: strictly worse than the bug it was written to fix.
+          # Caught by running the check against a real release instead of
+          # trusting that it read correctly.
+          #
+          # A count is the wrong shape anyway: "5" was also true of a release
+          # that was missing the arm64 .deb and carried two .rpms.
+          ASSETS="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                      --json assets --jq '.assets[].name')"
+          for want in "SHA256SUMS" \
+                      "super-log-${VERSION}-universal.pkg" \
+                      "super-log_${VERSION}_amd64.deb" \
+                      "super-log_${VERSION}_arm64.deb"; do
+            printf '%s\n' "$ASSETS" | grep -qxF "$want" \
+              || { echo "FAIL: the release is missing $want"; exit 1; }
+            echo "ok: $want"
+          done
+          # The .rpm dist tag (fc41, ...) moves with the Fedora pinned in CI,
+          # so match it by pattern rather than hardcoding a tag that will one
+          # day stop matching in silence.
+          for arch in x86_64 aarch64; do
+            printf '%s\n' "$ASSETS" \
+              | grep -qE "^super-log-${VERSION}-[0-9]+\..*\.${arch}\.rpm$" \
+              || { echo "FAIL: the release is missing an ${arch} .rpm"; exit 1; }
+            echo "ok: an ${arch} .rpm"
+          done
 
           for pkg in '@super-log/tailers' '@super-log/mcp'; do
             got="$(npm view "$pkg@$VERSION" version 2>/dev/null || true)"
